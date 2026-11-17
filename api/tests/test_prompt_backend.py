@@ -257,7 +257,7 @@ def test_prompt_backend_is_listed_and_names_match_the_agent_script():
     assert [t.server_label for t in mcp] == ["voltrieve-kb", "voltrieve-parts-kb"]
     assert [t.project_connection_id for t in mcp] == ["conn", "parts-conn"]
     assert "/knowledgebases/voltrieve-parts-kb/mcp" in mcp[1].server_url
-    assert "article numbers" in mcp[1].server_description
+    assert "article numbers" in mcp[1].server_description.lower()
     assert set(cli) - set(web) == CLI_AGENT_TOOL_NAMES
     assert set(web) - set(cli) == WEB_AGENT_TOOL_NAMES
     assert {t["name"] for t in module.WEB_TOOLS} == WEB_AGENT_TOOL_NAMES
