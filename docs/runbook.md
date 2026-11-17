@@ -226,3 +226,45 @@ uv run --project data/generator voltrieve-data images --shots all
 shots to make only those (masters first, since every other shot is edited from them). The model
 returns PNG, which is stored as a 1536 x 1024 JPEG at quality 90 and committed; the PDFs embed
 those JPEGs as they are.
+
+## The operations dashboard
+
+Three views, from now to history. All of them are built on Application Insights.
+
+| View | Where | Shows |
+|---|---|---|
+| Live dashboard | Web client, **Dashboard** button (only for the `Dashboard.View` role, given to the deployer) | Users active in the last 5 minutes, messages today, first text per backend, each turn as it happens with its tools, knowledge bases, timings and estimated cost, and the prompt when **Show prompts** is on |
+| Live Metrics | Application Insights, or the dashboard's **Live Metrics** link | Requests, response times and failures this second |
+| Workbook | Azure portal, **Voltrieve operations** in the resource group, or the dashboard's **History** link | Users per day, a map of where they connect from, first text median and p95 per backend, share over 10 s, tools, knowledge bases, outcomes, estimated cost per day and month against the 990 SEK budget, errors, cold starts, and a privacy check |
+
+**What is stored.** Each turn adds attributes to its `chat.turn` span: OpenTelemetry GenAI names
+(`gen_ai.request.model`, `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`) and
+`voltrieve.*` names for the rest (backend, a pseudonym for the user, outcome, timings, tools,
+knowledge bases, tokens, estimated cost, cold start). No prompt, answer, user name or object id.
+The workbook's privacy check lists every attribute name and its longest value.
+
+**Prompts are live only.** The API keeps the last 50 turns in memory. Prompts are masked (email
+addresses, phone numbers and personal identity numbers) and sent only to a dashboard with
+**Show prompts** switched on. A restart forgets them. Leave the switch off when the screen is
+shown to an audience unless the people asking know.
+
+**Add it to your own solution.**
+1. Put the same attributes on one span per turn (any OpenTelemetry exporter to Application
+   Insights). The GenAI names are the standard ones; rename the `voltrieve.*` ones in
+   `infra/workbooks/build_operations.py` to yours.
+2. Deploy `infra/modules/dashboard-workbook.bicep` with your Application Insights resource id.
+3. Switch on Live Metrics (`enable_live_metrics=True` in `configure_azure_monitor`).
+4. The live prompt feed is the one custom part: `api/app/insights.py` (`LiveFeed`),
+   `GET /admin/live` in `api/app/routes.py` and `clients/web/src/components/Dashboard.tsx`.
+   Leave it out if you do not want prompts on screen.
+
+**When a number looks wrong.**
+- *No data in the workbook:* telemetry needs `APPLICATIONINSIGHTS_CONNECTION_STRING` on the API,
+  and Application Insights takes a few minutes to show new spans.
+- *Cost looks low:* it is an estimate from token counts and the price table in
+  `api/app/insights.py`. The prompt agent does not report Search reasoning tokens. Fixed costs
+  are in Cost Management.
+- *The live dashboard is empty after a while:* the API scales to zero when idle, and the feed lives
+  in its memory. The first question wakes it (a cold start, counted in the workbook).
+- *No map:* Application Insights derives the location from the client address; requests from
+  inside Azure have none.

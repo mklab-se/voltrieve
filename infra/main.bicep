@@ -71,6 +71,16 @@ module monitoring 'modules/monitoring.bicep' = {
   }
 }
 
+module dashboardWorkbook 'modules/dashboard-workbook.bicep' = {
+  scope: rg
+  params: {
+    name: 'voltrieve-${token}'
+    location: location
+    appInsightsId: monitoring.outputs.appInsightsId
+    tags: tags
+  }
+}
+
 module foundry 'modules/foundry.bicep' = {
   scope: rg
   params: {
@@ -418,6 +428,8 @@ output AZURE_CONTAINER_REGISTRY_ENDPOINT string = registry.outputs.loginServer
 output AZURE_CONTAINER_REGISTRY_NAME string = registry.outputs.name
 output CONTAINER_APPS_ENVIRONMENT_ID string = containerAppsEnv.outputs.id
 output APPLICATIONINSIGHTS_CONNECTION_STRING string = monitoring.outputs.appInsightsConnectionString
+output APPLICATIONINSIGHTS_ID string = monitoring.outputs.appInsightsId
+output DASHBOARD_WORKBOOK_ID string = dashboardWorkbook.outputs.id
 output DEALER_URL string = dealerApp.outputs.url
 output DEALER_PRINCIPAL_ID string = dealerApp.outputs.principalId
 output HOSTED_AGENT_NAME string = hostedAgentName
