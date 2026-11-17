@@ -47,13 +47,15 @@ def test_the_assistant_is_runa_and_says_it_is_an_ai():
 
     for text in (AGENT_INSTRUCTIONS, PROMPT_AGENT_INSTRUCTIONS):
         flat = " ".join(text.split())
-        assert flat.startswith("You are Runa, the assistant for Voltrieve electric vehicles. You are an AI")
-        assert "never claim to be a person" in flat
+        assert flat.startswith("You are Runa, the assistant for Voltrieve electric vehicles.")
+        assert "You are an AI: say so when asked, and never claim to be a person." in flat
 
 
 def test_questions_about_the_assistant_need_no_search():
+    # Kept out of the routing list: put there, it moved parts questions to both sources (8 of 8
+    # right before, 2 of 6 after, own loop).
     from voltrieve_agent.instructions import AGENT_INSTRUCTIONS, PROMPT_AGENT_INSTRUCTIONS
 
     for text in (AGENT_INSTRUCTIONS, PROMPT_AGENT_INSTRUCTIONS):
         flat = " ".join(text.split())
-        assert "questions about you, such as your name" in flat
+        assert "Questions about you, such as your name, need no search." in flat
