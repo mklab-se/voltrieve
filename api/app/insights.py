@@ -33,7 +33,9 @@ USD_TO_SEK = 10.5  # a fixed rate: the estimate is for trends, not the bill
 PROMPT_LIMIT = 240
 _EMAIL = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
 _ID_NUMBER = re.compile(r"\b(?:19|20)?\d{6}[-+]?\d{4}\b")  # Swedish personal identity number
-_PHONE = re.compile(r"(?:\+\d{1,3}[\s-]?)?(?:\(?\d{1,4}\)?[\s-]?){2,5}\d{2,4}")
+# A phone number starts with + or 0 (070-123 45 67, +46 70 123 45 67): prices, dates and part
+# numbers do not, so they stay readable.
+_PHONE = re.compile(r"(?:\+\d|\b0\d)[\d\s()-]{5,18}\d")
 
 
 def pseudonym(oid: str) -> str:
@@ -44,8 +46,8 @@ def pseudonym(oid: str) -> str:
 def mask_prompt(text: str) -> str:
     """The prompt as the live feed may show it: contact details and id numbers replaced."""
     masked = _EMAIL.sub("[email]", text)
+    masked = _PHONE.sub(lambda m: "[phone]" if sum(c.isdigit() for c in m[0]) >= 8 else m[0], masked)
     masked = _ID_NUMBER.sub("[id number]", masked)
-    masked = _PHONE.sub(lambda m: "[phone]" if sum(c.isdigit() for c in m[0]) >= 7 else m[0], masked)
     masked = " ".join(masked.split())
     return masked if len(masked) <= PROMPT_LIMIT else masked[:PROMPT_LIMIT] + "…"
 
@@ -84,6 +86,7 @@ class TurnSummary:
     search_reasoning_tokens: int
     cost_sek: float | None
     cold_start: bool = False
+    kind: str = "message"  # message, or tool_results: a client tool round of an earlier message
 
     def span_attributes(self) -> dict:
         """OpenTelemetry GenAI names where one exists, voltrieve.* for the rest. No text."""
@@ -102,6 +105,7 @@ class TurnSummary:
             "voltrieve.cached_tokens": self.cached_tokens,
             "voltrieve.search_reasoning_tokens": self.search_reasoning_tokens,
             "voltrieve.cold_start": self.cold_start,
+            "voltrieve.kind": self.kind,
         }
         optional = {
             "voltrieve.error_code": self.error_code,
@@ -130,6 +134,7 @@ class TurnRecorder:
     user: str
     clock: Callable[[], float] = time.perf_counter
     cold_start: bool = False
+    kind: str = "message"
     _start: float = field(init=False)
     _first_status: float | None = field(default=None, init=False)
     _first_text: float | None = field(default=None, init=False)
@@ -186,7 +191,7 @@ class TurnRecorder:
                 ms(self._first_status), ms(self._first_text), ms(end) or 0, self._model_calls,
                 list(self._tools), list(self._kbs), self._usage.get("input_tokens", 0), cached,
                 self._usage.get("output_tokens", 0), self._planning[2],
-                estimate_cost_sek(self.model, self._usage, *self._planning), self.cold_start,
+                estimate_cost_sek(self.model, self._usage, *self._planning), self.cold_start, self.kind,
             )
         return self._summary
 
@@ -230,6 +235,9 @@ class LiveFeed:
             if queue.qsize() < 200:  # a stalled dashboard never grows memory without bound
                 queue.put_nowait(_view(merged, show))
         return merged
+
+    def has(self, turn_id: str) -> bool:
+        return turn_id in self._entries
 
     def recent(self, show_prompts: bool) -> list[dict]:
         return [_view(e, show_prompts) for e in self._entries.values()]

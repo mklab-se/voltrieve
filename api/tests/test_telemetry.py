@@ -203,3 +203,42 @@ async def test_turn_telemetry_never_reaches_the_logs_with_the_prompt(client, aut
     finally:
         logging.getLogger("app").removeHandler(handler)
     assert "PROMPT-TEXT-MARKER" not in json.dumps(handler.lines)
+
+
+async def test_a_client_tool_round_keeps_the_prompt_on_the_live_feed(app_with_feed):
+    feed, service_start = app_with_feed
+    service_start("t1", "Honk the horn three times")
+    service_start("t1", [{"type": "function_call_output", "call_id": "c", "output": "ok"}])
+    [entry] = feed.recent(show_prompts=True)
+    assert entry["prompt"] == "Honk the horn three times" and entry["kind"] == "message"
+    assert feed.summary()["turns"] == 1
+
+
+async def test_an_expired_turn_never_reaches_the_live_feed(app_with_feed):
+    feed, service_start = app_with_feed
+    service_start("made-up-turn-id", "", turn_expired=True)
+    assert feed.recent(show_prompts=True) == [] and feed.summary()["turns"] == 0
+
+
+def test_the_api_trusts_forwarded_client_addresses_from_the_ingress():
+    """Application Insights derives the map location from the client address, which only the
+    Container Apps ingress knows (X-Forwarded-For)."""
+    from pathlib import Path
+
+    dockerfile = (Path(__file__).parents[1] / "Dockerfile").read_text()
+    assert "--forwarded-allow-ips" in dockerfile
+
+
+@pytest.fixture
+def app_with_feed(app):
+    """Start jobs straight on the turn service and look at its live feed."""
+    from app.auth import Claims
+    from app.turns import Job
+
+    service = app.state.turns
+    claims = Claims(oid="oid-anna", username="anna@example.com", roles=["Chat.User"])
+
+    def start(turn_id, user_input, turn_expired=False):
+        service.start(Job(claims, "loop", "conv_1", turn_id, user_input, turn_expired=turn_expired))
+
+    return service.feed, start

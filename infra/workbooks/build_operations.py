@@ -23,9 +23,18 @@ TURNS = """dependencies
     model_calls = toint(customDimensions["voltrieve.model_calls"]),
     input_tokens = toint(customDimensions["gen_ai.usage.input_tokens"]),
     output_tokens = toint(customDimensions["gen_ai.usage.output_tokens"]),
-    cold_start = tostring(customDimensions["voltrieve.cold_start"]) == "True"
+    cold_start = tostring(customDimensions["voltrieve.cold_start"]) == "True",
+    kind = tostring(customDimensions["voltrieve.kind"])
 | where "{Backend}" == "all" or backend == "{Backend}"
 """
+
+# A message from a user. A client tool round of the same turn (kind tool_results) is a separate
+# request: it carries tokens and cost, but it is not a new turn, and its first text is measured
+# from when the tool results arrived, so it stays out of turn counts and speed.
+MESSAGES = TURNS + """| where kind == "message"
+"""
+
+MONTH = {"durationMs": 2678400000}  # 31 days: the month tile filters to the calendar month itself
 
 BUDGET_SEK = 990
 
@@ -34,13 +43,15 @@ def text(markdown: str) -> dict:
     return {"type": 1, "content": {"json": markdown}}
 
 
-def query(title: str, kql: str, visualization: str, width: str = "100", size: int = 0, **extra) -> dict:
+def query(title: str, kql: str, visualization: str, width: str = "100", size: int = 0,
+          time_context: dict | None = None, **extra) -> dict:
+    timing = {"timeContext": time_context} if time_context else {"timeContextFromParameter": "TimeRange"}
     content = {
         "version": "KqlItem/1.0",
         "query": kql,
         "size": size,
         "title": title,
-        "timeContextFromParameter": "TimeRange",
+        **timing,
         "queryType": 0,
         "resourceType": "microsoft.insights/components",
         "visualization": visualization,
@@ -49,8 +60,8 @@ def query(title: str, kql: str, visualization: str, width: str = "100", size: in
     return {"type": 3, "content": content, "customWidth": width}
 
 
-def tiles(title: str, kql: str) -> dict:
-    return query(title, kql, "tiles", tileSettings={
+def tiles(title: str, kql: str, **extra) -> dict:
+    return query(title, kql, "tiles", **extra, tileSettings={
         "titleContent": {"columnMatch": "metric", "formatter": 1},
         "leftContent": {"columnMatch": "value", "formatter": 12, "formatOptions": {"palette": "auto"},
                         "numberFormat": {"unit": 0, "options": {"maximumFractionDigits": 2}}},
@@ -81,32 +92,35 @@ def workbook() -> dict:
              "and list prices, not the bill. Users are counted by pseudonym; prompts and answers are never "
              "stored."),
         parameters(),
-        tiles("At a glance", TURNS + f"""| summarize users = dcount(user), turns = count(),
-    first_text = percentile(first_text, 50), cost = sum(cost)
+        tiles("At a glance", TURNS + f"""| summarize users = dcount(user), turns = countif(kind == "message"),
+    first_text = percentileif(first_text, 50, kind == "message"), cost = sum(cost)
 | project pack = pack_array(
     pack("metric", "Users", "value", todouble(users), "note", "distinct pseudonyms"),
-    pack("metric", "Turns", "value", todouble(turns), "note", "requests to the Web API"),
+    pack("metric", "Messages", "value", todouble(turns), "note", "questions to the assistant"),
     pack("metric", "First text, median (s)", "value", round(first_text, 2), "note", "seconds"),
     pack("metric", "Estimated cost (SEK)", "value", round(cost, 2), "note", "estimate, not the bill"))
 | mv-expand pack
 | project metric = tostring(pack.metric), value = todouble(pack.value), note = tostring(pack.note)"""),
         text("## Users"),
-        query("Users and turns per day", TURNS + """| summarize users = dcount(user), turns = count() by bin(timestamp, 1d)
+        query("Users and turns per day", MESSAGES + """| summarize users = dcount(user), turns = count() by bin(timestamp, 1d)
 | order by timestamp asc""", "barchart", "50"),
-        query("Where users connect from", """requests
-| where name has "chat"
+        query("Where users connect from", """dependencies
+| where name == "chat.turn"
+| where "{Backend}" == "all" or tostring(customDimensions["voltrieve.backend"]) == "{Backend}"
+| project operation_Id, user = tostring(customDimensions["voltrieve.user"])
+| join kind=inner (requests | where name has "chat" | project operation_Id, client_CountryOrRegion, client_City) on operation_Id
 | where isnotempty(client_CountryOrRegion)
-| summarize turns = count(), users = dcount(user_Id) by country = client_CountryOrRegion, city = client_City""",
+| summarize turns = count(), users = dcount(user) by country = client_CountryOrRegion, city = client_City""",
               "map", "50", mapSettings={
                   "locInfo": "CountryRegion", "locInfoColumn": "country", "sizeSettings": "turns",
                   "sizeAggregation": "Sum", "legendMetric": "turns", "legendAggregation": "Sum",
                   "itemColorSettings": {"type": "heatmap", "colorAggregation": "Sum", "nodeColorField": "turns",
                                         "heatmapPalette": "greenRed"}}),
         text("## Speed"),
-        query("First text per backend, median and p95 (s)", TURNS + """| where isnotnull(first_text)
+        query("First text per backend, median and p95 (s)", MESSAGES + """| where isnotnull(first_text)
 | summarize p50 = percentile(first_text, 50), p95 = percentile(first_text, 95) by backend, bin(timestamp, 1h)
 | order by timestamp asc""", "timechart", "60"),
-        query("Speed per backend", TURNS + """| summarize turns = count(),
+        query("Speed per backend", MESSAGES + """| summarize turns = count(),
     first_text_p50 = round(percentile(first_text, 50), 2), first_text_p95 = round(percentile(first_text, 95), 2),
     total_p50 = round(percentile(total, 50), 2),
     over_10_s = round(100.0 * countif(first_text > 10 or (isnull(first_text) and total > 10)) / count(), 1)
@@ -132,13 +146,14 @@ def workbook() -> dict:
         query("Estimated cost per day (SEK)", TURNS + """| summarize cost_sek = sum(cost) by backend, bin(timestamp, 1d)
 | order by timestamp asc""", "barchart", "60"),
         tiles("This month against the budget", TURNS + f"""| where timestamp >= startofmonth(now())
-| summarize cost = sum(cost), turns = count()
+| summarize cost = sum(cost), turns = countif(kind == "message")
 | project pack = pack_array(
     pack("metric", "Estimated token cost this month (SEK)", "value", round(cost, 2), "note", "estimate"),
     pack("metric", "Monthly budget (SEK)", "value", {BUDGET_SEK}.0, "note", "all Azure costs, see Cost Management"),
-    pack("metric", "Cost per turn (öre)", "value", round(100.0 * cost / max_of(turns, 1), 2), "note", "estimate"))
+    pack("metric", "Cost per message (öre)", "value", round(100.0 * cost / max_of(turns, 1), 2), "note", "estimate"))
 | mv-expand pack
-| project metric = tostring(pack.metric), value = todouble(pack.value), note = tostring(pack.note)"""),
+| project metric = tostring(pack.metric), value = todouble(pack.value), note = tostring(pack.note)""",
+              time_context=MONTH),
         text("## Health"),
         query("Errors and cold starts per day", TURNS + """| summarize errors = countif(outcome == "error"), cold_starts = countif(cold_start)
     by bin(timestamp, 1d)

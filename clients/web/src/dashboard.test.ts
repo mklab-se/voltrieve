@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildLiveRequest, canViewDashboard, feedReducer, initialFeed, stats, type FeedTurn } from "./dashboard";
+import { buildLiveRequest, canViewDashboard, feedReducer, initialFeed, pageFromUrl, stats, urlForPage, type FeedTurn } from "./dashboard";
 
 function token(payload: object): string {
   const b64 = (o: object) => btoa(JSON.stringify(o)).replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_");
@@ -72,5 +72,15 @@ describe("buildLiveRequest", () => {
     const on = buildLiveRequest("https://api", "tok", true);
     expect(on.url).toBe("https://api/admin/live?prompts=true");
     expect((on.init.headers as Record<string, string>).Authorization).toBe("Bearer tok");
+  });
+});
+
+describe("pageFromUrl and urlForPage", () => {
+  it("opens the dashboard from ?view=dashboard and keeps other query values", () => {
+    expect(pageFromUrl("?view=dashboard")).toBe("dashboard");
+    expect(pageFromUrl("")).toBe("chat");
+    expect(pageFromUrl("?view=other")).toBe("chat");
+    expect(urlForPage("https://app/?x=1", "dashboard")).toBe("https://app/?x=1&view=dashboard");
+    expect(urlForPage("https://app/?view=dashboard&x=1", "chat")).toBe("https://app/?x=1");
   });
 });

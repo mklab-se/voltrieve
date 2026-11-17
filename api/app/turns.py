@@ -222,12 +222,20 @@ class TurnService:
         """
         cold, self._cold = self._cold, False
         user = pseudonym(job.claims.oid)
-        run = _Run(TurnRecorder(job.backend, self._model, user, cold_start=cold))
-        prompt = mask_prompt(job.input) if isinstance(job.input, str) else None
-        self.feed.publish({
-            "turn_id": job.turn_id, "user": user, "backend": job.backend, "prompt": prompt,
-            "kind": "message" if prompt is not None else "tool_results", "outcome": "running",
-        })
+        kind = "message" if isinstance(job.input, str) else "tool_results"
+        # An expired turn runs nothing, and its turn id is client input: it stays off the feed.
+        recorder = None if job.turn_expired else TurnRecorder(job.backend, self._model, user, cold_start=cold, kind=kind)
+        run = _Run(recorder)
+        if job.turn_expired:
+            pass  # nothing to show
+        elif kind == "tool_results" and self.feed.has(job.turn_id):
+            # A client tool round of a turn already on the feed: keep its prompt.
+            self.feed.publish({"turn_id": job.turn_id, "outcome": "running"})
+        else:
+            self.feed.publish({
+                "turn_id": job.turn_id, "user": user, "backend": job.backend, "kind": kind,
+                "prompt": mask_prompt(job.input) if kind == "message" else None, "outcome": "running",
+            })
         # A turn_expired job runs nothing, and its conversation id is unvalidated client input.
         if job.conversation_id is not None and not job.turn_expired:
             self._running[job.conversation_id] = run

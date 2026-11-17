@@ -108,3 +108,18 @@ def test_live_feed_counts_active_users_in_a_window():
     assert feed.active_users(window=300) == 2
     now[0] += 301
     assert feed.active_users(window=300) == 0
+
+
+def test_mask_prompt_keeps_dates_prices_and_part_numbers():
+    text = "Book a test drive on 2026-11-17, budget 1 299 000 kr, part VP-15896, tyre 245/45 R20"
+    assert mask_prompt(text) == text
+
+
+def test_mask_prompt_masks_swedish_mobile_numbers_in_common_forms():
+    for number in ("0701234567", "070-123 45 67", "070 - 123 45 67", "+46701234567", "+46 70 123 45 67"):
+        assert mask_prompt(f"call {number} please") == "call [phone] please", number
+
+
+def test_span_attributes_carry_the_kind_of_request():
+    rec = TurnRecorder("loop", "gpt-6.1-terra", "u", kind="tool_results")
+    assert rec.finish().span_attributes()["voltrieve.kind"] == "tool_results"
