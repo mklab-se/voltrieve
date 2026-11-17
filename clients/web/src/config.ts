@@ -5,6 +5,9 @@ export interface AppConfig {
   scope: string;
   /** Dev-only mock sign-in; always false in production builds. */
   fakeAuth: boolean;
+  /** Optional portal links on the dashboard. */
+  liveMetricsUrl?: string;
+  workbookUrl?: string;
 }
 
 export type ConfigResult = { ok: true; config: AppConfig } | { ok: false; missing: string[] };
@@ -27,6 +30,8 @@ export function readConfig(env: Env, isDev: boolean): ConfigResult {
       clientId: env.VITE_ENTRA_CLIENT_ID?.trim() ?? "",
       scope: env.VITE_API_SCOPE?.trim() ?? "",
       fakeAuth,
+      liveMetricsUrl: env.VITE_LIVE_METRICS_URL?.trim() || undefined,
+      workbookUrl: env.VITE_WORKBOOK_URL?.trim() || undefined,
     },
   };
 }

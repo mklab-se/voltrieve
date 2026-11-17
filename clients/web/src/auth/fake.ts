@@ -22,7 +22,9 @@ export function createFakeAuth(): Auth {
       location.reload();
     },
     async getToken() {
-      return "dev-fake-token";
+      // Unsigned and dev only: shaped like a JWT so the dashboard role can be shown locally.
+      const payload = btoa(JSON.stringify({ roles: ["Chat.User", "Dashboard.View"] })).replace(/=+$/, "");
+      return `dev.${payload}.fake`;
     },
   };
 }

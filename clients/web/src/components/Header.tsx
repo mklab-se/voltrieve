@@ -18,9 +18,12 @@ interface Props {
   onToggleGauge: () => void;
   onNewChat: () => void;
   busy: boolean;
+  /** Shown only to holders of Dashboard.View. */
+  onToggleDashboard?: () => void;
+  dashboardOn?: boolean;
 }
 
-export function Header({ backend, onBackend, session, onSignOut, theme, onToggleTheme, gaugeOn, onToggleGauge, onNewChat, busy }: Props) {
+export function Header({ backend, onBackend, session, onSignOut, theme, onToggleTheme, gaugeOn, onToggleGauge, onNewChat, busy, onToggleDashboard, dashboardOn }: Props) {
   return (
     <header className="topbar">
       <div className="brand">
@@ -46,6 +49,11 @@ export function Header({ backend, onBackend, session, onSignOut, theme, onToggle
         ))}
       </div>
       <div className="actions">
+        {onToggleDashboard && (
+          <button className="ghost" aria-pressed={dashboardOn} onClick={onToggleDashboard} title="The live operations dashboard">
+            {dashboardOn ? "Chat" : "Dashboard"}
+          </button>
+        )}
         <button className="ghost" onClick={onNewChat} disabled={busy}>
           New chat
         </button>

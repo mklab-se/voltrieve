@@ -96,6 +96,36 @@ async function turn(res, body, backend) {
   send("done", { conversation_id, turn_id, backend, usage: { prompt_tokens: 1840, completion_tokens: 62, total_tokens: 1902 } });
 }
 
+// GET /admin/live: a made-up stream of turns, so the dashboard can be seen without Azure.
+const SAMPLE = [
+  ["loop", "What does the Fjord Plus AWD cost in Heath?", ["search_voltrieve_docs"], ["voltrieve-kb"]],
+  ["prompt", "I've broken my right side mirror on my Spark. In stock in Stockholm?", ["search_spare_parts", "check_part_stock"], ["voltrieve-parts-kb"]],
+  ["hosted", "Which winter tyres fit my Fjord Plus?", ["search_spare_parts"], ["voltrieve-parts-kb"]],
+  ["loop", "What are your opening hours?", ["get_curated_answer"], []],
+  ["hosted", "Call me on [phone] about a test drive of the Atlas", ["book_test_drive"], []],
+];
+function liveFeed(req, res, prompts) {
+  res.writeHead(200, { ...CORS, "Content-Type": "text/event-stream", "Cache-Control": "no-cache" });
+  const send = (event, data) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  let n = 0;
+  send("summary", { active_users: 3, turns: 41 });
+  const timer = setInterval(() => {
+    const [backend, prompt, tools, kbs] = SAMPLE[n % SAMPLE.length];
+    const turn_id = `mock-${n++}`;
+    const at = Date.now() / 1000;
+    send("turn", { turn_id, at, user: randomUUID().slice(0, 12), backend, prompt: prompts ? prompt : null, kind: "message", outcome: "running" });
+    setTimeout(() => {
+      const first = backend === "hosted" ? 7000 + Math.random() * 3000 : 1500 + Math.random() * 2500;
+      send("turn", {
+        turn_id, outcome: tools[0] === "get_curated_answer" ? "curated" : "answered", first_text_ms: Math.round(first),
+        duration_ms: Math.round(first + 1500), tools, knowledge_bases: kbs, cost_sek: 0.02 + Math.random() * 0.08,
+      });
+      send("summary", { active_users: 2 + (n % 3), turns: 41 + n });
+    }, 1800);
+  }, 2500);
+  req.on("close", () => clearInterval(timer));
+}
+
 createServer(async (req, res) => {
   if (req.method === "OPTIONS") {
     res.writeHead(204, CORS).end();
@@ -106,6 +136,10 @@ createServer(async (req, res) => {
     res.writeHead(200, { ...CORS, "Content-Type": "text/event-stream" });
     res.write(`event: delta\ndata: ${JSON.stringify({ text: "Done." })}\n\n`);
     res.end(`event: done\ndata: ${JSON.stringify({ conversation_id: "conv_mock", turn_id: "t", backend: "loop" })}\n\n`);
+    return;
+  }
+  if (req.method === "GET" && req.url?.startsWith("/admin/live")) {
+    liveFeed(req, res, req.url.includes("prompts=true"));
     return;
   }
   if (req.method !== "POST" || req.url !== "/chat") {

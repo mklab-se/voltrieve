@@ -92,6 +92,10 @@ export function Chat({ state, busy, gauge, onSend }: Props) {
           Send
         </button>
       </form>
+      <p className="privacy-note">
+        You are talking to an AI assistant. During demos, questions may be shown on a live screen, with contact
+        details masked. They are not stored.
+      </p>
     </section>
   );
 }
