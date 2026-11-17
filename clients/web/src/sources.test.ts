@@ -67,6 +67,26 @@ describe("linkCitations", () => {
     expect(linkCitations(text, [SPECS])).toBe(text);
   });
 
+  it("leaves a title in a code span alone, so the markdown stays code", () => {
+    const text = "Air suspension (`voltrieve-fjord-brochure.pdf`).";
+    expect(linkCitations(text, [BROCHURE])).toBe(text);
+  });
+
+  it("uses the same boundaries as the API", () => {
+    for (const text of [
+      "see voltrieve-fjord-brochure.pdf.md here",
+      "https://x.example/a?f=voltrieve-fjord-brochure.pdf",
+      "voltrieve-fjord-brochure.pdf-old",
+    ]) {
+      expect(linkCitations(text, [BROCHURE])).toBe(text);
+    }
+    expect(linkCitations("End voltrieve-fjord-brochure.pdf.", [BROCHURE])).toContain("](#source=");
+  });
+
+  it("ignores a malformed href instead of throwing", () => {
+    expect(sourceFromHref("#source=%E0%A4")).toBeUndefined();
+  });
+
   it("reads the id back from the href", () => {
     expect(sourceFromHref("#source=voltrieve-fjord-brochure.pdf")).toBe("voltrieve-fjord-brochure.pdf");
     expect(sourceFromHref("https://example.com")).toBeUndefined();

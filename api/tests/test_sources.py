@@ -351,3 +351,81 @@ async def test_no_sas_in_logs_or_spans(sources_client, auth, caplog, monkeypatch
         assert "SECRET" not in str(dict(span.attributes or {}))
         for event in span.events:
             assert "SECRET" not in str(dict(event.attributes or {}))
+
+
+# Review fixes ---------------------------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    "text, cited",
+    [
+        ("Air suspension (`voltrieve-fjord-brochure.pdf`).", ["voltrieve-fjord-brochure.pdf"]),
+        ("See voltrieve-fjord-brochure.pdf-old for history.", []),
+        ("See voltrieve-fjord-brochure.pdf.md here.", ["voltrieve-fjord-brochure.pdf.md"]),
+        ("https://x.example/a?f=voltrieve-fjord-brochure.pdf", []),
+        ("End of sentence voltrieve-fjord-brochure.pdf.", ["voltrieve-fjord-brochure.pdf"]),
+    ],
+)
+def test_citation_boundaries_match_the_web_client(text, cited):
+    assert cited_titles(text) == cited
+
+
+def test_a_title_with_the_filter_delimiter_is_never_queried():
+    from app.sources import SearchDocumentIndex
+
+    class NoCalls:
+        def post(self, path, body):
+            raise AssertionError("queried")
+
+    assert SearchDocumentIndex(NoCalls()).get("a|b.pdf") is None
+    assert SearchDocumentIndex(NoCalls()).find(["a|b.pdf"], []) == []
+
+
+def test_concurrent_signing_fetches_one_delegation_key():
+    import threading
+    import time
+
+    class Slow(FakeBlobService):
+        def get_user_delegation_key(self, key_start_time, key_expiry_time):
+            time.sleep(0.05)
+            return super().get_user_delegation_key(key_start_time, key_expiry_time)
+
+    service = Slow()
+    signer = LinkSigner("stvoltrieve", {"voltrieve-docs"}, service, Clock())
+    errors = []
+
+    def sign():
+        try:
+            signer.sign(FJORD_BROCHURE.path)
+        except Exception as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    threads = [threading.Thread(target=sign) for _ in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert errors == [] and service.calls == 1
+
+
+async def test_a_citation_before_a_client_tool_pause_still_gets_its_source(sources_client, auth, backend):
+    from voltrieve_agent.events import AgentEvent
+    from voltrieve_agent.loop import TurnOutcome
+
+    from tests.conftest import answer
+
+    async def cite_then_pause(ctx, emit):
+        await emit(AgentEvent("delta", {"text": "The Fjord tows 2,000 kg (voltrieve-fjord-brochure.pdf). "}))
+        await emit(AgentEvent("client_tool_calls", {
+            "turn_id": ctx.turn_id, "calls": [{"call_id": "c1", "name": "read_file", "arguments": "{}"}]}))
+        return TurnOutcome("paused", [], {}, ["c1"])
+
+    backend.script += [cite_then_pause, answer("Beeped.")]
+    tools = [{"name": "read_file", "description": "d", "parameters": {"type": "object", "properties": {}}}]
+    first = parse_sse((await sources_client.post(
+        "/chat", json={"message": "tow? then beep", "client_tools": tools}, headers=auth)).text)
+    paused = next(d for n, d in first if n == "client_tool_calls")
+    second = parse_sse((await sources_client.post("/chat/tool-results", json={
+        "conversation_id": paused["conversation_id"], "turn_id": paused["turn_id"],
+        "results": [{"call_id": "c1", "output": "ok"}]}, headers=auth)).text)
+    sources = next(d for n, d in second if n == "sources")
+    assert sources["items"][0]["id"] == "voltrieve-fjord-brochure.pdf"

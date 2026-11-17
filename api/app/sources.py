@@ -11,6 +11,7 @@ import asyncio
 import datetime as dt
 import logging
 import re
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
@@ -25,8 +26,11 @@ KEY_REFRESH_MARGIN = dt.timedelta(minutes=10)
 INDEX_NAMES = ("voltrieve-docs-index", "voltrieve-parts-index")
 DOCS_INDEX = INDEX_NAMES[0]
 
-# A file name as the model cites it, not part of a URL or a path.
-_CITATION = re.compile(r"(?<![\w./:-])([A-Za-z0-9][A-Za-z0-9_-]*(?:\.[A-Za-z0-9_-]+)*\.(?:pdf|md|docx))\b")
+# A file name as the model cites it, not part of a URL, a path or a longer name. The web client
+# (clients/web/src/sources.ts) uses the same boundaries, except that it skips code spans.
+_CITATION = re.compile(
+    r"(?<![\w./:=\[-])([A-Za-z0-9][A-Za-z0-9_-]*(?:\.[A-Za-z0-9_-]+)*\.(?:pdf|md|docx))(?![\w-]|\.\w)"
+)
 MODELS = {"spark": "Spark", "lumen": "Lumen", "ragn": "Ragn", "fjord": "Fjord", "atlas": "Atlas"}
 _MODEL = re.compile(r"\b(" + "|".join(MODELS.values()) + r")\b")
 # A sales answer also offers these documents for every model it names.
@@ -133,6 +137,8 @@ _SELECT = "title,source_path,linkable,doc_type,model_slug"
 
 
 def _in(field: str, values: list[str]) -> str:
+    """An OData search.in filter. Quotes are doubled; values holding the delimiter are left out
+    by the callers, never sent."""
     safe = [v for v in values if "|" not in v]
     return f"search.in({field}, '{'|'.join(v.replace(chr(39), chr(39) * 2) for v in safe)}', '|')"
 
@@ -163,6 +169,9 @@ class SearchDocumentIndex:
         return list(documents.values())
 
     def find(self, titles: list[str], models: list[str]) -> list[Document]:
+        titles = [t for t in titles if "|" not in t]
+        if not titles:
+            return []
         found: dict[str, Document] = {}
         for index in self._indexes:
             filter_ = _in("title", titles)
@@ -174,6 +183,8 @@ class SearchDocumentIndex:
         return list(found.values())
 
     def get(self, title: str) -> Document | None:
+        if "|" in title:
+            return None
         for index in self._indexes:
             for d in self._query(index, _in("title", [title])):
                 if d.title == title:
@@ -197,16 +208,17 @@ class LinkSigner:
         self._containers = containers
         self._service = service  # a BlobServiceClient signed in with the API's identity
         self._clock = clock
-        self._key = None
-        self._key_expiry: dt.datetime | None = None
+        self._key: tuple[object, dt.datetime] | None = None  # the key and when it expires
+        self._lock = threading.Lock()  # sign runs in worker threads
 
     def _delegation_key(self, now: dt.datetime):
-        if self._key is None or self._key_expiry - now < KEY_REFRESH_MARGIN:
-            start = now - dt.timedelta(minutes=5)
-            expiry = now + dt.timedelta(hours=KEY_HOURS)
-            self._key = self._service.get_user_delegation_key(key_start_time=start, key_expiry_time=expiry)
-            self._key_expiry = expiry
-        return self._key
+        with self._lock:
+            if self._key is None or self._key[1] - now < KEY_REFRESH_MARGIN:
+                start = now - dt.timedelta(minutes=5)
+                expiry = now + dt.timedelta(hours=KEY_HOURS)
+                key = self._service.get_user_delegation_key(key_start_time=start, key_expiry_time=expiry)
+                self._key = (key, expiry)
+            return self._key[0]
 
     def sign(self, path: str) -> str:
         from azure.storage.blob import BlobSasPermissions, generate_blob_sas
@@ -244,6 +256,7 @@ def build_source_service(settings) -> SourceService | None:
     client = SearchRestClient(
         settings.search_endpoint,
         lambda: credential.get_token("https://search.azure.com/.default").token,
+        timeout=LOOKUP_TIMEOUT_SECONDS,  # a slow Search costs the links, not a worker thread
     )
     signer = None
     containers = {c.strip() for c in settings.source_containers.split(",") if c.strip()}

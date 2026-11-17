@@ -8,19 +8,34 @@ function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/** Make each cited title of a linkable source a markdown link the answer renders as a button. */
+/** Make each cited title of a linkable source a markdown link the answer renders as a button.
+ * Same boundaries as the API (api/app/sources.py): not inside a URL, a path or a longer name.
+ * Code spans and code blocks are left as they are. */
 export function linkCitations(text: string, sources: SourceItem[] | undefined): string {
-  let out = text;
-  for (const s of sources ?? []) {
-    if (s.kind !== "source" || !s.link) continue;
-    const title = new RegExp(`(?<![\\w./:\\[-])${escapeRegExp(s.id)}(?![\\w-])`, "g");
-    out = out.replace(title, `[${s.id}](${HREF_PREFIX}${encodeURIComponent(s.id)})`);
-  }
-  return out;
+  const linkable = (sources ?? []).filter((s) => s.kind === "source" && s.link);
+  if (linkable.length === 0) return text;
+  // Odd pieces are code: a run of backticks, anything but a backtick, the same run again.
+  const pieces = text.split(/(`+[^`]*`+)/);
+  return pieces
+    .map((piece, i) => {
+      if (i % 2 === 1) return piece;
+      let out = piece;
+      for (const s of linkable) {
+        const title = new RegExp(`(?<![\\w./:=\\[\`-])${escapeRegExp(s.id)}(?![\\w\`-]|\\.\\w)`, "g");
+        out = out.replace(title, `[${s.id}](${HREF_PREFIX}${encodeURIComponent(s.id)})`);
+      }
+      return out;
+    })
+    .join("");
 }
 
 export function sourceFromHref(href: string | undefined): string | undefined {
-  return href?.startsWith(HREF_PREFIX) ? decodeURIComponent(href.slice(HREF_PREFIX.length)) : undefined;
+  if (!href?.startsWith(HREF_PREFIX)) return undefined;
+  try {
+    return decodeURIComponent(href.slice(HREF_PREFIX.length));
+  } catch {
+    return undefined; // model text can hold any href: a bad one is just not a source
+  }
 }
 
 /** Ask the API for a short signed link to one document. Each click gets a fresh one. */

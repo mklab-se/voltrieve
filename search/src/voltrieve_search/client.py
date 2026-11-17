@@ -20,8 +20,10 @@ class SearchRestClient:
         endpoint: str,
         token_provider: Callable[[], str],
         api_version: str = DEFAULT_API_VERSION,
+        timeout: float = 60.0,
     ):
         self._endpoint = endpoint.rstrip("/")
+        self._timeout = timeout
         self._token_provider = token_provider
         self._api_version = api_version
 
@@ -49,7 +51,7 @@ class SearchRestClient:
             params={"api-version": self._api_version},
             headers={"Authorization": f"Bearer {self._token_provider()}", **(extra_headers or {})},
             json=body,
-            timeout=60.0,
+            timeout=self._timeout,
         )
         payload = _json_or_empty(response)
         if response.status_code >= 400:

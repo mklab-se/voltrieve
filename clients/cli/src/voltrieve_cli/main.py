@@ -118,6 +118,10 @@ def ask(question: str, backend: BackendOpt = None, json_out: Annotated[bool, typ
         raise typer.Exit(1)
 
 
+def is_open_command(message: str) -> bool:
+    return message == "/open" or message.startswith("/open ")
+
+
 def open_source(client: ApiClient, items: list[dict[str, Any]], command: str) -> str:
     """/open N: open source N of the last answer in the browser. The link is signed when asked
     for and never printed."""
@@ -166,7 +170,7 @@ def chat(backend: BackendOpt = None, az_token: AzOpt = False, gauge: GaugeOpt = 
             if message == "/gauge":
                 view.gauge_on = not view.gauge_on
                 continue
-            if message.startswith("/open"):
+            if is_open_command(message):
                 console.print(Text(open_source(client, view.last_sources, message), style="dim"))
                 continue
             view.erase_input(message)

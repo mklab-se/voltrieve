@@ -56,3 +56,19 @@ def test_cli_search_api_error_exits_1_with_status(monkeypatch, capsys):
     monkeypatch.setitem(cli.SUBCOMMANDS, "index", (boom, "x"))
     assert cli.main(["index"]) == 1
     assert "403" in capsys.readouterr().err
+
+
+def test_a_client_can_have_a_short_timeout(monkeypatch):
+    import httpx
+
+    from voltrieve_search.client import SearchRestClient
+
+    seen = {}
+
+    def fake_request(method, url, **kwargs):
+        seen["timeout"] = kwargs["timeout"]
+        return httpx.Response(200, json={}, request=httpx.Request(method, url))
+
+    monkeypatch.setattr(httpx, "request", fake_request)
+    SearchRestClient("https://s", lambda: "t", timeout=3.0).post("/x", {})
+    assert seen["timeout"] == 3.0
