@@ -34,6 +34,12 @@ class BodyTooLarge(HTTPException):
         super().__init__(413, "Request body too large")
 
 
+def forwarded_client(headers: dict[str, str]) -> str | None:
+    """The client address the Container Apps ingress forwards (the first X-Forwarded-For entry)."""
+    first = headers.get("x-forwarded-for", "").split(",")[0].strip()
+    return first or None
+
+
 class RequestGuard:
     """Pure ASGI middleware: correlation id, request body limit and the access log.
 
@@ -52,6 +58,9 @@ class RequestGuard:
         cid = supplied if CORRELATION_ID_PATTERN.fullmatch(supplied) else str(uuid.uuid4())
         token = correlation_id.set(cid)
         annotate_span(correlation_id=cid)
+        # Application Insights maps the client address to a country and city and masks the address
+        # itself; without it, every request is placed where the Azure region is.
+        annotate_span(**{"client.address": forwarded_client(headers), "http.client_ip": forwarded_client(headers)})
         start = time.perf_counter()
         status = 500
         started = False

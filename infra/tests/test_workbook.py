@@ -24,8 +24,16 @@ def test_month_tile_reads_the_whole_month_not_the_time_range():
 
 def test_speed_and_turn_counts_use_messages_only():
     for title in ("At a glance", "First text per backend, median and p95 (s)", "Speed per backend", "Users and turns per day"):
-        assert 'kind == "message"' in items()[title]["content"]["query"], title
-    assert 'kind == "message"' not in items()["Estimated cost per day (SEK)"]["content"]["query"]
+        assert 'request_kind == "message"' in items()[title]["content"]["query"], title
+    assert 'request_kind == "message"' not in items()["Estimated cost per day (SEK)"]["content"]["query"]
+
+
+def test_no_query_names_a_column_kind():
+    """kind is a KQL keyword: a column named kind fails the whole query (BadArgumentError)."""
+    import re
+
+    for title, item in items().items():
+        assert not re.search(r"(?<!join )(?<!request_)\bkind\s*(==|=)", item["content"]["query"]), title
 
 
 def test_map_counts_users_by_pseudonym():

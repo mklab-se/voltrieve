@@ -24,14 +24,14 @@ TURNS = """dependencies
     input_tokens = toint(customDimensions["gen_ai.usage.input_tokens"]),
     output_tokens = toint(customDimensions["gen_ai.usage.output_tokens"]),
     cold_start = tostring(customDimensions["voltrieve.cold_start"]) == "True",
-    kind = tostring(customDimensions["voltrieve.kind"])
+    request_kind = tostring(customDimensions["voltrieve.kind"])
 | where "{Backend}" == "all" or backend == "{Backend}"
 """
 
-# A message from a user. A client tool round of the same turn (kind tool_results) is a separate
+# A message from a user (request_kind; kind is a KQL keyword). A client tool round of the same turn (tool_results) is a separate
 # request: it carries tokens and cost, but it is not a new turn, and its first text is measured
 # from when the tool results arrived, so it stays out of turn counts and speed.
-MESSAGES = TURNS + """| where kind == "message"
+MESSAGES = TURNS + """| where request_kind == "message"
 """
 
 MONTH = {"durationMs": 2678400000}  # 31 days: the month tile filters to the calendar month itself
@@ -92,8 +92,9 @@ def workbook() -> dict:
              "and list prices, not the bill. Users are counted by pseudonym; prompts and answers are never "
              "stored."),
         parameters(),
-        tiles("At a glance", TURNS + f"""| summarize users = dcount(user), turns = countif(kind == "message"),
-    first_text = percentileif(first_text, 50, kind == "message"), cost = sum(cost)
+        tiles("At a glance", TURNS + f"""| extend message_first_text = iff(request_kind == "message", first_text, real(null))
+| summarize users = dcount(user), turns = countif(request_kind == "message"),
+    first_text = percentile(message_first_text, 50), cost = sum(cost)
 | project pack = pack_array(
     pack("metric", "Users", "value", todouble(users), "note", "distinct pseudonyms"),
     pack("metric", "Messages", "value", todouble(turns), "note", "questions to the assistant"),
@@ -146,7 +147,7 @@ def workbook() -> dict:
         query("Estimated cost per day (SEK)", TURNS + """| summarize cost_sek = sum(cost) by backend, bin(timestamp, 1d)
 | order by timestamp asc""", "barchart", "60"),
         tiles("This month against the budget", TURNS + f"""| where timestamp >= startofmonth(now())
-| summarize cost = sum(cost), turns = countif(kind == "message")
+| summarize cost = sum(cost), turns = countif(request_kind == "message")
 | project pack = pack_array(
     pack("metric", "Estimated token cost this month (SEK)", "value", round(cost, 2), "note", "estimate"),
     pack("metric", "Monthly budget (SEK)", "value", {BUDGET_SEK}.0, "note", "all Azure costs, see Cost Management"),
