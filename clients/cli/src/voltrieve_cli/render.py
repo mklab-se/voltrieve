@@ -29,6 +29,8 @@ from rich.text import Text
 TRACE_LINES = 200
 USER_COLOR = "#0a84ff"
 AGENT_COLOR = "grey50"
+ASSISTANT_NAME = "Runa"  # issue #15: the assistant's name, on every answer bubble
+AGENT_TITLE = f"[bold]{ASSISTANT_NAME}[/bold]"
 # A new time heading after a pause this long, as in Messages.
 QUIET_SECONDS = 600
 # What the live region keeps free for the status line and the turn above it.
@@ -300,8 +302,8 @@ class ChatView:
         options = self.console.options.update(width=width - 4)
         lines = self.console.render_lines(self._markdown(self._answer), options, pad=False)
         if len(lines) <= room:
-            return self._bubble(_Lines(lines), AGENT_COLOR, width)
-        return self._bubble(_Lines(lines[-room:]), AGENT_COLOR, width, title="[dim]…[/dim]")
+            return self._bubble(_Lines(lines), AGENT_COLOR, width, title=AGENT_TITLE)
+        return self._bubble(_Lines(lines[-room:]), AGENT_COLOR, width, title=f"{AGENT_TITLE} [dim]…[/dim]")
 
     def _flush_answer(self) -> None:
         """Print the finished answer into the scrollback."""
@@ -314,9 +316,10 @@ class ChatView:
             return
         body, sources = split_sources(answer)
         content = self._markdown(body)
-        width = self._fit(content, bubble_width(self.console.width))
+        widest = bubble_width(self.console.width)
+        width = min(widest, max(self._fit(content, widest), cell_len(ASSISTANT_NAME) + 6))  # room for the title
         self.console.print()
-        self.console.print(self._bubble(content, AGENT_COLOR, width))
+        self.console.print(self._bubble(content, AGENT_COLOR, width, title=AGENT_TITLE))
         if self.last_sources:
             for line in source_lines(self.last_sources):
                 self.console.print(Text(f"  {line}", style="dim"))

@@ -14,10 +14,10 @@ from rich.text import Text
 from . import auth
 from .api import ApiClient, ApiError, run_turn
 from .config import ConfigError, load_settings
-from .render import USER_COLOR, ChatView, clean, gauge_bar, json_line, source_lines
+from .render import ASSISTANT_NAME, USER_COLOR, ChatView, clean, gauge_bar, json_line, source_lines
 from .tools import tools_for
 
-app = typer.Typer(help="Voltrieve terminal client.", no_args_is_help=True)
+app = typer.Typer(help="Voltrieve terminal client: chat with Runa, the Voltrieve assistant.", no_args_is_help=True)
 err = Console(stderr=True)
 
 
@@ -86,6 +86,9 @@ def ask(question: str, backend: BackendOpt = None, json_out: Annotated[bool, typ
             sys.stdout.write(json_line(name, data) + "\n")
             sys.stdout.flush()
         elif name == "delta":
+            if not status.get("named"):  # the name goes to stderr, so stdout holds only the answer
+                status["named"] = True
+                err.print(f"[dim]{ASSISTANT_NAME}[/dim]")
             out.print(clean(data.get("text", "")), end="", markup=False, highlight=False)
         elif name == "sources" and isinstance(data.get("items"), list):
             sources[:] = [i for i in data["items"] if isinstance(i, dict)]

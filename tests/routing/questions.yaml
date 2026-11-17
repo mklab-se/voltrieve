@@ -15,6 +15,9 @@ questions:
 
   - { id: greeting, group: none, ask: "Good morning!", expect: [] }
   - { id: thanks, group: none, ask: "Thanks, that was all I needed.", expect: [] }
+  - { id: name, group: none, ask: "What's your name?", expect: [], mentions: [Runa] }
+  - { id: who, group: none, ask: "Who am I talking to?", expect: [], mentions: [Runa] }
+  - { id: person, group: none, ask: "Are you a real person?", expect: [], mentions: [AI] }
   - { id: off-topic, group: none, ask: "What is the capital of France?", expect: [] }
   - { id: other-brand, group: none, ask: "Which brake pads fit a Tesla Model 3?", expect: [] }
   - { id: no-model, group: none, ask: "I have a car and I want to change the brakes on the left front side. Which parts do I need?", expect: [] }

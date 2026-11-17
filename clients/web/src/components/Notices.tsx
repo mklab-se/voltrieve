@@ -31,7 +31,7 @@ export function SignIn({ auth, error }: { auth: Auth; error?: string }) {
         <p className="eyebrow">Voltrieve · Flight Recorder</p>
         <h1>Watch an agent work</h1>
         <p>
-          Ask about Voltrieve vehicles and see every hop the agent takes: token check, model calls, retrieval, tools. This
+          Ask Runa about Voltrieve vehicles and see every hop the agent takes: token check, model calls, retrieval, tools. This
           web app has one tool of its own: it can change its theme when you ask.
         </p>
         {error && <p className="notice error">{error}</p>}

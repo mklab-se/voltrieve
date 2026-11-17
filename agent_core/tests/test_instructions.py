@@ -39,3 +39,21 @@ def test_sources_are_cited_by_their_file_name():
 
     for text in (AGENT_INSTRUCTIONS, PROMPT_AGENT_INSTRUCTIONS):
         assert "file name" in text and "voltrieve-fjord-brochure.pdf" in text
+
+
+def test_the_assistant_is_runa_and_says_it_is_an_ai():
+    # Issue #15: a name, never a claim to be a person.
+    from voltrieve_agent.instructions import AGENT_INSTRUCTIONS, PROMPT_AGENT_INSTRUCTIONS
+
+    for text in (AGENT_INSTRUCTIONS, PROMPT_AGENT_INSTRUCTIONS):
+        flat = " ".join(text.split())
+        assert flat.startswith("You are Runa, the assistant for Voltrieve electric vehicles. You are an AI")
+        assert "never claim to be a person" in flat
+
+
+def test_questions_about_the_assistant_need_no_search():
+    from voltrieve_agent.instructions import AGENT_INSTRUCTIONS, PROMPT_AGENT_INSTRUCTIONS
+
+    for text in (AGENT_INSTRUCTIONS, PROMPT_AGENT_INSTRUCTIONS):
+        flat = " ".join(text.split())
+        assert "questions about you, such as your name" in flat

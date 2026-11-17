@@ -15,6 +15,7 @@ API and reads the trace:
   steps     model calls in the turn. Fewer is faster for the user.
   articles  for parts questions, every expected article number is in the answer
   invented  an article number in the answer that does not exist
+  mentions  words the answer must contain, such as the assistant's name, count towards right
 
     uv run tests/routing/check.py [--backends prompt,loop,hosted] [--repeats 3] [--only a,b] [--workers 1]
 
@@ -86,6 +87,7 @@ class Run:
     final: bool = False
     tools: list[str] = field(default_factory=list)  # every server tool the turn called
     expected_tools: list[str] = field(default_factory=list)  # tools the question needs, not searches
+    unmentioned: list[str] = field(default_factory=list)  # words the answer should have had
 
     @property
     def right(self) -> bool:
@@ -94,6 +96,7 @@ class Run:
             and sorted(self.used) == sorted(self.expected)
             and self.topic == self.expected_topic
             and set(self.expected_tools) <= set(self.tools)
+            and not self.unmentioned
         )
 
     @property
@@ -190,6 +193,7 @@ def ask(url, token, backend: str, question: dict, repeat: int, index: dict) -> R
     if turn.error:
         run.error = str(turn.error.get("code"))
     run.answer = turn.text
+    run.unmentioned = [w for w in question.get("mentions", []) if w.lower() not in turn.text.lower()]
     run.first_text_seconds = turn.first_text_seconds
     run.first_status_seconds = turn.first_status_seconds
     read_trace(run, turn)
@@ -246,7 +250,7 @@ def report(runs: list[Run], backends: list[str]) -> str:
             lines.append(
                 f"{r.backend} {r.question} #{r.repeat}: used {r.used}, expected {r.expected}, "
                 f"together {r.together}, articles {r.articles_found}/{r.articles_expected}, "
-                f"invented {r.invented}, error {r.error or 'none'}"
+                f"invented {r.invented}, missing words {r.unmentioned}, error {r.error or 'none'}"
             )
     return "\n".join(lines) + "\n"
 

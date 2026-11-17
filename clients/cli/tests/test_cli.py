@@ -408,3 +408,19 @@ def test_open_is_only_the_command_itself():
 
     assert is_open_command("/open 2") and is_open_command("/open")
     assert not is_open_command("/openai is a company?")
+
+
+def test_ask_names_runa_on_stderr_and_keeps_stdout_for_the_answer(monkeypatch):
+    def handler(request):
+        return httpx.Response(200, text=sse(("delta", {"text": "hi"}),
+                                            ("done", {"conversation_id": "c", "turn_id": "t", "backend": "loop", "usage": {}})))
+
+    monkeypatch.setattr("voltrieve_cli.main._client", lambda b, a: ApiClient("http://api", "t", transport=httpx.MockTransport(handler)))
+    result = CliRunner().invoke(app, ["ask", "q"])
+    assert result.exit_code == 0
+    assert result.stdout.strip() == "hi"
+    assert "Runa" in result.stderr
+
+
+def test_help_introduces_runa():
+    assert "chat with Runa, the Voltrieve assistant" in " ".join(CliRunner().invoke(app, ["--help"]).stdout.split())

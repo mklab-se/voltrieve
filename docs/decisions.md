@@ -70,6 +70,10 @@ The design preferred Microsoft Agent Framework, with the plain OpenAI SDK as the
 
 The core never emits `done`, because only the host knows the backend. `TurnOutcome` carries `failed` status and `client_call_ids`, and terminal events stay single.
 
+### The assistant is called Runa
+
+From runes: written, hidden knowledge, which is what a retrieval assistant brings back. It is a short Swedish first name that fits a Swedish carmaker. Three rules come with the name (issue #15). Runa always says it is an AI and never claims to be a person. Questions about Runa itself need no search, and the routing suite checks that with three questions whose answers must name Runa or say AI. Nothing else changes: no persona, backstory or catchphrases. Its avatar is a glowing rune-shaped V emblem, not a face, for the same reason; `data/design/images/runa/README.md` has the prompt. The code, packages and Azure resources keep the name `voltrieve`.
+
 ### Client tool calls carry the conversation id
 
 `client_tool_calls` includes `conversation_id`, amending design section 8.1. A first-turn client has no other way to learn it.
