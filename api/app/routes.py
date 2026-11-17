@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 
@@ -6,6 +7,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError
+from voltrieve_agent.events import AgentEvent, format_event
 
 from app.auth import AuthError, Claims
 from app.backends import BACKEND_NAMES
@@ -138,12 +140,56 @@ def _stream(request: Request, job: Job) -> StreamingResponse:
     )
 
 
+DASHBOARD_ROLE = "Dashboard.View"
+SUMMARY_SECONDS = 10.0
+
+
+def _live(feed, show_prompts: bool, once: bool):
+    """The dashboard stream: a summary and the recent turns, then each turn as it changes."""
+
+    async def stream():
+        yield format_event(AgentEvent("summary", feed.summary()))
+        for entry in feed.recent(show_prompts):
+            yield format_event(AgentEvent("turn", entry))
+        if once:
+            return
+        queue = feed.subscribe(show_prompts)
+        try:
+            while True:
+                try:
+                    entry = await asyncio.wait_for(queue.get(), SUMMARY_SECONDS)
+                except TimeoutError:
+                    yield format_event(AgentEvent("summary", feed.summary()))
+                    continue
+                yield format_event(AgentEvent("turn", entry))
+        finally:
+            feed.unsubscribe(queue)
+
+    return stream()
+
+
 def build_router() -> APIRouter:
     router = APIRouter()
 
     @router.get("/healthz")
     async def healthz() -> dict:
         return {"status": "ok"}
+
+    @router.get("/admin/live")
+    async def live(
+        request: Request,
+        claims: Claims = Depends(authenticate),
+        prompts: bool = False,
+        once: bool = False,
+    ) -> StreamingResponse:
+        """The live dashboard feed. Prompts are sent, masked, only when asked for."""
+        if DASHBOARD_ROLE not in claims.roles:
+            raise HTTPException(403, "Missing required role")
+        return StreamingResponse(
+            _live(request.app.state.turns.feed, prompts, once),
+            media_type="text/event-stream",
+            headers=SSE_HEADERS,
+        )
 
     @router.post("/chat")
     async def chat(

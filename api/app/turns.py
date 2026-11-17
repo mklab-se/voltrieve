@@ -23,7 +23,8 @@ from app.auth import Claims
 from app.backends import BackendRegistry
 from app.backends.base import ABANDONED_OUTPUT, TurnContext
 from app.logging_setup import bind_log_context, correlation_id
-from app.telemetry import annotate_span, debug_payload, span_event, turn_span
+from app.insights import LiveFeed, TurnRecorder, mask_prompt, pseudonym
+from app.telemetry import annotate_span, debug_payload, set_span_attributes, span_event, turn_span
 
 logger = logging.getLogger(__name__)
 
@@ -153,12 +154,15 @@ class Job:
 class _Run:
     """The events of one request: a queue the response drains, fed by a background task."""
 
-    def __init__(self) -> None:
+    def __init__(self, recorder: TurnRecorder | None = None) -> None:
         self.queue: asyncio.Queue[AgentEvent | None] = asyncio.Queue()
         self._start = time.perf_counter()
         self.held_tool_calls: AgentEvent | None = None
+        self.recorder = recorder
 
     async def emit(self, event: AgentEvent) -> None:
+        if self.recorder is not None:
+            self.recorder.observe(event)
         if event.type == "trace" and "elapsed_ms" not in event.data:
             elapsed = round((time.perf_counter() - self._start) * 1000, 1)
             event = AgentEvent("trace", {**event.data, "elapsed_ms": elapsed})
@@ -197,9 +201,13 @@ class _Run:
 
 
 class TurnService:
-    def __init__(self, store: TurnStore, registry: BackendRegistry):
+    def __init__(self, store: TurnStore, registry: BackendRegistry, feed: LiveFeed | None = None,
+                 model: str = "gpt-6.1-terra"):
         self.store = store
         self._registry = registry
+        self.feed = feed or LiveFeed()
+        self._model = model
+        self._cold = True  # the first turn after the process started
         self._tasks: set[asyncio.Task] = set()
         self._running: dict[str, _Run] = {}  # conversation id -> its running turn
 
@@ -212,7 +220,14 @@ class TurnService:
         The turn is not tied to the response: if the client disconnects, it still runs to
         its end, so the conversation is never left with a function call without output.
         """
-        run = _Run()
+        cold, self._cold = self._cold, False
+        user = pseudonym(job.claims.oid)
+        run = _Run(TurnRecorder(job.backend, self._model, user, cold_start=cold))
+        prompt = mask_prompt(job.input) if isinstance(job.input, str) else None
+        self.feed.publish({
+            "turn_id": job.turn_id, "user": user, "backend": job.backend, "prompt": prompt,
+            "kind": "message" if prompt is not None else "tool_results", "outcome": "running",
+        })
         # A turn_expired job runs nothing, and its conversation id is unvalidated client input.
         if job.conversation_id is not None and not job.turn_expired:
             self._running[job.conversation_id] = run
@@ -249,15 +264,20 @@ class TurnService:
             turn_id=job.turn_id,
             backend=job.backend,
             correlation_id=cid,
-            user_oid=job.claims.oid,
         ):
-            await self._run_job(run, job)
+            try:
+                await self._run_job(run, job)
+            finally:
+                if run.recorder is not None:
+                    summary = run.recorder.finish()
+                    set_span_attributes(summary.span_attributes())
+                    self.feed.publish({"turn_id": job.turn_id, **summary.feed_fields()})
 
     async def _run_job(self, run: _Run, job: Job) -> None:
         oid = job.claims.oid
         conversation_id = job.conversation_id
         bind_log_context(
-            user_oid=oid,
+            user=pseudonym(oid),
             backend=job.backend,
             turn_id=job.turn_id,
             conversation_id=conversation_id or "",
@@ -373,6 +393,8 @@ class TurnService:
             logger.exception("Turn failed")
             if conversation_id:
                 self.store.mark_dirty(conversation_id)
+            if run.recorder is not None:
+                run.recorder.observe(GENERIC_ERROR)
             await run.queue.put(GENERIC_ERROR)
         finally:
             self._release(job.conversation_id, run)

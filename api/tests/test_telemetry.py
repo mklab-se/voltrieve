@@ -10,6 +10,7 @@ from voltrieve_agent.events import AgentEvent, trace
 from voltrieve_agent.loop import TurnOutcome
 
 from app import telemetry
+from app.insights import pseudonym
 from app.backends import BackendRegistry
 from app.logging_setup import JsonFormatter
 from app.main import create_app
@@ -38,7 +39,7 @@ def test_telemetry_starts_with_connection_string(monkeypatch):
     calls = []
     monkeypatch.setattr("azure.monitor.opentelemetry.configure_azure_monitor", lambda **kw: calls.append(kw))
     assert telemetry.configure_telemetry("InstrumentationKey=k") is True
-    assert calls == [{"connection_string": "InstrumentationKey=k", "enable_live_metrics": False}]
+    assert calls == [{"connection_string": "InstrumentationKey=k", "enable_live_metrics": True}]
 
 
 def test_app_starts_with_and_without_connection_string(monkeypatch, validator, backend):
@@ -63,13 +64,19 @@ async def test_turn_span_carries_ids_and_correlation_id(client, auth, backend, s
     )
     done = parse_sse(r.text)[-1][1]
     [span] = [s for s in spans.get_finished_spans() if s.name == "chat.turn"]
-    assert dict(span.attributes) == {
+    attrs = dict(span.attributes)
+    assert {k: attrs[k] for k in ("conversation_id", "turn_id", "backend", "correlation_id")} == {
         "conversation_id": done["conversation_id"],
         "turn_id": done["turn_id"],
         "backend": "loop",
         "correlation_id": "cid-42",
-        "user_oid": "oid-anna",
     }
+    # Users are counted by pseudonym: no object id, no name, no text on the span.
+    assert attrs["voltrieve.user"] == pseudonym("oid-anna")
+    assert attrs["voltrieve.outcome"] == "answered" and attrs["gen_ai.request.model"] == "gpt-6.1-terra"
+    assert attrs["voltrieve.first_text_ms"] >= 0 and attrs["voltrieve.duration_ms"] >= 0
+    assert "user_oid" not in attrs and "oid-anna" not in str(attrs) and "anna@" not in str(attrs)
+    assert "hello" not in str(attrs) and "Hi" not in str(attrs.values())
 
 
 def test_payload_is_truncated_and_only_logged_at_debug(caplog):
@@ -134,7 +141,8 @@ async def test_every_hop_of_a_tool_round_trip_is_a_log_line(client, auth, backen
     called = lines[4]
     assert called["detail"] == "check_stock" and called["elapsed_ms"] >= 0
     assert all(
-        line["backend"] == "loop" and line["user_oid"] == "oid-anna" and line["correlation_id"] == "cid-7"
+        line["backend"] == "loop" and line["user"] == pseudonym("oid-anna") and line["correlation_id"] == "cid-7"
+        and "user_oid" not in line
         for line in lines
     )
     # Arguments and results stay out of info logs.
@@ -159,3 +167,39 @@ async def test_every_hop_is_a_span_event(client, auth, backend, spans):
     assert events["server_tool_called"]["component"] == "tools"
     assert events["server_tool_called"]["detail"] == "check_stock"
     assert "ARG-VALUE" not in json.dumps(events)
+
+
+def _feed_events(text: str) -> list[dict]:
+    return [data for name, data in parse_sse(text) if name == "turn"]
+
+
+async def test_dashboard_needs_the_dashboard_role(client, auth):
+    r = await client.get("/admin/live", params={"once": "true"}, headers=auth)
+    assert r.status_code == 403
+
+
+async def test_dashboard_feed_shows_turns_and_hides_prompts_by_default(client, auth, backend, make_token):
+    backend.script = [answer("Hi")]
+    await client.post("/chat", headers=auth, json={"message": "Call me on 070-123 45 67 about the Fjord"})
+    admin = {"Authorization": f"Bearer {make_token(roles=['Chat.User', 'Dashboard.View'])}"}
+    hidden = await client.get("/admin/live", params={"once": "true"}, headers=admin)
+    assert hidden.status_code == 200
+    [summary] = [data for name, data in parse_sse(hidden.text) if name == "summary"]
+    assert summary["active_users"] == 1 and summary["turns"] == 1
+    [turn] = _feed_events(hidden.text)
+    assert turn["backend"] == "loop" and turn["outcome"] == "answered" and turn["prompt"] is None
+    assert turn["user"] == pseudonym("oid-anna") and turn["duration_ms"] >= 0
+    shown = await client.get("/admin/live", params={"once": "true", "prompts": "true"}, headers=admin)
+    [turn] = _feed_events(shown.text)
+    assert turn["prompt"] == "Call me on [phone] about the Fjord"
+
+
+async def test_turn_telemetry_never_reaches_the_logs_with_the_prompt(client, auth, backend):
+    backend.script = [answer("Hi")]
+    handler = FormattedLines()
+    logging.getLogger("app").addHandler(handler)
+    try:
+        await client.post("/chat", headers=auth, json={"message": "PROMPT-TEXT-MARKER"})
+    finally:
+        logging.getLogger("app").removeHandler(handler)
+    assert "PROMPT-TEXT-MARKER" not in json.dumps(handler.lines)
