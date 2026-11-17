@@ -56,6 +56,12 @@
       "filterable": true,
       "facetable": true,
       "retrievable": true
+    },
+    {
+      "name": "linkable",
+      "type": "Edm.String",
+      "filterable": true,
+      "retrievable": true
     }
   ],
   "vectorSearch": {

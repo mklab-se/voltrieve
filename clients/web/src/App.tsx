@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { bootAuth, type Auth, type AuthSession } from "./auth";
 import { streamChat, streamToolResults } from "./chat";
+import { fetchSourceUrl, openSource } from "./sources";
 import { Chat } from "./components/Chat";
 import { Dashboard } from "./components/Dashboard";
 import { Header } from "./components/Header";
@@ -10,7 +11,7 @@ import { readConfig, type AppConfig } from "./config";
 import { canViewDashboard, pageFromUrl, urlForPage, type Page } from "./dashboard";
 import { runClientTool, toolsFor, type Theme } from "./tools";
 import { chatReducer, initialChatState } from "./turns";
-import type { Backend, ClientToolCall } from "./types";
+import type { Backend, ClientToolCall, SourceItem } from "./types";
 
 // A client tool result can lead to another tool call, but not forever.
 const MAX_TOOL_ROUNDS = 5;
@@ -76,6 +77,7 @@ function Workspace({ config, auth, session }: { config: AppConfig; auth: Auth; s
   const [view, setView] = useState<"chat" | "recorder">("chat");
   const [page, setPage] = useState<Page>(() => pageFromUrl(location.search));
   const [dashboardAllowed, setDashboardAllowed] = useState(false);
+  const [sourceError, setSourceError] = useState<string>();
   const abort = useRef<AbortController | null>(null);
   const conversationId = useRef<string | undefined>(undefined);
   conversationId.current = state.conversationId;
@@ -170,6 +172,15 @@ function Workspace({ config, auth, session }: { config: AppConfig; auth: Auth; s
     [applyTheme, auth, backend, config.apiUrl, gaugeOn],
   );
 
+  function openDocument(source: SourceItem) {
+    if (!source.link) return;
+    const link = source.link;
+    setSourceError(undefined);
+    openSource(async () => fetchSourceUrl(config.apiUrl, await auth.getToken(), link)).catch((e: unknown) =>
+      setSourceError(e instanceof Error ? e.message : "The document could not be opened."),
+    );
+  }
+
   function toggleGauge() {
     const next = !gaugeOn;
     setGaugeOn(next);
@@ -221,7 +232,17 @@ function Workspace({ config, auth, session }: { config: AppConfig; auth: Auth; s
             </button>
           </nav>
           <main className="panes">
-            <Chat state={state} busy={busy} gauge={gaugeOn ? gauge : undefined} onSend={(t) => void send(t)} />
+            <Chat
+              state={state}
+              busy={busy}
+              gauge={gaugeOn ? gauge : undefined}
+              onSend={(t) => {
+                setSourceError(undefined);
+                void send(t);
+              }}
+              onOpenSource={openDocument}
+              sourceError={sourceError}
+            />
             <Recorder state={state} />
           </main>
         </>

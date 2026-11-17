@@ -21,10 +21,19 @@ export interface DoneData {
   usage?: Record<string, unknown> | null;
 }
 
+/** A document an answer used ("source") or suggests ("read_more"). A link is an API path. */
+export interface SourceItem {
+  id: string;
+  title: string;
+  kind: "source" | "read_more";
+  link?: string;
+}
+
 export type ServerEvent =
   | { type: "trace"; data: TraceData }
   | { type: "status"; data: { code: string; message: string } }
   | { type: "delta"; data: { text: string } }
   | { type: "client_tool_calls"; data: { turn_id?: string; conversation_id?: string; calls: ClientToolCall[] } }
+  | { type: "sources"; data: { items: SourceItem[] } }
   | { type: "done"; data: DoneData }
   | { type: "error"; data: { code: string; message: string } };

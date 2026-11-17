@@ -112,3 +112,15 @@ def test_parts_descriptions_name_the_new_catalogs():
         description = json.loads((folder / name).read_text(encoding="utf-8"))["description"]
         for kind in ("tyres", "interior"):
             assert kind in description, (name, kind)
+
+
+def test_both_indexes_carry_a_linkable_flag_from_blob_metadata():
+    for index_file, skillset_file in (("02-index.json", "03-skillset.json"),
+                                      ("08-parts-index.json", "09-parts-skillset.json")):
+        index = json.loads((DEFS / index_file).read_text())
+        field = next(f for f in index["fields"] if f["name"] == "linkable")
+        # Custom blob metadata arrive as text, so the flag is "true" or "false".
+        assert field["type"] == "Edm.String" and field["filterable"] and field["retrievable"]
+        skillset = json.loads((DEFS / skillset_file).read_text())
+        mappings = skillset["indexProjections"]["selectors"][0]["mappings"]
+        assert {"name": "linkable", "source": "/document/linkable"} in mappings

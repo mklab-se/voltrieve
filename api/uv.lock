@@ -1387,6 +1387,7 @@ dependencies = [
     { name = "azure-ai-projects" },
     { name = "azure-identity" },
     { name = "azure-monitor-opentelemetry" },
+    { name = "azure-storage-blob" },
     { name = "fastapi" },
     { name = "httpx" },
     { name = "jsonschema" },
@@ -1411,6 +1412,7 @@ requires-dist = [
     { name = "azure-ai-projects" },
     { name = "azure-identity" },
     { name = "azure-monitor-opentelemetry" },
+    { name = "azure-storage-blob" },
     { name = "fastapi" },
     { name = "httpx" },
     { name = "jsonschema" },
@@ -1437,6 +1439,7 @@ dependencies = [
     { name = "azure-identity" },
     { name = "azure-storage-blob" },
     { name = "httpx" },
+    { name = "pyyaml" },
 ]
 
 [package.metadata]
@@ -1444,6 +1447,7 @@ requires-dist = [
     { name = "azure-identity" },
     { name = "azure-storage-blob" },
     { name = "httpx" },
+    { name = "pyyaml" },
 ]
 
 [package.metadata.requires-dev]

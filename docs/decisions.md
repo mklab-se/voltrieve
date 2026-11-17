@@ -226,6 +226,26 @@ Speed decides as long as quality holds. `gpt-6.1-terra` had the fewest turns ove
 
 All remaining article misses were brake fluid, which only sat among the service items, so a search for brake parts did not reach it. The brake catalog now has a section for consumables, and all 111 article numbers were found on all three backends. Regenerating also brought the catalog in line with the generator: 429 parts, and new article numbers from the old 433.
 
+### Source links cite titles, not numbered markers
+
+Issue #2 proposed `[1]` markers mapped to retrieval references. The model already cites document
+titles, which are file names, on all three backends. The prompt agent searches inside Foundry, so
+the API never sees its references. Reading the titles from the answer works the same on every
+backend and needs no change to the instructions, so the routing results stand. The API looks the
+titles up in the indexes, so an invented title gets no link. Other choices:
+
+- `read_more` is decided by rule, not by the model: the brochure and specifications of every
+  model a sales answer names. It is predictable, costs no model call, and gives every car the
+  same two documents.
+- `GET /sources/{id}` answers with JSON (`url`, `expires_in`) instead of a redirect. A browser
+  cannot send the bearer token on a link it opens, so the client fetches the link and then opens
+  it in a window it opened during the click.
+- `linkable` is a string field, "true" or "false": custom blob metadata reach the index as text.
+  Anything but "true" is not linkable.
+- The plain-text citation stays in the answer, so clients that ignore the event still name the
+  sources.
+- Curated answers carry no sources: they cite nothing.
+
 ## Not recorded or not verified
 
 - Interactive SPA sign-in, and a real browser sign-in with `voltrieve login` (tested against a fake MSAL application).

@@ -18,9 +18,10 @@ from voltrieve_search.retrieve import (
     retrieve,
 )
 from voltrieve_search.smoke import SmokeQuestion, run_smoke
-from voltrieve_search.upload import delete_index_entries, upload_documents
+from voltrieve_search.upload import delete_index_entries, linkable_doc_types, upload_documents
 
 DEFINITIONS_DIR = Path(__file__).parents[2] / "definitions"
+CONFIG = Path(__file__).parents[3] / "data" / "voltrieve.yaml"
 SMOKE_QUESTIONS = Path(__file__).parents[2] / "smoke-questions.json"
 INDEXER_NAMES = ["voltrieve-docs-indexer", "voltrieve-parts-indexer"]
 INDEX_NAMES = {"docs": "voltrieve-docs-index", "parts": "voltrieve-parts-index"}
@@ -70,6 +71,7 @@ def cmd_upload(args: argparse.Namespace) -> int:
     result = upload_documents(
         account_url, containers, Path(args.generated), DefaultAzureCredential(),
         prune=args.prune, dry_run=args.dry_run,
+        linkable_doc_types=linkable_doc_types(CONFIG),
     )
     print(f"uploaded {result.uploaded} documents, {len(result.stale)} stale, {len(result.deleted)} deleted")
     if result.deleted:

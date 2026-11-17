@@ -175,6 +175,30 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
 .answer th, .answer td { padding: 6px 12px 6px 0; border-bottom: 1px solid var(--line); text-align: left; }
 .answer th { font-weight: 650; }
 .meta { font: 11px var(--mono); color: var(--ink-3); }
+
+/* Source links: citations in the text and chips under the answer. Signed on click. */
+.answer .citation {
+  font: inherit; font-style: inherit; color: var(--accent); background: none; border: 0; padding: 0;
+  text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 3px; cursor: pointer;
+}
+.answer .citation:hover { text-decoration-style: solid; }
+.sources { display: grid; gap: 6px; padding-top: 6px; border-top: 1px dashed var(--line); }
+.source-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.source-label { font: 600 10px/1 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); min-width: 76px; }
+.source-chip {
+  font: 13px/1.2 var(--sans); padding: 5px 10px 5px 26px; border-radius: 999px; position: relative;
+  border: 1px solid var(--line); background: var(--surface-2); color: var(--ink); cursor: pointer;
+}
+.source-chip::before {
+  content: ""; position: absolute; left: 10px; top: 50%; width: 9px; height: 11px; transform: translateY(-50%);
+  border: 1.5px solid currentColor; border-radius: 1.5px; opacity: 0.7;
+}
+.source-chip.source { border-color: var(--accent); background: var(--accent-soft); }
+.source-chip.read_more { background: transparent; }
+.source-chip:hover { border-color: var(--accent); color: var(--accent); }
+.source-chip.locked { cursor: default; color: var(--ink-3); background: transparent; border-style: dashed; }
+.source-chip.locked:hover { border-color: var(--line); color: var(--ink-3); }
+.source-error { margin: 0 24px 8px; }
 .thinking { display: flex; gap: 5px; padding: 6px 0; align-items: center; }
 .thinking span { margin-left: 6px; font-size: 0.875rem; color: var(--ink-3); }
 .thinking i { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); animation: pulse 1.2s infinite ease-in-out; }

@@ -12,6 +12,8 @@ class FakeContainer:
     def upload_blob(self, name, handle, overwrite, metadata, content_settings):
         self.events.append(("upload", name))
         self.blobs[name] = content_settings.content_type
+        self.metadata = getattr(self, "metadata", {})
+        self.metadata[name] = metadata
 
     def list_blobs(self):
         return [type("Blob", (), {"name": name})() for name in list(self.blobs)]
@@ -154,3 +156,39 @@ def test_no_index_call_when_nothing_matches():
     search = FakeSearch([])
     assert upload.delete_index_entries(search, "voltrieve-docs-index", ["a.docx"]) == 0
     assert len(search.calls) == 1
+
+
+def test_only_linkable_doc_types_are_marked_linkable(tmp_path, monkeypatch):
+    for n in ("brochure.pdf", "internal.pdf", "catalog.md"):
+        (tmp_path / n).write_bytes(b"x")
+    manifest = [
+        {"file": "brochure.pdf", "doc_type": "brochure", "model_slug": "fjord", "collection": "docs"},
+        {"file": "internal.pdf", "doc_type": "pricing_notes", "model_slug": None, "collection": "docs"},
+        {"file": "catalog.md", "doc_type": "parts", "model_slug": None, "collection": "docs"},
+    ]
+    (tmp_path / "manifest.json").write_text(json.dumps(manifest))
+    FakeService.containers = {}
+    monkeypatch.setattr(upload, "BlobServiceClient", FakeService)
+    upload.upload_documents("https://x", {"docs": "c"}, tmp_path, None, linkable_doc_types={"brochure"})
+    metadata = FakeService.containers["c"].metadata
+    assert metadata["brochure.pdf"]["linkable"] == "true"
+    assert metadata["internal.pdf"]["linkable"] == "false"
+    assert metadata["catalog.md"]["linkable"] == "false"
+
+
+def test_nothing_is_linkable_unless_configured(tmp_path, monkeypatch):
+    (tmp_path / "brochure.pdf").write_bytes(b"x")
+    manifest = [{"file": "brochure.pdf", "doc_type": "brochure", "model_slug": "fjord", "collection": "docs"}]
+    (tmp_path / "manifest.json").write_text(json.dumps(manifest))
+    FakeService.containers = {}
+    monkeypatch.setattr(upload, "BlobServiceClient", FakeService)
+    upload.upload_documents("https://x", {"docs": "c"}, tmp_path, None)
+    assert FakeService.containers["c"].metadata["brochure.pdf"]["linkable"] == "false"
+
+
+def test_the_config_links_customer_documents_and_never_the_parts_catalogs():
+    from pathlib import Path
+
+    linkable = upload.linkable_doc_types(Path(__file__).parents[2] / "data" / "voltrieve.yaml")
+    assert {"brochure", "specifications", "buyers_guide", "service"} <= linkable
+    assert "parts" not in linkable

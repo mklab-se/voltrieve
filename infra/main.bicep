@@ -55,6 +55,7 @@ var searchServiceContributor = '7ca78c08-252a-4471-8644-bb5ff32d4ba0'
 var searchIndexDataContributor = '8ebe5a00-799e-43f5-93ac-243d3dce84a7'
 var storageBlobDataContributor = 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
 var foundryUser = '53ca6127-db72-4b80-b1b0-d745d6d5456d'
+var storageBlobDelegator = 'db58b8e5-c6ad-4a2a-8342-4190687cbf4a'
 
 resource rg 'Microsoft.Resources/resourceGroups@2024-03-01' = {
   name: 'rg-voltrieve-${environmentName}'
@@ -219,6 +220,32 @@ module apiApp 'modules/api-app.bicep' = {
     hostedAgentName: hostedAgentName
     corsOrigins: '${web.outputs.url},http://localhost:5173'
     appInsightsConnectionString: monitoring.outputs.appInsightsConnectionString
+    storageAccountName: storage.outputs.name
+    // Only the documents container: the parts catalogs are internal and never linked.
+    sourceContainers: storage.outputs.docsContainer
+  }
+}
+
+// Source links: the API signs user delegation SAS links to documents users may open. It needs
+// the delegation key on the account and read on the documents container, and nothing more.
+module apiSignsLinks 'modules/role-storage.bicep' = {
+  scope: rg
+  params: {
+    resourceName: storage.outputs.name
+    principalId: apiApp.outputs.principalId
+    roleDefinitionId: storageBlobDelegator
+    principalType: 'ServicePrincipal'
+  }
+}
+
+module apiReadsDocuments 'modules/role-storage-container.bicep' = {
+  scope: rg
+  params: {
+    storageAccountName: storage.outputs.name
+    containerName: storage.outputs.docsContainer
+    principalId: apiApp.outputs.principalId
+    roleDefinitionId: storageBlobDataReader
+    principalType: 'ServicePrincipal'
   }
 }
 

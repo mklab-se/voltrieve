@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     dealer_url: str = ""
     dealer_client_id: str = ""
 
+    # Source links: the account and the containers whose documents users may open.
+    storage_account_name: str = ""
+    source_containers: str = ""  # comma separated
+
     # Backend A: the names of the two prompt agents the API drives.
     prompt_agent_cli: str = "voltrieve-prompt-cli"
     prompt_agent_web: str = "voltrieve-prompt-web"

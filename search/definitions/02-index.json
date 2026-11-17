@@ -17,7 +17,8 @@
     },
     { "name": "source_path", "type": "Edm.String", "filterable": true, "retrievable": true },
     { "name": "model_slug", "type": "Edm.String", "filterable": true, "facetable": true, "retrievable": true },
-    { "name": "doc_type", "type": "Edm.String", "filterable": true, "facetable": true, "retrievable": true }
+    { "name": "doc_type", "type": "Edm.String", "filterable": true, "facetable": true, "retrievable": true },
+    { "name": "linkable", "type": "Edm.String", "filterable": true, "retrievable": true }
   ],
   "vectorSearch": {
     "algorithms": [

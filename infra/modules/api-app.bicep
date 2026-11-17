@@ -19,6 +19,10 @@ param hostedAgentName string
 @description('Comma separated list of allowed browser origins.')
 param corsOrigins string
 param appInsightsConnectionString string
+@description('Storage account whose documents users may open from source links.')
+param storageAccountName string
+@description('Comma separated containers whose documents may be linked. Others are never signed.')
+param sourceContainers string
 
 // The system-assigned identity calls Foundry, Search and the dealer; the user-assigned one only
 // pulls the image. AZURE_CLIENT_ID is deliberately not set, so DefaultAzureCredential picks the
@@ -67,6 +71,8 @@ resource api 'Microsoft.App/containerApps@2026-07-01' = {
             { name: 'FOUNDRY_PROJECT_ENDPOINT', value: foundryProjectEndpoint }
             { name: 'CHAT_DEPLOYMENT', value: chatDeployment }
             { name: 'SEARCH_ENDPOINT', value: searchEndpoint }
+            { name: 'STORAGE_ACCOUNT_NAME', value: storageAccountName }
+            { name: 'SOURCE_CONTAINERS', value: sourceContainers }
             { name: 'PROMPT_AGENT_CLI', value: promptAgentCli }
             { name: 'PROMPT_AGENT_WEB', value: promptAgentWeb }
             { name: 'HOSTED_AGENT_NAME', value: hostedAgentName }

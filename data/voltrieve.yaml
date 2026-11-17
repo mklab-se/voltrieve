@@ -21,6 +21,10 @@ financing:
 electricity:
   SE: { home_per_kwh: 1.8, public_ac_per_kwh: 4.5, public_dc_per_kwh: 6.9 }
   EU: { home_per_kwh: 0.30, public_ac_per_kwh: 0.49, public_dc_per_kwh: 0.69 }
+# Documents users may open from a source link under an answer. Anything else, such as the dealer
+# parts catalogs, never gets a link. Read by voltrieve-search upload into blob metadata.
+documents:
+  linkable: [brochure, price_list, specifications, accessories, buyers_guide, charging_guide, warranty, service]
 price_list_valid_from: 1 November 2026
 warranty:
   vehicle_years: 3

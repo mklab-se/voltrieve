@@ -1,4 +1,4 @@
-import type { Backend, ServerEvent } from "./types";
+import type { Backend, ServerEvent, SourceItem } from "./types";
 
 export type TimelineEntry =
   | { kind: "trace"; step: string; component: string; detail: string; elapsedMs: number }
@@ -17,6 +17,8 @@ export interface Turn {
   entries: TimelineEntry[];
   status: "streaming" | "done" | "error";
   error?: string;
+  /** Documents the answer used, and documents to read more. */
+  sources?: SourceItem[];
   /** Backend that the API reports in its done event. */
   backend?: string;
 }
@@ -99,6 +101,8 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
             })),
             conversationId: ev.data.conversation_id ?? state.conversationId,
           };
+        case "sources":
+          return updateLast(state, (t) => ({ ...t, sources: ev.data.items }));
         case "done":
           return {
             ...updateLast(state, (t) => ({

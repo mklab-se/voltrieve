@@ -99,6 +99,24 @@ def split_sources(text: str) -> tuple[str, list[str]]:
     return re.sub(r"\n{3,}", "\n\n", body), parts
 
 
+def source_lines(items: list[dict[str, Any]], with_open: bool = True) -> list[str]:
+    """Numbered documents under an answer: what it used, then what to read more."""
+    def entry(number: int, item: dict[str, Any]) -> str:
+        title = clean(str(item.get("title") or item.get("id") or ""))
+        return f"{number} {title}" + ("" if item.get("link") else " (internal)")
+
+    numbered = list(enumerate(items, start=1))
+    lines = []
+    for kind, label in (("source", "Sources  "), ("read_more", "Read more")):
+        entries = [entry(n, i) for n, i in numbered if i.get("kind") == kind]
+        if entries:
+            lines.append(f"{label}  " + " · ".join(entries))
+    first = next((n for n, i in numbered if i.get("link")), None)
+    if first is not None and with_open:
+        lines.append(f"/open {first} opens a document in your browser")
+    return lines
+
+
 class _Lines:
     """Lines that were already rendered, so a long answer can show just its tail."""
 
@@ -120,6 +138,8 @@ class ChatView:
         self.gauge_on = gauge_on
         self.trace: deque[str] = deque(maxlen=TRACE_LINES)
         self._answer = ""
+        self._sources: list[dict[str, Any]] = []
+        self.last_sources: list[dict[str, Any]] = []  # numbered for /open
         self._status: str | None = None
         self._status_since = 0.0
         self._last_time_shown = 0.0
@@ -135,6 +155,7 @@ class ChatView:
 
     def __enter__(self) -> "ChatView":
         self._answer = ""
+        self._sources = []
         self._status = None
         if self.is_rich:
             self._live = Live(console=self.console, get_renderable=self.renderable,
@@ -199,6 +220,9 @@ class ChatView:
         elif name == "turn_started":
             self.trace.clear()
             self._log(f"{datetime.now():%H:%M:%S} [client] correlation id {clean(data.get('correlation_id'))}")
+        elif name == "sources":
+            items = data.get("items")
+            self._sources = [i for i in items if isinstance(i, dict)] if isinstance(items, list) else []
         elif name == "done":
             self._status = None
             self._log(clean(f"{datetime.now():%H:%M:%S} done backend={data.get('backend')} usage={data.get('usage')}"))
@@ -282,6 +306,7 @@ class ChatView:
     def _flush_answer(self) -> None:
         """Print the finished answer into the scrollback."""
         answer, self._answer = self._answer.strip(), ""
+        self.last_sources, self._sources = self._sources, []
         if not answer:
             return
         if not self.is_rich:
@@ -292,5 +317,8 @@ class ChatView:
         width = self._fit(content, bubble_width(self.console.width))
         self.console.print()
         self.console.print(self._bubble(content, AGENT_COLOR, width))
-        if sources:
+        if self.last_sources:
+            for line in source_lines(self.last_sources):
+                self.console.print(Text(f"  {line}", style="dim"))
+        elif sources:
             self.console.print(Text(f"  {' · '.join(sources)}", style="dim"))

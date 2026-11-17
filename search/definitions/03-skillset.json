@@ -37,7 +37,8 @@
           { "name": "title", "source": "/document/metadata_storage_name" },
           { "name": "source_path", "source": "/document/metadata_storage_path" },
           { "name": "model_slug", "source": "/document/model_slug" },
-          { "name": "doc_type", "source": "/document/doc_type" }
+          { "name": "doc_type", "source": "/document/doc_type" },
+          { "name": "linkable", "source": "/document/linkable" }
         ]
       }
     ],

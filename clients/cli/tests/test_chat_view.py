@@ -234,3 +234,37 @@ def test_set_gauge_is_only_offered_while_the_gauge_is_on():
     names = lambda gauge_on: [t["name"] for t in tools.tools_for(gauge_on)]
     assert "set_gauge" in names(True)
     assert "set_gauge" not in names(False) and "honk" in names(False)
+
+
+SOURCES = [
+    {"id": "voltrieve-fjord-specifications.pdf", "title": "Fjord specifications", "kind": "source",
+     "link": "/sources/voltrieve-fjord-specifications.pdf"},
+    {"id": "voltrieve-parts-brakes.md", "title": "Parts brakes", "kind": "source"},
+    {"id": "voltrieve-fjord-brochure.pdf", "title": "Fjord brochure", "kind": "read_more",
+     "link": "/sources/voltrieve-fjord-brochure.pdf"},
+]
+
+
+def test_the_sources_event_lists_numbered_documents_under_the_answer():
+    console = terminal()
+    view = ChatView(console)
+    with view:
+        view.on_event("delta", {"text": "Tows 1,600 kg.\n\nSource: *voltrieve-fjord-specifications.pdf*"})
+        view.on_event("sources", {"items": SOURCES})
+    text = output(console)
+    assert "1 Fjord specifications" in text
+    assert "2 Parts brakes (internal)" in text
+    assert "Read more" in text and "3 Fjord brochure" in text
+    assert "/open 1" in text
+    assert view.last_sources == SOURCES
+
+
+def test_a_new_turn_forgets_the_old_sources():
+    console = terminal()
+    view = ChatView(console)
+    with view:
+        view.on_event("delta", {"text": "A"})
+        view.on_event("sources", {"items": SOURCES})
+    with view:
+        view.on_event("delta", {"text": "B"})
+    assert view.last_sources == []
