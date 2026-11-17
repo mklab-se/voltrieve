@@ -8,7 +8,7 @@ correlation_id: contextvars.ContextVar[str] = contextvars.ContextVar("correlatio
 log_context: contextvars.ContextVar[dict] = contextvars.ContextVar("log_context", default={})
 
 _EXTRA = ("path", "status", "elapsed_ms", "step", "component", "detail")
-_CONTEXT_KEYS = ("conversation_id", "turn_id", "backend", "user_oid")
+_CONTEXT_KEYS = ("conversation_id", "turn_id", "backend", "user")  # user: a pseudonym
 
 
 class JsonFormatter(logging.Formatter):

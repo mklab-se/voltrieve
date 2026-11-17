@@ -142,7 +142,7 @@ def create_app(
     app.state.validator = validator or TokenValidator(settings.tenant_id, settings.api_client_id)
     app.state.registry = registry or BackendRegistry(settings)
     app.state.store = store or TurnStore()
-    app.state.turns = TurnService(app.state.store, app.state.registry)
+    app.state.turns = TurnService(app.state.store, app.state.registry, model=settings.chat_deployment)
     # The handlers are closures over the clients and never called here, so None is fine.
     app.state.server_tool_names = frozenset(t.name for t in build_server_tools(None, None))
 

@@ -21,7 +21,8 @@ def configure_telemetry(connection_string: str) -> bool:
         return False
     from azure.monitor.opentelemetry import configure_azure_monitor
 
-    configure_azure_monitor(connection_string=connection_string, enable_live_metrics=False)
+    # Live Metrics shows requests, response times and failures as they happen, and stores nothing.
+    configure_azure_monitor(connection_string=connection_string, enable_live_metrics=True)
     logger.info("Azure Monitor telemetry enabled")
     return True
 
@@ -38,6 +39,14 @@ def annotate_span(**attributes: str | None) -> None:
     span = trace.get_current_span()
     for key, value in attributes.items():
         if value:
+            span.set_attribute(key, value)
+
+
+def set_span_attributes(attributes: dict) -> None:
+    """Set attributes on the current span, zero and False included."""
+    span = trace.get_current_span()
+    for key, value in attributes.items():
+        if value is not None:
             span.set_attribute(key, value)
 
 
