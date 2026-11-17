@@ -268,3 +268,13 @@ def test_a_new_turn_forgets_the_old_sources():
     with view:
         view.on_event("delta", {"text": "B"})
     assert view.last_sources == []
+
+
+def test_the_answer_bubble_is_titled_runa_even_for_a_short_answer():
+    # Issue #15: the assistant has a name.
+    console = terminal()
+    view = ChatView(console)
+    with view:
+        view.on_event("delta", {"text": "Hi"})
+    top = next(line for line in output(console).splitlines() if "╭" in line)
+    assert "Runa" in top

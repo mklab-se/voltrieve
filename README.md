@@ -10,7 +10,7 @@
 
 [![A dark blue Voltrieve Fjord estate car on a wet road beside a Norwegian fjord](docs/assets/voltrieve-hero.jpg)](https://mklab.se/voltrieve/)
 
-*Meet Voltrieve, a made-up Swedish carmaker with five electric cars, 24 brochures, guides and price lists, and 7 spare parts catalogs. Ask its assistant which car charges fastest, or which parts a rear brake job needs, and watch three agent architectures find the answer.*
+*Meet Voltrieve, a made-up Swedish carmaker with five electric cars, 24 brochures, guides and price lists, and 7 spare parts catalogs. Ask Runa, its AI assistant, which car charges fastest, or which parts a rear brake job needs, and watch three agent architectures find the answer.*
 
 **The same assistant built as an own loop, a Foundry prompt agent and a Foundry hosted agent, deployed side by side and measured with real runs.** See exactly who calls what, where each design wins, and where it fails.
 
