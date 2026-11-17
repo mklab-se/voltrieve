@@ -6,6 +6,7 @@
 ![React 19](https://img.shields.io/badge/React-19-149ECA?logo=react&logoColor=white)
 ![Microsoft Foundry and Azure AI Search](https://img.shields.io/badge/Azure-Foundry%20%7C%20AI%20Search-0078D4)
 ![Deploy with azd up](https://img.shields.io/badge/deploy-azd%20up-0078D4)
+[![MIT license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 [![A dark blue Voltrieve Fjord estate car on a wet road beside a Norwegian fjord](docs/assets/voltrieve-hero.jpg)](https://mklab.se/voltrieve/)
 
@@ -176,3 +177,7 @@ Not verified:
 - [Decisions and live findings](docs/decisions.md)
 - [Evidence](docs/evidence/)
 - [Design](docs/superpowers/specs/2026-11-03-voltrieve-agentic-rag-design.md)
+
+## License
+
+[MIT](LICENSE). The cars, documents and images are made up for this demo.
