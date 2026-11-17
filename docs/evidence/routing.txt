@@ -1,44 +1,37 @@
 Routing per backend and question group
 
 backend group   runs  right  vain  missed  together  steps  calls  seconds
-prompt  curated    9  100 %     0       0       n/a      1      1      1.3
-prompt  none       8  100 %     0       0       n/a    1.0    0.0      1.1
-prompt  docs      13  100 %     0       0       n/a      1      1      4.9
-prompt  parts      9  100 %     0       0       n/a      1      1      5.2
-prompt  both       4   50 %     0       2       0 %    1.0    1.0      6.3
-prompt  stock      2  100 %     0       0       n/a    2.0    1.0      5.8
-loop    curated    9  100 %     0       0       n/a      1      1      1.3
-loop    none       8  100 %     0       0       n/a    1.0    0.0      1.0
+prompt  curated    9  100 %     0       0       n/a      1      1      1.2
+prompt  none       8  100 %     0       0       n/a    1.0    0.0      1.2
+prompt  docs      13  100 %     0       0       n/a      1      1      6.6
+prompt  parts      9   88 %     1       0       n/a      1      1      6.0
+prompt  both       4  100 %     0       0       0 %    1.0    2.0     14.1
+prompt  stock      2  100 %     0       0       n/a    2.0    1.0      7.0
+loop    curated    9  100 %     0       0       n/a      1      1      1.1
+loop    none       8  100 %     0       0       n/a    1.0    0.0      1.1
 loop    docs      13  100 %     0       0       n/a      2      1      4.9
-loop    parts      9  100 %     0       0       n/a      2      1      5.2
-loop    both       4    0 %     0       3      25 %    1.0    0.0      0.5
+loop    parts      9  100 %     0       0       n/a      2      1      5.4
+loop    both       4  100 %     0       0     100 %    2.0    2.0      8.3
 loop    stock      2  100 %     0       0       n/a    3.0    1.0      6.3
-hosted  curated    9  100 %     0       0       n/a      1      1      5.5
-hosted  none       8  100 %     0       0       n/a    1.0    0.0      5.5
-hosted  docs      13  100 %     0       0       n/a      2      1      9.6
-hosted  parts      9   77 %     2       0       n/a      2      1      9.7
-hosted  both       4   50 %     0       1      75 %    2.0    2.0      9.3
-hosted  stock      2  100 %     0       0       n/a    3.0    1.0     12.5
+hosted  curated    9  100 %     0       0       n/a      1      1      5.6
+hosted  none       8  100 %     0       0       n/a    1.0    0.0      5.7
+hosted  docs      13  100 %     0       0       n/a      2      1     11.4
+hosted  parts      9  100 %     0       0       n/a      2      1     10.5
+hosted  both       4  100 %     0       0     100 %    2.0    2.0     12.4
+hosted  stock      2  100 %     0       0       n/a    3.0    1.0     12.0
 
 Article numbers in the answers
 
-prompt  27 of 43 found, 8 of 10 answers complete, 0 invented
-loop    6 of 43 found, 6 of 10 answers complete, 0 invented
-hosted  23 of 43 found, 8 of 10 answers complete, 0 invented
+prompt  43 of 43 found, 10 of 10 answers complete, 0 invented
+loop    43 of 43 found, 10 of 10 answers complete, 0 invented
+hosted  43 of 43 found, 10 of 10 answers complete, 0 invented
 
-Parallel tool runs saved a median of 1.6435 s over 8 turns (own loop and hosted agent).
+Parallel tool runs saved a median of 1.886 s over 9 turns (own loop and hosted agent).
 
 Runs that were not right
 
-hosted mirror-no-side #1: used ['docs', 'parts'], expected ['parts'], together None, articles 0/0, invented [], missing words [], error none
-hosted indicator #1: used ['docs', 'parts'], expected ['parts'], together None, articles 1/1, invented [], missing words [], error none
+prompt wipers-fjord #1: used ['docs', 'parts'], expected ['parts'], together None, articles 1/1, invented [], missing words [], error none
 prompt brakes-fjord #1: used ['docs', 'parts'], expected ['docs', 'parts'], together False, articles 9/9, invented [], missing words [], error none
-loop brakes-fjord #1: used ['docs', 'parts'], expected ['docs', 'parts'], together True, articles 0/9, invented [], missing words [], error model_failed
-prompt brakes-spark #1: used [], expected ['docs', 'parts'], together False, articles 0/8, invented [], missing words [], error model_failed
-loop brakes-spark #1: used [], expected ['docs', 'parts'], together False, articles 0/8, invented [], missing words [], error model_failed
-prompt brakes-atlas #1: used [], expected ['docs', 'parts'], together False, articles 0/8, invented [], missing words [], error model_failed
-loop brakes-atlas #1: used [], expected ['docs', 'parts'], together False, articles 0/8, invented [], missing words [], error model_failed
-hosted brakes-atlas #1: used ['docs', 'parts'], expected ['docs', 'parts'], together True, articles 0/8, invented [], missing words [], error model_failed
+prompt brakes-spark #1: used ['docs', 'parts'], expected ['docs', 'parts'], together False, articles 8/8, invented [], missing words [], error none
+prompt brakes-atlas #1: used ['docs', 'parts'], expected ['docs', 'parts'], together False, articles 8/8, invented [], missing words [], error none
 prompt brakes-lumen #1: used ['docs', 'parts'], expected ['docs', 'parts'], together False, articles 12/12, invented [], missing words [], error none
-loop brakes-lumen #1: used [], expected ['docs', 'parts'], together False, articles 0/12, invented [], missing words [], error model_failed
-hosted brakes-lumen #1: used [], expected ['docs', 'parts'], together False, articles 0/12, invented [], missing words [], error model_failed
