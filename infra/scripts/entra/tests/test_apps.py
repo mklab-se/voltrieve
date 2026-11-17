@@ -7,9 +7,9 @@ DOMAIN = "contoso.onmicrosoft.com"
 
 
 def test_api_body_has_scope_and_user_roles():
-    body = apps.api_application_body("s", "c", "b")
+    body = apps.api_application_body("s", "c", "b", "d")
     assert body["api"]["oauth2PermissionScopes"][0]["value"] == "access_as_user"
-    assert {r["value"] for r in body["appRoles"]} == {"Chat.User", "TestDrive.Book"}
+    assert {r["value"] for r in body["appRoles"]} == {"Chat.User", "TestDrive.Book", "Dashboard.View"}
     assert all(r["allowedMemberTypes"] == ["User"] for r in body["appRoles"])
 
 
@@ -59,6 +59,7 @@ def test_deployer_gets_both_roles_and_dealer_requires_assignment(graph_mock, gra
     assert graph_mock.role_assignments_for("deployer-oid") == {
         env["CHAT_USER_ROLE_ID"],
         env["TESTDRIVE_BOOK_ROLE_ID"],
+        env["DASHBOARD_VIEW_ROLE_ID"],
     }
     assert graph_mock.service_principals[env["DEALER_SP_OBJECT_ID"]]["appRoleAssignmentRequired"] is True
     assert env["TENANT_ID"] == "tid"
@@ -244,5 +245,11 @@ def test_set_spa_redirect_requires_the_web_app(graph_mock, graph, no_sleep):
 
 def test_pre_authorized_body_repeats_scopes_and_token_version():
     body = apps.pre_authorized_body("s")["api"]
-    assert body["oauth2PermissionScopes"] == apps.api_application_body("s", "c", "b")["api"]["oauth2PermissionScopes"]
+    assert body["oauth2PermissionScopes"] == apps.api_application_body("s", "c", "b", "d")["api"]["oauth2PermissionScopes"]
     assert body["requestedAccessTokenVersion"] == 2
+
+
+def test_only_the_deployer_may_view_the_dashboard(graph_mock, graph):
+    env = apps.setup(graph, "tid", "deployer-oid", DOMAIN, [])
+    tester = next(u["id"] for u in graph_mock.users.values())
+    assert env["DASHBOARD_VIEW_ROLE_ID"] not in graph_mock.role_assignments_for(tester)

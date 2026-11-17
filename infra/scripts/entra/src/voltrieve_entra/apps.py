@@ -65,7 +65,7 @@ def _scopes(scope_id: str) -> list[dict]:
     ]
 
 
-def api_application_body(scope_id: str, chat_role_id: str, book_role_id: str) -> dict:
+def api_application_body(scope_id: str, chat_role_id: str, book_role_id: str, dashboard_role_id: str) -> dict:
     return {
         "signInAudience": "AzureADMyOrg",
         "api": {
@@ -75,6 +75,8 @@ def api_application_body(scope_id: str, chat_role_id: str, book_role_id: str) ->
         "appRoles": [
             _app_role(chat_role_id, "Chat.User", "Can chat with the Voltrieve assistant.", ["User"]),
             _app_role(book_role_id, "TestDrive.Book", "Can book test drives.", ["User"]),
+            _app_role(dashboard_role_id, "Dashboard.View",
+                      "Can see the live operations dashboard, including masked prompts.", ["User"]),
         ],
     }
 
@@ -275,10 +277,11 @@ def setup(
     scope_id = stable_id("scope:access_as_user")
     chat_role_id = stable_id("role:Chat.User")
     book_role_id = stable_id("role:TestDrive.Book")
+    dashboard_role_id = stable_id("role:Dashboard.View")
     dealer_role_id = stable_id("role:Dealer.Access")
 
     api = ensure_application(
-        g, "voltrieve-api", api_application_body(scope_id, chat_role_id, book_role_id), sleep
+        g, "voltrieve-api", api_application_body(scope_id, chat_role_id, book_role_id, dashboard_role_id), sleep
     )
     # The identifier URI embeds the appId, so it can only be set after creation.
     _retrying(
@@ -314,7 +317,8 @@ def setup(
     for client_sp in (cli_sp, web_sp):
         ensure_oauth2_grant(g, client_sp["id"], api_sp["id"], SCOPE_VALUE, sleep)
 
-    for role_id in (chat_role_id, book_role_id):
+    # Only the deployer sees the dashboard: it shows other people's prompts, masked.
+    for role_id in (chat_role_id, book_role_id, dashboard_role_id):
         ensure_app_role_assignment(g, deployer_object_id, api_sp["id"], role_id, sleep)
 
     upn = f"voltrieve-tester@{verified_domain}"
@@ -335,5 +339,6 @@ def setup(
         "API_SP_OBJECT_ID": api_sp["id"],
         "CHAT_USER_ROLE_ID": chat_role_id,
         "TESTDRIVE_BOOK_ROLE_ID": book_role_id,
+        "DASHBOARD_VIEW_ROLE_ID": dashboard_role_id,
         "TEST_USER_UPN": upn,
     }
