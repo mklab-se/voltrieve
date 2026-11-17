@@ -72,7 +72,7 @@ The core never emits `done`, because only the host knows the backend. `TurnOutco
 
 ### The assistant is called Runa
 
-From runes: written, hidden knowledge, which is what a retrieval assistant brings back. It is a short Swedish first name that fits a Swedish carmaker. Three rules come with the name (issue #15). Runa always says it is an AI and never claims to be a person. Questions about Runa itself need no search, and the routing suite checks that with three questions whose answers must name Runa or say AI. Nothing else changes: no persona, backstory or catchphrases. Its avatar is a glowing rune-shaped V emblem, not a face, for the same reason; `data/design/images/runa/README.md` has the prompt. The code, packages and Azure resources keep the name `voltrieve`.
+From runes: written, hidden knowledge, which is what a retrieval assistant brings back. It is a short Swedish first name that fits a Swedish carmaker. Three rules come with the name (issue #15). Runa always says it is an AI and never claims to be a person. Questions about Runa itself need no search, and the routing suite checks that with three questions whose answers must name Runa or say AI. Nothing else changes: no persona, backstory or catchphrases. The AI rule and "questions about you need no search" sit in a bullet of their own at the end of the instructions, not in the routing list: put in the list, they moved parts questions such as "the mirror on my Spark is broken" to both sources, and the own loop dropped from 8 of 8 right to 2 of 6. Its avatar is a glowing rune-shaped V emblem, not a face, for the same reason; `data/design/images/runa/README.md` has the prompt. The code, packages and Azure resources keep the name `voltrieve`.
 
 ### Client tool calls carry the conversation id
 
