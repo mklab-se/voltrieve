@@ -1,5 +1,16 @@
 # Voltrieve: agentic RAG on Azure, three ways, with the receipts
 
+[![Tests](https://github.com/mklab-se/voltrieve/actions/workflows/tests.yml/badge.svg)](https://github.com/mklab-se/voltrieve/actions/workflows/tests.yml)
+[![Documentation site](https://github.com/mklab-se/voltrieve/actions/workflows/pages.yml/badge.svg)](https://mklab.se/voltrieve/)
+![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
+![React 19](https://img.shields.io/badge/React-19-149ECA?logo=react&logoColor=white)
+![Microsoft Foundry and Azure AI Search](https://img.shields.io/badge/Azure-Foundry%20%7C%20AI%20Search-0078D4)
+![Deploy with azd up](https://img.shields.io/badge/deploy-azd%20up-0078D4)
+
+[![A dark blue Voltrieve Fjord estate car on a wet road beside a Norwegian fjord](docs/assets/voltrieve-hero.jpg)](https://mklab.se/voltrieve/)
+
+*Meet Voltrieve, a made-up Swedish carmaker with five electric cars, 24 brochures, guides and price lists, and 7 spare parts catalogs. Ask its assistant which car charges fastest, or which parts a rear brake job needs, and watch three agent architectures find the answer.*
+
 **The same assistant built as an own loop, a Foundry prompt agent and a Foundry hosted agent, deployed side by side and measured with real runs.** See exactly who calls what, where each design wins, and where it fails.
 
 *This repository was called `agentic-rag` until 17 November 2026. Old links redirect here.*
