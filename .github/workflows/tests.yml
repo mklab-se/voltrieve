@@ -40,6 +40,9 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: ${{ matrix.project }}/uv.lock
+      # The document generator renders its PDFs in a headless Chromium.
+      - if: matrix.project == 'data/generator'
+        run: uv run --locked playwright install --with-deps --only-shell chromium
       - run: uv run --locked pytest -q
 
   web:
