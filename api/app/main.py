@@ -18,6 +18,7 @@ from app.logging_setup import configure_logging, correlation_id
 from app.routes import build_router
 from app.settings import Settings
 from app.telemetry import annotate_span, configure_telemetry
+from app.sources import SourceService, build_source_service
 from app.turns import TurnService, TurnStore
 
 logger = logging.getLogger("app.access")
@@ -116,6 +117,7 @@ def create_app(
     validator: TokenValidator | None = None,
     registry: BackendRegistry | None = None,
     store: TurnStore | None = None,
+    sources: SourceService | None = None,
 ) -> FastAPI:
     configure_logging(settings.log_level)
     configure_telemetry(settings.applicationinsights_connection_string)
@@ -151,7 +153,9 @@ def create_app(
     app.state.validator = validator or TokenValidator(settings.tenant_id, settings.api_client_id)
     app.state.registry = registry or BackendRegistry(settings)
     app.state.store = store or TurnStore()
-    app.state.turns = TurnService(app.state.store, app.state.registry, model=settings.chat_deployment)
+    app.state.sources = sources if sources is not None else build_source_service(settings)
+    app.state.turns = TurnService(app.state.store, app.state.registry, model=settings.chat_deployment,
+                                  sources=app.state.sources)
     # The handlers are closures over the clients and never called here, so None is fine.
     app.state.server_tool_names = frozenset(t.name for t in build_server_tools(None, None))
 

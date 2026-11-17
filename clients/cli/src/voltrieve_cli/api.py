@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
@@ -46,6 +47,10 @@ def _decode(text: str) -> dict[str, Any]:
     return value if isinstance(value, dict) else {"value": value}
 
 
+# A signed source link is only ever to a blob in Azure Storage.
+BLOB_URL = re.compile(r"^https://[a-z0-9]+\.blob\.core\.windows\.net/")
+
+
 class ApiError(Exception):
     pass
 
@@ -85,6 +90,23 @@ class ApiClient:
         except httpx.HTTPError as exc:
             # Unreachable, timed out, or the stream broke: one error type for the callers.
             raise ApiError(f"{path} failed: {type(exc).__name__}") from exc
+
+    def source_url(self, link: str) -> str:
+        """A short signed link to a document from a `sources` event. Never print it: it is a
+        key to the document for five minutes."""
+        try:
+            resp = self._http.get(link, headers={"Authorization": f"Bearer {self._token()}",
+                                                 "Accept": "application/json"})
+        except httpx.HTTPError as exc:
+            raise ApiError(f"{link} failed: {type(exc).__name__}") from exc
+        if resp.status_code in (403, 404):
+            raise ApiError("This document cannot be opened.")
+        if resp.status_code >= 400:
+            raise ApiError(f"{link} returned HTTP {resp.status_code}")
+        url = _decode(resp.text).get("url")
+        if not isinstance(url, str) or not BLOB_URL.match(url):
+            raise ApiError("The API answered with an unexpected link.")
+        return url
 
     def chat(self, message: str, conversation_id: str | None = None,
              client_tools: list[dict[str, Any]] | None = None,

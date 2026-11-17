@@ -350,3 +350,45 @@ def test_login_command_uses_the_fresh_sign_in(monkeypatch):
     monkeypatch.setattr("voltrieve_cli.main.load_settings", lambda: SETTINGS)
     result = CliRunner().invoke(app, ["login"])
     assert result.exit_code == 0 and "Signed in" in result.output and fake.interactive
+
+
+def test_source_url_asks_the_api_with_the_token():
+    seen = {}
+
+    def handler(request):
+        seen["auth"] = request.headers["authorization"]
+        seen["path"] = request.url.path
+        return httpx.Response(200, json={"url": "https://st.blob.core.windows.net/voltrieve-docs/a.pdf?sig=x"})
+
+    client = ApiClient("http://api", "tok", transport=httpx.MockTransport(handler))
+    assert client.source_url("/sources/a.pdf") == "https://st.blob.core.windows.net/voltrieve-docs/a.pdf?sig=x"
+    assert seen == {"auth": "Bearer tok", "path": "/sources/a.pdf"}
+
+
+def test_source_url_refuses_a_link_outside_blob_storage():
+    client = ApiClient("http://api", "tok", transport=httpx.MockTransport(
+        lambda r: httpx.Response(200, json={"url": "https://evil.example/a.pdf"})))
+    with pytest.raises(ApiError):
+        client.source_url("/sources/a.pdf")
+
+
+def test_source_url_says_when_a_document_cannot_be_opened():
+    client = ApiClient("http://api", "tok", transport=httpx.MockTransport(lambda r: httpx.Response(403)))
+    with pytest.raises(ApiError, match="cannot be opened"):
+        client.source_url("/sources/a.md")
+
+
+def test_open_command_opens_the_numbered_source_in_the_browser(monkeypatch):
+    from voltrieve_cli.main import open_source
+
+    opened = []
+    monkeypatch.setattr("webbrowser.open", lambda url: opened.append(url) or True)
+    client = ApiClient("http://api", "tok", transport=httpx.MockTransport(
+        lambda r: httpx.Response(200, json={"url": "https://st.blob.core.windows.net/c/a.pdf?sig=x"})))
+    items = [{"id": "a.pdf", "title": "A", "kind": "source", "link": "/sources/a.pdf"},
+             {"id": "b.md", "title": "B", "kind": "source"}]
+    assert open_source(client, items, "/open 1") == "Opened A in your browser."
+    assert opened == ["https://st.blob.core.windows.net/c/a.pdf?sig=x"]
+    assert open_source(client, items, "/open 2") == "B is an internal document and cannot be opened."
+    assert open_source(client, items, "/open 9") == "There is no source 9. Sources are numbered under the last answer."
+    assert open_source(client, [], "/open x") == "Use /open with the number of a source, such as /open 1."

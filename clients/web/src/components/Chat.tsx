@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import type { ChatState } from "../turns";
+import type { SourceItem } from "../types";
 import { Answer } from "./Answer";
+import { SourceList } from "./SourceList";
 import { Speedometer } from "./Speedometer";
 
 const STARTERS = [
@@ -16,9 +18,12 @@ interface Props {
   /** Undefined while the gauge is off. */
   gauge?: number;
   onSend: (text: string) => void;
+  onOpenSource: (source: SourceItem) => void;
+  /** Why the last source could not be opened. */
+  sourceError?: string;
 }
 
-export function Chat({ state, busy, gauge, onSend }: Props) {
+export function Chat({ state, busy, gauge, onSend, onOpenSource, sourceError }: Props) {
   const [text, setText] = useState("");
   const endRef = useRef<HTMLDivElement>(null);
   const last = state.turns[state.turns.length - 1];
@@ -61,7 +66,7 @@ export function Chat({ state, busy, gauge, onSend }: Props) {
             <div className="bubble user">{t.userText}</div>
             <div className={`bubble agent ${t.status}`}>
               {t.answer ? (
-                <Answer text={t.answer} />
+                <Answer text={t.answer} sources={t.sources} onOpenSource={onOpenSource} />
               ) : t.status === "streaming" ? (
                 <p className="thinking" role="status" aria-label={t.activity ?? "Agent is working"}>
                   <i /><i /><i />
@@ -73,12 +78,18 @@ export function Chat({ state, busy, gauge, onSend }: Props) {
                   {t.error}
                 </p>
               )}
+              {t.sources && t.sources.length > 0 && <SourceList sources={t.sources} onOpen={onOpenSource} />}
               {t.backend && <p className="meta">via {t.backend} · turn {t.id}</p>}
             </div>
           </div>
         ))}
         <div ref={endRef} />
       </div>
+      {sourceError && (
+        <p className="notice error source-error" role="alert">
+          {sourceError}
+        </p>
+      )}
       <form className="composer" onSubmit={submit}>
         <textarea
           value={text}

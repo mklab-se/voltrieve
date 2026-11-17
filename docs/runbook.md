@@ -272,3 +272,39 @@ shown to an audience unless the people asking know.
   address itself is masked on ingestion. Requests from inside Azure land in the region.
 - *A live dashboard left open keeps the API awake:* its stream counts as traffic, so the API
   does not scale to zero while it is open. Close it after a demo.
+
+## Source links
+
+Under each answer the web client shows the documents it used (**Sources**) and, for an answer
+about cars, the brochure and specifications of every model it names (**Read more**). A document
+title cited in the text is a link too. The CLI numbers the same documents under the answer, and
+`/open 2` in `voltrieve chat` opens the second one in the browser.
+
+**How it works.**
+1. The model cites document titles (file names), as its instructions already ask. It never
+   writes a URL.
+2. After the answer, the API looks the cited titles up in both indexes and sends a `sources`
+   event before `done`: id, title, kind (`source` or `read_more`), and a `link` such as
+   `/sources/voltrieve-fjord-brochure.pdf` only when the document is linkable. A title the index
+   does not know is dropped. The lookup happens after the text, so the first text is never later.
+3. A click calls `GET /sources/{id}` with the user's token. The API checks the index again and
+   answers with a user delegation SAS for that one blob: read only, valid for 5 minutes, signed
+   with its managed identity. Each click gets a fresh link, so old answers keep working. The
+   link is never logged, traced or given to the model.
+
+**What may be linked.** `documents.linkable` in `data/voltrieve.yaml` lists the document types
+users may open. `voltrieve-search upload` writes `linkable` into each blob's metadata, and the
+indexers copy it into the `linkable` field of both indexes. The parts catalogs are internal: they
+show as a source without a link, the API refuses to sign them, and the API may only sign blobs in
+the documents container (`SOURCE_CONTAINERS`) anyway. The API identity has Storage Blob Delegator
+on the account and Storage Blob Data Reader on that container only.
+
+**When a link does not work.**
+- *No chips under an answer:* the answer cited no document title the index knows, or the lookup
+  failed (a `Source lookup failed` warning in the API log). The answer is never held back for it.
+- *"This document cannot be opened":* the document is not linkable, or it is no longer in the
+  index.
+- *The new tab shows `AuthorizationPermissionMismatch`:* the role assignments are new and have
+  not reached storage yet. Wait a few minutes.
+- *A chip has no link after a change to `documents.linkable`:* upload and index again
+  (`azd provision` does both).

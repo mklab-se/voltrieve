@@ -5,6 +5,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import yaml
 from azure.storage.blob import BlobServiceClient, ContentSettings
 
 NO_MODEL_SLUG = "all"
@@ -13,6 +14,12 @@ CONTENT_TYPES = {
     ".pdf": "application/pdf",
     ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 }
+
+
+def linkable_doc_types(config_path: Path) -> set[str]:
+    """The document types users may open from a source link (`documents.linkable` in the config)."""
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    return set((config.get("documents") or {}).get("linkable") or [])
 
 
 def _content_type(file_name: str) -> str:
@@ -37,6 +44,7 @@ def upload_documents(
     prune: bool = False,
     dry_run: bool = False,
     out: Callable[[str], None] = print,
+    linkable_doc_types: set[str] | frozenset[str] = frozenset(),
 ) -> UploadResult:
     """Upload each document to the container of its collection (docs or parts).
 
@@ -56,6 +64,8 @@ def upload_documents(
             metadata = {
                 "model_slug": entry.get("model_slug") or NO_MODEL_SLUG,
                 "doc_type": entry["doc_type"],
+                # Blob metadata is text. Only "true" lets the API sign a link to the document.
+                "linkable": "true" if entry["doc_type"] in linkable_doc_types else "false",
             }
             with (generated_dir / entry["file"]).open("rb") as handle:
                 container_client.upload_blob(

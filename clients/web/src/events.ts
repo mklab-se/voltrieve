@@ -1,5 +1,5 @@
 import type { SseMessage } from "./sse";
-import type { ServerEvent } from "./types";
+import type { ServerEvent, SourceItem } from "./types";
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -7,6 +7,19 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 
 function malformed(message: string): ServerEvent {
   return { type: "error", data: { code: "malformed_event", message } };
+}
+
+/** Only a path under /sources/ on the API: never a URL the stream could point anywhere. */
+function apiSourcePath(link: unknown): string | undefined {
+  return typeof link === "string" && /^\/sources\/[^/]+$/.test(link) ? link : undefined;
+}
+
+function sourceItems(items: unknown): SourceItem[] {
+  if (!Array.isArray(items)) return [];
+  return items.filter(isRecord).flatMap((i): SourceItem[] => {
+    if (typeof i.id !== "string" || !i.id || (i.kind !== "source" && i.kind !== "read_more")) return [];
+    return [{ id: i.id, title: typeof i.title === "string" ? i.title : i.id, kind: i.kind, link: apiSourcePath(i.link) }];
+  });
 }
 
 /** Turn one SSE message into a typed event; unknown event names yield null. */
@@ -52,6 +65,8 @@ export function parseServerEvent(msg: SseMessage): ServerEvent | null {
         },
       };
     }
+    case "sources":
+      return { type: "sources", data: { items: sourceItems(payload.items) } };
     case "done":
       return {
         type: "done",

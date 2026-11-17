@@ -19,7 +19,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, FAST ? 0 : ms));
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, content-type, x-agent-backend, x-correlation-id",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Expose-Headers": "x-correlation-id",
 };
 
@@ -41,6 +41,7 @@ function script(message, backend) {
       : "The **Fjord** can tow up to 1,600 kg braked:\n\n" +
         "| Battery | Braked | Unbraked |\n|---|---:|---:|\n" +
         "| 84 kWh | 1,600 kg | 750 kg |\n| 63 kWh | 1,200 kg | 750 kg |\n\n" +
+        "Brake pads for the trailer brakes: VP-10007 (voltrieve-parts-brakes.md).\n\n" +
         "Source: *voltrieve-fjord-specifications.pdf*";
   return { trace: t, answer };
 }
@@ -93,8 +94,20 @@ async function turn(res, body, backend) {
     await sleep(35);
     send("delta", { text: word });
   }
+  if (answer.includes(".pdf")) {
+    send("trace", { step: "sources_resolved", component: "api", detail: "2 sources, 1 to read more", elapsed_ms: el() });
+    send("sources", { turn_id, items: MOCK_SOURCES });
+  }
   send("done", { conversation_id, turn_id, backend, usage: { prompt_tokens: 1840, completion_tokens: 62, total_tokens: 1902 } });
 }
+
+// The sources event the real API sends after an answer that cites documents. The parts catalog
+// is internal, so it has no link.
+const MOCK_SOURCES = [
+  { id: "voltrieve-fjord-specifications.pdf", title: "Fjord specifications", kind: "source", link: "/sources/voltrieve-fjord-specifications.pdf" },
+  { id: "voltrieve-parts-brakes.md", title: "Parts brakes", kind: "source" },
+  { id: "voltrieve-fjord-brochure.pdf", title: "Fjord brochure", kind: "read_more", link: "/sources/voltrieve-fjord-brochure.pdf" },
+];
 
 // GET /admin/live: a made-up stream of turns, so the dashboard can be seen without Azure.
 const SAMPLE = [
@@ -136,6 +149,16 @@ createServer(async (req, res) => {
     res.writeHead(200, { ...CORS, "Content-Type": "text/event-stream" });
     res.write(`event: delta\ndata: ${JSON.stringify({ text: "Done." })}\n\n`);
     res.end(`event: done\ndata: ${JSON.stringify({ conversation_id: "conv_mock", turn_id: "t", backend: "loop" })}\n\n`);
+    return;
+  }
+  // GET /sources/{id}: a made-up signed link, so the click can be seen without Azure.
+  if (req.method === "GET" && req.url?.startsWith("/sources/")) {
+    const id = decodeURIComponent(req.url.slice("/sources/".length));
+    const known = MOCK_SOURCES.find((s) => s.id === id);
+    if (!known) return void res.writeHead(404, CORS).end();
+    if (!known.link) return void res.writeHead(403, CORS).end();
+    res.writeHead(200, { ...CORS, "Content-Type": "application/json", "Cache-Control": "no-store" });
+    res.end(JSON.stringify({ url: `https://mockstorage.blob.core.windows.net/voltrieve-docs/${id}?sp=r&sig=mock`, expires_in: 300 }));
     return;
   }
   if (req.method === "GET" && req.url?.startsWith("/admin/live")) {

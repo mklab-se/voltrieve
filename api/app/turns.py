@@ -23,6 +23,7 @@ from app.auth import Claims
 from app.backends import BackendRegistry
 from app.backends.base import ABANDONED_OUTPUT, TurnContext
 from app.logging_setup import bind_log_context, correlation_id
+from app.sources import LOOKUP_TIMEOUT_SECONDS, SourceService
 from app.insights import LiveFeed, TurnRecorder, mask_prompt, pseudonym
 from app.telemetry import annotate_span, debug_payload, set_span_attributes, span_event, turn_span
 
@@ -159,8 +160,11 @@ class _Run:
         self._start = time.perf_counter()
         self.held_tool_calls: AgentEvent | None = None
         self.recorder = recorder
+        self.text = ""  # the answer so far, to find the documents it cites
 
     async def emit(self, event: AgentEvent) -> None:
+        if event.type == "delta":
+            self.text += str(event.data.get("text", ""))
         if self.recorder is not None:
             self.recorder.observe(event)
         if event.type == "trace" and "elapsed_ms" not in event.data:
@@ -202,8 +206,9 @@ class _Run:
 
 class TurnService:
     def __init__(self, store: TurnStore, registry: BackendRegistry, feed: LiveFeed | None = None,
-                 model: str = "gpt-6.1-terra"):
+                 model: str = "gpt-6.1-terra", sources: SourceService | None = None):
         self.store = store
+        self.sources = sources
         self._registry = registry
         self.feed = feed or LiveFeed()
         self._model = model
@@ -381,6 +386,7 @@ class TurnService:
                     data = {**run.held_tool_calls.data, "conversation_id": conversation_id}
                     await run.queue.put(AgentEvent("client_tool_calls", data))
             elif outcome.status == "done":
+                await self._send_sources(run, job.turn_id)
                 await run.emit(
                     AgentEvent(
                         "done",
@@ -408,6 +414,29 @@ class TurnService:
             self._release(job.conversation_id, run)
             self._release(conversation_id, run)
             await run.queue.put(None)
+
+    async def _send_sources(self, run: _Run, turn_id: str) -> None:
+        """The documents the answer cites, after the text, so the first text is never later.
+        A failed lookup costs the links, never the answer."""
+        if self.sources is None or not run.text:
+            return
+        try:
+            items = await asyncio.wait_for(self.sources.resolve(run.text), LOOKUP_TIMEOUT_SECONDS)
+        except Exception:
+            logger.warning("Source lookup failed", exc_info=True)
+            return
+        if not items:
+            return
+        kinds = [i["kind"] for i in items]
+        await run.emit(
+            trace(
+                "sources_resolved",
+                "api",
+                f"{kinds.count('source')} sources, {kinds.count('read_more')} to read more",
+                sources=len(items),
+            )
+        )
+        await run.emit(AgentEvent("sources", {"turn_id": turn_id, "items": items}))
 
     async def _close(self, paused: PausedTurn, run: _Run) -> None:
         """Give the open function calls of an abandoned or expired turn an output."""

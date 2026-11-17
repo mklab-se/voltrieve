@@ -4,7 +4,7 @@ import logging
 
 from pydantic import BaseModel, ValidationError
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError
 from voltrieve_agent.events import AgentEvent, format_event
@@ -19,6 +19,7 @@ from app.schemas import (
     ToolResultsRequest,
     to_client_tools,
 )
+from app.sources import LINK_SECONDS, LinkRefused
 from app.turns import Job, new_turn_id
 
 logger = logging.getLogger(__name__)
@@ -190,6 +191,25 @@ def build_router() -> APIRouter:
             media_type="text/event-stream",
             headers=SSE_HEADERS,
         )
+
+    @router.get("/sources/{title}")
+    async def source_link(
+        title: str,
+        request: Request,
+        claims: Claims = Depends(authenticate),
+    ) -> JSONResponse:
+        """A short signed link to one linkable document. The client opens it at once; the
+        URL is never logged, and each click gets a fresh one, so old answers keep working."""
+        sources = request.app.state.sources
+        if sources is None:
+            raise HTTPException(503, "Source links are not configured")
+        try:
+            url = await sources.link(title)
+        except KeyError as exc:
+            raise HTTPException(404, "Unknown document") from exc
+        except LinkRefused as exc:
+            raise HTTPException(403, "This document cannot be opened") from exc
+        return JSONResponse({"url": url, "expires_in": LINK_SECONDS}, headers={"Cache-Control": "no-store"})
 
     @router.post("/chat")
     async def chat(
