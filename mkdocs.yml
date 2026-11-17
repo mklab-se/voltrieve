@@ -1,4 +1,4 @@
-site_name: Agentic RAG on Azure, three ways
+site_name: "Voltrieve: agentic RAG on Azure, three ways"
 site_description: The same assistant built as an own loop, a Foundry prompt agent and a Foundry hosted agent, deployed side by side and measured with real runs.
 docs_dir: docs
 site_dir: site

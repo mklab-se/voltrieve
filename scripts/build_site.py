@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
-REPOSITORY = "https://github.com/mklab-se/agentic-rag/blob/main/"
+REPOSITORY = "https://github.com/mklab-se/voltrieve/blob/main/"
 INDEX = ROOT / "docs" / "index.md"
 
 
