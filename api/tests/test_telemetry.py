@@ -242,3 +242,10 @@ def app_with_feed(app):
         service.start(Job(claims, "loop", "conv_1", turn_id, user_input, turn_expired=turn_expired))
 
     return service.feed, start
+
+
+def test_client_address_is_the_first_forwarded_address():
+    from app.main import forwarded_client
+
+    assert forwarded_client({"x-forwarded-for": "203.0.113.7, 100.64.0.2"}) == "203.0.113.7"
+    assert forwarded_client({"x-forwarded-for": "  "}) is None and forwarded_client({}) is None
