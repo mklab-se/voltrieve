@@ -229,10 +229,12 @@ All remaining article misses were brake fluid, which only sat among the service 
 ### Source links cite titles, not numbered markers
 
 Issue #2 proposed `[1]` markers mapped to retrieval references. The model already cites document
-titles, which are file names, on all three backends. The prompt agent searches inside Foundry, so
-the API never sees its references. Reading the titles from the answer works the same on every
-backend and needs no change to the instructions, so the routing results stand. The API looks the
-titles up in the indexes, so an invented title gets no link. Other choices:
+titles, and the prompt agent searches inside Foundry, so the API never sees its references.
+Reading the titles from the answer works the same on every backend. The first live run showed
+that the model often wrote a readable name ("Voltrieve buyer's guide") instead of the file name,
+so the instructions now ask for the file name exactly as the results give it, with an example.
+After that, all three backends cited file names in every test question. The API looks the titles
+up in the indexes, so an invented title gets no link. Other choices:
 
 - `read_more` is decided by rule, not by the model: the brochure and specifications of every
   model a sales answer names. It is predictable, costs no model call, and gives every car the

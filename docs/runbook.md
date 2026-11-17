@@ -281,8 +281,8 @@ title cited in the text is a link too. The CLI numbers the same documents under 
 `/open 2` in `voltrieve chat` opens the second one in the browser.
 
 **How it works.**
-1. The model cites document titles (file names), as its instructions already ask. It never
-   writes a URL.
+1. The model cites each document by its file name, as its instructions ask, such as
+   `(voltrieve-fjord-brochure.pdf)`. It never writes a URL.
 2. After the answer, the API looks the cited titles up in both indexes and sends a `sources`
    event before `done`: id, title, kind (`source` or `read_more`), and a `link` such as
    `/sources/voltrieve-fjord-brochure.pdf` only when the document is linkable. A title the index
