@@ -2,10 +2,12 @@ import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { bootAuth, type Auth, type AuthSession } from "./auth";
 import { streamChat, streamToolResults } from "./chat";
 import { Chat } from "./components/Chat";
+import { Dashboard } from "./components/Dashboard";
 import { Header } from "./components/Header";
 import { ConfigMissing, Loading, SignIn } from "./components/Notices";
 import { Recorder } from "./components/Recorder";
 import { readConfig, type AppConfig } from "./config";
+import { canViewDashboard } from "./dashboard";
 import { runClientTool, toolsFor, type Theme } from "./tools";
 import { chatReducer, initialChatState } from "./turns";
 import type { Backend, ClientToolCall } from "./types";
@@ -72,6 +74,8 @@ function Workspace({ config, auth, session }: { config: AppConfig; auth: Auth; s
   const [gauge, setGauge] = useState(0);
   const [gaugeOn, setGaugeOn] = useState(initialGaugeOn);
   const [view, setView] = useState<"chat" | "recorder">("chat");
+  const [page, setPage] = useState<"chat" | "dashboard">("chat");
+  const [dashboardAllowed, setDashboardAllowed] = useState(false);
   const abort = useRef<AbortController | null>(null);
   const conversationId = useRef<string | undefined>(undefined);
   conversationId.current = state.conversationId;
@@ -81,6 +85,18 @@ function Workspace({ config, auth, session }: { config: AppConfig; auth: Auth; s
   }, [theme]);
 
   useEffect(() => () => abort.current?.abort(), []);
+
+  // The dashboard button appears for holders of Dashboard.View; the API checks the role again.
+  useEffect(() => {
+    let cancelled = false;
+    auth
+      .getToken()
+      .then((token) => !cancelled && setDashboardAllowed(canViewDashboard(token)))
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [auth]);
 
   const applyTheme = useCallback((next: Theme) => {
     setTheme(next);
@@ -169,7 +185,7 @@ function Workspace({ config, auth, session }: { config: AppConfig; auth: Auth; s
   }
 
   return (
-    <div className="app" data-view={view}>
+    <div className="app" data-view={view} data-page={page}>
       <Header
         backend={backend}
         onBackend={setBackend}
@@ -181,19 +197,27 @@ function Workspace({ config, auth, session }: { config: AppConfig; auth: Auth; s
         onToggleGauge={toggleGauge}
         onNewChat={() => dispatch({ type: "reset" })}
         busy={busy}
+        onToggleDashboard={dashboardAllowed ? () => setPage(page === "chat" ? "dashboard" : "chat") : undefined}
+        dashboardOn={page === "dashboard"}
       />
-      <nav className="tabs" aria-label="View">
-        <button className={view === "chat" ? "on" : ""} onClick={() => setView("chat")}>
-          Chat
-        </button>
-        <button className={view === "recorder" ? "on" : ""} onClick={() => setView("recorder")}>
-          Timeline
-        </button>
-      </nav>
-      <main className="panes">
-        <Chat state={state} busy={busy} gauge={gaugeOn ? gauge : undefined} onSend={(t) => void send(t)} />
-        <Recorder state={state} />
-      </main>
+      {page === "dashboard" ? (
+        <Dashboard apiUrl={config.apiUrl} auth={auth} liveMetricsUrl={config.liveMetricsUrl} workbookUrl={config.workbookUrl} />
+      ) : (
+        <>
+          <nav className="tabs" aria-label="View">
+            <button className={view === "chat" ? "on" : ""} onClick={() => setView("chat")}>
+              Chat
+            </button>
+            <button className={view === "recorder" ? "on" : ""} onClick={() => setView("recorder")}>
+              Timeline
+            </button>
+          </nav>
+          <main className="panes">
+            <Chat state={state} busy={busy} gauge={gaugeOn ? gauge : undefined} onSend={(t) => void send(t)} />
+            <Recorder state={state} />
+          </main>
+        </>
+      )}
     </div>
   );
 }

@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web-mock-api",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["clients/web/mock/server.mjs"],
+      "port": 8787
+    },
+    {
+      "name": "web-dev-mock",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "clients/web", "run", "dev:mock"],
+      "port": 5173
+    }
+  ]
+}
