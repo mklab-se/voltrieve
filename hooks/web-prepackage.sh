@@ -12,10 +12,11 @@ VITE_ENTRA_TENANT_ID=$TENANT_ID
 VITE_ENTRA_CLIENT_ID=$WEB_CLIENT_ID
 VITE_API_SCOPE=api://$API_CLIENT_ID/access_as_user
 ENV
-# Optional portal links on the live dashboard (empty before the first provision).
+# Optional portal links on the live dashboard (empty before the first provision). Quoted,
+# because # starts a comment in a .env file and portal links contain one.
 if [ -n "${APPLICATIONINSIGHTS_ID:-}" ]; then
-  echo "VITE_LIVE_METRICS_URL=https://portal.azure.com/#@$TENANT_ID/resource$APPLICATIONINSIGHTS_ID/quickPulse" >> clients/web/.env.production
+  echo "VITE_LIVE_METRICS_URL=\"https://portal.azure.com/#@$TENANT_ID/resource$APPLICATIONINSIGHTS_ID/quickPulse\"" >> clients/web/.env.production
 fi
 if [ -n "${DASHBOARD_WORKBOOK_ID:-}" ]; then
-  echo "VITE_WORKBOOK_URL=https://portal.azure.com/#@$TENANT_ID/resource$DASHBOARD_WORKBOOK_ID/workbook" >> clients/web/.env.production
+  echo "VITE_WORKBOOK_URL=\"https://portal.azure.com/#@$TENANT_ID/resource$DASHBOARD_WORKBOOK_ID/workbook\"" >> clients/web/.env.production
 fi
