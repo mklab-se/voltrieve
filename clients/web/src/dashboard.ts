@@ -121,3 +121,17 @@ export async function* streamLive(apiUrl: string, token: string, prompts: boolea
     if (done) return;
   }
 }
+
+export type Page = "chat" | "dashboard";
+
+/** ?view=dashboard opens the dashboard, so a big screen can be reloaded or bookmarked. */
+export function pageFromUrl(search: string): Page {
+  return new URLSearchParams(search).get("view") === "dashboard" ? "dashboard" : "chat";
+}
+
+export function urlForPage(href: string, page: Page): string {
+  const url = new URL(href);
+  if (page === "dashboard") url.searchParams.set("view", "dashboard");
+  else url.searchParams.delete("view");
+  return url.toString();
+}

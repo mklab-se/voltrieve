@@ -26,4 +26,6 @@ RUN uv sync --frozen --no-dev && chown -R app:app /srv
 
 USER app
 EXPOSE 8000
-CMD ["/srv/api/.venv/bin/uvicorn", "--factory", "app.main:build_app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]
+# The Container Apps ingress is the only way in, so its X-Forwarded-For is trusted: the client
+# address it carries is what Application Insights maps to a country and city (then masks).
+CMD ["/srv/api/.venv/bin/uvicorn", "--factory", "app.main:build_app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log", "--proxy-headers", "--forwarded-allow-ips", "*"]

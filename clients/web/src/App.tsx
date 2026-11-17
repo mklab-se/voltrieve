@@ -7,7 +7,7 @@ import { Header } from "./components/Header";
 import { ConfigMissing, Loading, SignIn } from "./components/Notices";
 import { Recorder } from "./components/Recorder";
 import { readConfig, type AppConfig } from "./config";
-import { canViewDashboard } from "./dashboard";
+import { canViewDashboard, pageFromUrl, urlForPage, type Page } from "./dashboard";
 import { runClientTool, toolsFor, type Theme } from "./tools";
 import { chatReducer, initialChatState } from "./turns";
 import type { Backend, ClientToolCall } from "./types";
@@ -74,7 +74,7 @@ function Workspace({ config, auth, session }: { config: AppConfig; auth: Auth; s
   const [gauge, setGauge] = useState(0);
   const [gaugeOn, setGaugeOn] = useState(initialGaugeOn);
   const [view, setView] = useState<"chat" | "recorder">("chat");
-  const [page, setPage] = useState<"chat" | "dashboard">("chat");
+  const [page, setPage] = useState<Page>(() => pageFromUrl(location.search));
   const [dashboardAllowed, setDashboardAllowed] = useState(false);
   const abort = useRef<AbortController | null>(null);
   const conversationId = useRef<string | undefined>(undefined);
@@ -180,12 +180,20 @@ function Workspace({ config, auth, session }: { config: AppConfig; auth: Auth; s
     }
   }
 
+  // The dashboard shows only once the token says the role is there; the API checks it again.
+  const showDashboard = page === "dashboard" && dashboardAllowed;
+
+  function openPage(next: Page) {
+    setPage(next);
+    history.replaceState(null, "", urlForPage(location.href, next));
+  }
+
   function toggleTheme() {
     applyTheme(theme === "dark" ? "light" : "dark");
   }
 
   return (
-    <div className="app" data-view={view} data-page={page}>
+    <div className="app" data-view={view} data-page={showDashboard ? "dashboard" : "chat"}>
       <Header
         backend={backend}
         onBackend={setBackend}
@@ -197,10 +205,10 @@ function Workspace({ config, auth, session }: { config: AppConfig; auth: Auth; s
         onToggleGauge={toggleGauge}
         onNewChat={() => dispatch({ type: "reset" })}
         busy={busy}
-        onToggleDashboard={dashboardAllowed ? () => setPage(page === "chat" ? "dashboard" : "chat") : undefined}
-        dashboardOn={page === "dashboard"}
+        onToggleDashboard={dashboardAllowed ? () => openPage(page === "chat" ? "dashboard" : "chat") : undefined}
+        dashboardOn={showDashboard}
       />
-      {page === "dashboard" ? (
+      {showDashboard ? (
         <Dashboard apiUrl={config.apiUrl} auth={auth} liveMetricsUrl={config.liveMetricsUrl} workbookUrl={config.workbookUrl} />
       ) : (
         <>
