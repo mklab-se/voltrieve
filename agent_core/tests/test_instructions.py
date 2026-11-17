@@ -31,3 +31,11 @@ def test_an_article_number_needs_no_model():
 
     for text in (AGENT_INSTRUCTIONS, PROMPT_AGENT_INSTRUCTIONS):
         assert "article number already names the part" in text
+
+
+def test_sources_are_cited_by_their_file_name():
+    # The API finds the documents behind an answer by these names, to link them (issue #2).
+    from voltrieve_agent.instructions import AGENT_INSTRUCTIONS, PROMPT_AGENT_INSTRUCTIONS
+
+    for text in (AGENT_INSTRUCTIONS, PROMPT_AGENT_INSTRUCTIONS):
+        assert "file name" in text and "voltrieve-fjord-brochure.pdf" in text
