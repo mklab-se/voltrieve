@@ -296,6 +296,7 @@ def build_router() -> APIRouter:
                 paused.client_tools,
                 paused.pending_outputs,
                 usage=paused.usage,
+                text=paused.text,
             ),
         )
 

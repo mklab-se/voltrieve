@@ -51,6 +51,9 @@ def _decode(text: str) -> dict[str, Any]:
 BLOB_URL = re.compile(r"^https://[a-z0-9]+\.blob\.core\.windows\.net/")
 
 
+SOURCE_PATH = re.compile(r"^/sources/[^/]+$")
+
+
 class ApiError(Exception):
     pass
 
@@ -94,6 +97,8 @@ class ApiClient:
     def source_url(self, link: str) -> str:
         """A short signed link to a document from a `sources` event. Never print it: it is a
         key to the document for five minutes."""
+        if not SOURCE_PATH.match(link):  # the token only ever goes to the API's own path
+            raise ApiError("The answer named a source link the API does not serve.")
         try:
             resp = self._http.get(link, headers={"Authorization": f"Bearer {self._token()}",
                                                  "Accept": "application/json"})

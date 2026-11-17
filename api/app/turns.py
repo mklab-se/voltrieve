@@ -46,6 +46,7 @@ class PausedTurn:
     pending_outputs: list[dict]
     expected_call_ids: frozenset[str]
     usage: dict = field(default_factory=dict)
+    text: str = ""  # the answer so far, so a continuation still finds its citations
     expires_at: float = 0.0
 
     def abandon_outputs(self) -> list[dict]:
@@ -147,6 +148,7 @@ class Job:
     client_tools: list[ClientTool] = field(default_factory=list)
     pending_outputs: list[dict] = field(default_factory=list)
     usage: dict = field(default_factory=dict)  # of the earlier parts of this turn
+    text: str = ""  # the answer from the earlier parts of this turn
     stale: PausedTurn | None = None  # a paused turn to close before running
     turn_expired: bool = False  # answer turn_expired instead of running
     expired: PausedTurn | None = None  # with turn_expired: also close this turn
@@ -231,6 +233,7 @@ class TurnService:
         # An expired turn runs nothing, and its turn id is client input: it stays off the feed.
         recorder = None if job.turn_expired else TurnRecorder(job.backend, self._model, user, cold_start=cold, kind=kind)
         run = _Run(recorder)
+        run.text = job.text
         if job.turn_expired:
             pass  # nothing to show
         elif kind == "tool_results" and self.feed.has(job.turn_id):
@@ -378,6 +381,7 @@ class TurnService:
                         outcome.pending_outputs,
                         frozenset(outcome.client_call_ids),
                         usage,
+                        run.text,
                     )
                 )
                 if run.held_tool_calls is not None:
