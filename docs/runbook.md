@@ -266,5 +266,9 @@ shown to an audience unless the people asking know.
   are in Cost Management.
 - *The live dashboard is empty after a while:* the API scales to zero when idle, and the feed lives
   in its memory. The first question wakes it (a cold start, counted in the workbook).
-- *No map:* Application Insights derives the location from the client address; requests from
-  inside Azure have none.
+- *Every user on the map is in the Azure region (Gävle for Sweden Central):* Application Insights
+  places a request by the client address on its request span. Behind the Container Apps ingress
+  that is the first `X-Forwarded-For` address, which `api/app/main.py` puts on the span; the
+  address itself is masked on ingestion. Requests from inside Azure land in the region.
+- *A live dashboard left open keeps the API awake:* its stream counts as traffic, so the API
+  does not scale to zero while it is open. Close it after a demo.
