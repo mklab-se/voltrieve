@@ -138,7 +138,7 @@ Tear down with `azd down --purge`. App registrations and the tester are not remo
 | `hooks/` | azd hooks |
 | `scripts/` | Agent and web deployment, runbook, denied demo, line count |
 | `tests/` | Contract tests and the grounding check |
-| `docs/` | Comparison, journey of a prompt, runbook, deployment, decisions, evidence, design |
+| `docs/` | Principles, comparison, journey of a prompt, runbook, deployment, decisions, evidence, design |
 
 ## Costs
 
@@ -170,6 +170,7 @@ Not verified:
 
 ## More
 
+- [Principles: what Voltrieve is for](docs/principles.md)
 - [The journey of a prompt](docs/prompt-journey.md)
 - [Why Foundry: the comparison](docs/why-foundry.md)
 - [Demo runbook](docs/runbook.md)
