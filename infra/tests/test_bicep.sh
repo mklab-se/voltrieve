@@ -31,8 +31,8 @@ for origin in "web.outputs.url" "car.outputs.url" "dashboard.outputs.url" "local
 done
 # search: one management version everywhere, and one value chooses the planning model
 if grep -rn "Microsoft.Search/searchServices@" modules/ | grep -v "@2026-11-01'"; then echo "another search management version"; exit 1; fi
-grep -q "^param planningModelName string = 'gpt-6-luna'$" main.bicep || { echo "planning model default changed"; exit 1; }
-grep -q '"planningModelName": { "value": "${PLANNING_MODEL_NAME=gpt-6-luna}" }' main.parameters.json || { echo "planning model is not one azd value"; exit 1; }
+grep -q "^param planningModelName string = 'gpt-5.4-mini'$" main.bicep || { echo "a plain provision must not change the planning model"; exit 1; }
+grep -q '"planningModelName": { "value": "${PLANNING_MODEL_NAME=gpt-5.4-mini}" }' main.parameters.json || { echo "planning model is not one azd value"; exit 1; }
 if grep -q "planningModelVersion" main.bicep modules/foundry.bicep; then echo "going back must not need a version too"; exit 1; fi
 for model in "{ name: 'gpt-5.4-mini', version: '2026-03-17' }" "{ name: 'gpt-6-luna', version: '2026-09-22' }"; do
   grep -qF "$model" main.bicep || { echo "main.bicep lacks planning deployment $model"; exit 1; }
@@ -47,17 +47,6 @@ for f in modules/search.bicep modules/search-serverless.bicep; do
   grep -q "disableLocalAuth: true" $f || { echo "$f allows keys"; exit 1; }
   grep -q "knowledgeRetrieval: 'standard'" $f || { echo "$f has the free retrieval plan"; exit 1; }
 done
-# what is compiled: off creates one service, and the Serverless one hangs on the parameter
-az bicep build --file main.bicep --stdout 2>/dev/null | python3 -c '
-import json, sys
-t = json.load(sys.stdin)
-r = t["resources"]
-r = list(r.values()) if isinstance(r, dict) else r
-conditions = {x["name"]: x.get("condition") for x in r if x["type"].endswith("/deployments")}
-serverless = {n: c for n, c in conditions.items() if "serverless" in n.lower()}
-assert len(serverless) == 2, sorted(conditions)
-assert all(c and "deployServerless" in c for c in serverless.values()), serverless
-assert t["parameters"]["serverlessSearch"]["allowedValues"] == ["off", "standby", "active"]
-assert t["parameters"]["planningModelName"]["allowedValues"] == ["gpt-6-luna", "gpt-5.4-mini"]
-' || { echo "the Serverless service is not behind its parameter"; exit 1; }
+# what is compiled: what hangs on the parameter, and what active moves
+az bicep build --file main.bicep --stdout 2>/dev/null | python3 tests/check_serverless.py || { echo "check_serverless.py failed"; exit 1; }
 echo "bicep ok"

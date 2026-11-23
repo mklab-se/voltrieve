@@ -34,6 +34,18 @@ PRICES = {
 SEARCH_REASONING_PER_MILLION = 0.022
 
 
+def models_of(label: str) -> tuple[str, str]:
+    """The agent and the planner of a labelled run, <kind>-<agent>[+<planner>]. Search planned with
+    gpt-5.4-mini in the runs whose label names no planner, and planner-<model> names only that."""
+    kind, _, rest = label.partition("-")
+    if "+" in rest:
+        agent, planner = rest.split("+")
+        for backend in ("loop-", "prompt-", "hosted-"):
+            agent = agent.removeprefix(backend)
+        return agent, planner
+    return ("gpt-5.4-mini", rest) if kind == "planner" else (rest, "gpt-5.4-mini")
+
+
 def turn_cost(run: dict, agent: str, planner: str, borrowed: dict) -> float | None:
     if agent not in PRICES or planner not in PRICES:
         return None
@@ -70,16 +82,7 @@ def main() -> int:
     for label, runs in runs_by_label.items():
         if label.startswith("arch-"):
             continue
-        parts = label.split("-", 1)
-        kind, rest = parts[0], parts[1]
-        agent, planner = rest, "gpt-5.4-mini"
-        if kind == "planner":
-            agent, planner = "gpt-5.4-mini", rest
-        if kind == "arch":
-            agent = rest.split("-", 1)[1]
-        if "+" in rest:
-            agent, planner = rest.split("+")
-            agent = agent.removeprefix("loop-").removeprefix("prompt-").removeprefix("hosted-")
+        agent, planner = models_of(label)
         costs = [turn_cost(r, agent, planner, borrowed) for r in runs]
         known = [c for c in costs if c is not None]
         jobs = [r["seconds"] for r in runs if r["group"] == "both" and not r["error"]]
@@ -94,13 +97,15 @@ def main() -> int:
             f"{sum(bool(r['error']) for r in runs):>7}{statistics.median(everything):>9.1f}"
             f"{statistics.median(simple or [0]):>9.1f}{statistics.median(jobs or [0]):>8.1f}{price}"
         )
+    width = max([16, *(len(n.removeprefix("arch-")) + 2 for n in runs_by_label if n.startswith("arch-"))])
     lines += ["", "Each architecture and model. TTFT is time to first token, total is time to last.",
-              "", f"{'backend':8}{'model':16}{'turns':>6}{'right':>7}{'articles':>10}{'TTFT med':>9}"
+              "", f"{'backend':8}{'model':{width}}{'turns':>6}{'right':>7}{'articles':>10}{'TTFT med':>9}"
               f"{'TTFT max':>9}{'over 10s':>9}{'jobs TTFT':>10}{'total med':>10}{'jobs total':>11}{'USD/1000':>10}"]
     for label, runs in runs_by_label.items():
         if not label.startswith("arch-"):
             continue
         model = label.removeprefix("arch-")
+        agent, planner = models_of(label)
         for backend in ("loop", "prompt", "hosted"):
             rows = [r for r in runs if r["backend"] == backend]
             good = [r for r in rows if not r["error"]]
@@ -109,13 +114,13 @@ def main() -> int:
             first = [r["first_text_seconds"] for r in good if r.get("first_text_seconds") is not None]
             jobs = [r for r in good if r["group"] == "both"]
             job_first = [r["first_text_seconds"] for r in jobs if r.get("first_text_seconds") is not None]
-            costs = [c for c in (turn_cost(r, model, "gpt-5.4-mini", borrowed) for r in rows) if c is not None]
+            costs = [c for c in (turn_cost(r, agent, planner, borrowed) for r in rows) if c is not None]
             right = sum(sorted(r["used"]) == sorted(r["expected"]) and r.get("topic") == r.get("expected_topic") for r in good)
             found = sum(r["articles_found"] for r in rows)
             wanted = sum(r["articles_expected"] for r in rows)
             price = f"{1000 * statistics.mean(costs):>10.2f}" if costs else f"{'n/a':>10}"
             lines.append(
-                f"{backend:8}{model:16}{len(rows):>6}{right:>7}{f'{found}/{wanted}':>10}"
+                f"{backend:8}{model:{width}}{len(rows):>6}{right:>7}{f'{found}/{wanted}':>10}"
                 f"{statistics.median(first or [0]):>9.1f}{max(first or [0]):>9.1f}"
                 f"{sum(t > 10 for t in first):>9}{statistics.median(job_first or [0]):>10.1f}"
                 f"{statistics.median(r['seconds'] for r in good):>10.1f}"

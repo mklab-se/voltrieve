@@ -35,9 +35,9 @@ class RetrieveResult:
         """The model that planned the queries, when the activity names one. Every part is optional."""
         for item in self.activity:
             if item.get("type") == "modelQueryPlanning":
-                name = (item.get("model") or {}).get("modelName")
-                if name:
-                    return name
+                model = item.get("model")
+                if isinstance(model, dict) and model.get("modelName"):
+                    return model["modelName"]
         return None
 
 

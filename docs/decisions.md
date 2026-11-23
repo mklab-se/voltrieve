@@ -31,8 +31,8 @@ The user decided to use the latest API versions, preview included. This replaced
 
 On 2026-11-24 the product owner asked for the newest search APIs. The data plane and the MCP endpoint use `2026-11-01-preview`, not the stable `2026-10-01`, because only the preview accepts GPT-6 models for planning. Bicep uses the stable `2026-11-01`, which is live in France Central now, so the section above no longer applies. No field we send or read changed.
 
-- **Planning on `gpt-6-luna`:** `gpt-6.1-terra` is not among the models Search lists, and `gpt-6-luna` is the cheapest that is. `gpt-5.4-mini` stays deployed until the change is measured, and `PLANNING_MODEL_NAME` is the one value to go back with. Deploy the code before choosing a GPT-6 model: older clients are not documented to work with such a base.
-- **Serverless is built, and off:** it fits Sweden Central, knowledge bases, indexers and our size, but the documentation does not say what a small index costs in compute units. `SEARCH_SERVERLESS` is `off`, `standby` or `active`. The Basic service stays in all three.
+- **Planning stays on `gpt-5.4-mini` until `gpt-6-luna` is measured:** `gpt-6.1-terra` is not among the models Search lists, and `gpt-6-luna` is the cheapest that is. Both are deployed, and `PLANNING_MODEL_NAME` is the one value that chooses. The new planner is opt-in, so a plain `azd provision` cannot switch it. Deploy the code before choosing a GPT-6 model: older clients are not documented to work with such a base.
+- **Serverless is built, and off:** it fits Sweden Central, knowledge bases, indexers and our size, but the documentation does not say what a small index costs in compute units. `SEARCH_SERVERLESS` is `off`, `standby` or `active`. The Basic service stays in all three. `active` is refused before `standby` has been provisioned, and pruning documents prunes every service.
 - **The Serverless identity has one Foundry role,** Cognitive Services OpenAI User, as the identity page asks. Basic keeps its two.
 
 Not measured yet. The design has what breaks, the order and the way back: [design](superpowers/specs/2026-11-24-search-foundry-iq-design.md).

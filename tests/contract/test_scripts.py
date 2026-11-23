@@ -529,3 +529,36 @@ def test_deploy_web_fails_when_the_build_is_missing(tmp_path):
 def test_deploy_agents_ends_by_naming_the_full_smoke_check():
     last = (SCRIPTS / "deploy-agents.sh").read_text().strip().splitlines()[-1]
     assert last.startswith("echo ") and "uv run scripts/smoke.py" in last and "--basic" not in last
+
+
+@pytest.mark.parametrize(("label", "models"), [
+    ("final-gpt-6.1-terra", ("gpt-6.1-terra", "gpt-5.4-mini")),
+    ("planner-gpt-5.4-nano", ("gpt-5.4-mini", "gpt-5.4-nano")),
+    ("novluna-gpt-6.1-terra+gpt-6-luna", ("gpt-6.1-terra", "gpt-6-luna")),
+    ("x-loop-gpt-6.1-terra+gpt-6-luna", ("gpt-6.1-terra", "gpt-6-luna")),
+    ("arch-gpt-6.1-terra", ("gpt-6.1-terra", "gpt-5.4-mini")),
+    ("arch-gpt-6.1-terra+gpt-6-luna", ("gpt-6.1-terra", "gpt-6-luna")),
+])
+def test_model_costs_reads_both_models_from_the_label(label, models):
+    import model_costs
+
+    assert model_costs.models_of(label) == models
+
+
+def test_model_costs_prices_an_architecture_run_by_its_planner(tmp_path, monkeypatch):
+    import model_costs
+
+    run = {"backend": "loop", "group": "none", "error": "", "seconds": 1.0, "first_text_seconds": 1.0,
+           "used": [], "expected": [], "articles_found": 0, "articles_expected": 0, "searches": 1,
+           "input_tokens": 0, "output_tokens": 0, "planning_input_tokens": 1_000_000,
+           "planning_output_tokens": 0, "search_reasoning_tokens": 0}
+    (tmp_path / "models").mkdir()
+    for planner in ("gpt-6-luna", "gpt-5.4-mini"):
+        (tmp_path / "models" / f"arch-gpt-6.1-terra+{planner}.json").write_text(json.dumps([run]))
+    monkeypatch.setattr(model_costs, "EVIDENCE", tmp_path)
+    assert model_costs.main() == 0
+    rows = [line.split() for line in (tmp_path / "model-comparison.txt").read_text().splitlines()
+            if line.startswith("loop")]
+    assert {row[1]: row[-1] for row in rows} == {
+        "gpt-6.1-terra+gpt-6-luna": "100.00", "gpt-6.1-terra+gpt-5.4-mini": "750.00"
+    }
