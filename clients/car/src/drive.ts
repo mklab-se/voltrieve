@@ -1,6 +1,7 @@
+import { SignPhotos, type Renewed, type Upload } from "./attachments";
 import type { Horn } from "./horn";
 import { newCar, setSpeed, startParking, step, type Car } from "./sim/car";
-import { blockOf } from "./sim/street";
+import { blockOf, passedSign } from "./sim/street";
 import type { CarControls, WiperMode } from "./tools";
 
 interface Parking {
@@ -15,13 +16,22 @@ export class Drive implements CarControls {
   wipers: WiperMode = "off";
   /** The block the driver last asked about. */
   askedBlock?: number;
+  readonly photos = new SignPhotos();
   private parking?: Parking;
+  private taking: Promise<void> = Promise.resolve();
 
-  constructor(private readonly horn: Horn) {}
+  constructor(
+    private readonly horn: Horn,
+    private readonly takePhoto: (block: number) => Promise<Blob>,
+    private readonly upload: Upload,
+  ) {}
 
   /** Call it for every frame, with the seconds since the last one. */
   tick(dtSeconds: number): void {
+    const before = this.car.distanceM;
     this.car = step(this.car, dtSeconds);
+    const block = passedSign(before, this.car.distanceM);
+    if (block !== undefined) this.photograph(block);
     if (this.car.mode !== "parked") return;
     this.parking?.stopped();
     this.parking = undefined;
@@ -57,7 +67,29 @@ export class Drive implements CarControls {
   }
 
   async signPhoto(): Promise<{ id?: string; message: string }> {
-    return { message: "No parking sign has been passed yet." };
+    await this.taking; // the car may just have passed the sign
+    const result = await this.photos.idForLast(this.upload);
+    if (result.status !== "ready") return { message: result.message };
+    this.askedBlock = result.block;
+    return { id: result.id, message: "The photo is attached." };
+  }
+
+  /** New ids for photos that the API has lost. */
+  renewPhotos(ids: string[]): Promise<Renewed> {
+    return this.photos.renew(ids, this.upload);
+  }
+
+  private photograph(block: number): void {
+    const photo = this.takePhoto(block);
+    const before = this.taking;
+    this.taking = (async () => {
+      await before;
+      try {
+        this.photos.add(block, await photo);
+      } catch {
+        // No photo of this sign. The one before it stays.
+      }
+    })();
   }
 }
 

@@ -166,3 +166,67 @@ describe("runTurn", () => {
     expect(events.at(-1)).toMatchObject({ type: "error", data: { code: "malformed_event" } });
   });
 });
+
+describe("a photo that the API has lost", () => {
+  const lost = () => new Response('{"detail":{"code":"unknown_attachment"}}', { status: 422 });
+
+  it("is uploaded again once, and the turn goes on", async () => {
+    const { requests, fetchImpl } = api(lost, () => sse(delta("Yes."), DONE));
+    const renew = vi.fn(async () => ({ ids: ["new"] }));
+    const context = vi.fn(() => CONTEXT);
+    const events = await run({ attachments: ["old"], renew, context }, fetchImpl);
+    expect(renew).toHaveBeenCalledExactlyOnceWith(["old"]);
+    expect(requests.map((r) => r.body.attachments)).toEqual([["old"], ["new"]]);
+    expect({ ...requests[1]!.body, attachments: 0 }).toEqual({ ...requests[0]!.body, attachments: 0 });
+    expect(context).toHaveBeenCalledTimes(1);
+    expect(events.map((e) => e.type)).toEqual(["delta", "done"]);
+  });
+
+  it("is uploaded again in the results of a tool too", async () => {
+    const { requests, fetchImpl } = api(() => sse(calls("get_sign_photo", "honk")), lost, () => sse(DONE));
+    const runTool = vi.fn(async (call: { name: string }) =>
+      call.name === "honk" ? { output: "Honked 1 time(s)." } : { output: "The photo is attached.", attachments: ["old"] },
+    );
+    const events = await run({ runTool, renew: async () => ({ ids: ["new"] }) }, fetchImpl);
+    expect(runTool).toHaveBeenCalledTimes(2); // the tools do not run again
+    expect(requests[2]!.body.results).toEqual([
+      { call_id: "get_sign_photo-0", output: "The photo is attached.", attachments: ["new"] },
+      { call_id: "honk-1", output: "Honked 1 time(s)." },
+    ]);
+    expect(events.at(-1)!.type).toBe("done");
+  });
+
+  it("is an error the second time", async () => {
+    const { requests, fetchImpl } = api(lost);
+    const renew = vi.fn(async () => ({ ids: ["new"] }));
+    const events = await run({ attachments: ["old"], renew }, fetchImpl);
+    expect(renew).toHaveBeenCalledTimes(1);
+    expect(requests).toHaveLength(2);
+    expect(events).toMatchObject([{ type: "error", data: { code: "unknown_attachment" } }]);
+  });
+
+  it("is an error the second time in the same turn, also in another request", async () => {
+    const { fetchImpl } = api(lost, () => sse(calls("get_sign_photo")), lost);
+    const renew = vi.fn(async () => ({ ids: ["new"] }));
+    const runTool = async () => ({ output: "The photo is attached.", attachments: ["new"] });
+    const events = await run({ attachments: ["old"], renew, runTool }, fetchImpl);
+    expect(renew).toHaveBeenCalledTimes(1);
+    expect(events.at(-1)).toMatchObject({ type: "error", data: { code: "unknown_attachment" } });
+  });
+
+  it("is an error when it cannot be uploaded again", async () => {
+    const { requests, fetchImpl } = api(lost);
+    const events = await run({ attachments: ["old"], renew: async () => ({ message: "The API is busy." }) }, fetchImpl);
+    expect(requests).toHaveLength(1);
+    expect(events).toEqual([{ type: "error", data: { code: "unknown_attachment", message: "The API is busy." } }]);
+  });
+
+  it("is an error without a way to renew it, and any other error is not tried again", async () => {
+    expect(await run({ attachments: ["old"] }, api(lost).fetchImpl)).toMatchObject([{ data: { code: "unknown_attachment" } }]);
+    const busy = api(() => new Response('{"detail":{"code":"busy"}}', { status: 503 }));
+    const renew = vi.fn(async () => ({ ids: ["new"] }));
+    expect(await run({ attachments: ["old"], renew }, busy.fetchImpl)).toMatchObject([{ data: { code: "busy" } }]);
+    expect(renew).not.toHaveBeenCalled();
+    expect(busy.requests).toHaveLength(1);
+  });
+});
