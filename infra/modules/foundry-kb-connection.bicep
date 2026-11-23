@@ -20,7 +20,7 @@ resource connection 'Microsoft.CognitiveServices/accounts/projects/connections@2
   properties: {
     authType: 'ProjectManagedIdentity'
     category: 'RemoteTool'
-    target: '${searchEndpoint}/knowledgebases/${knowledgeBaseName}/mcp?api-version=2026-08-01-preview'
+    target: '${searchEndpoint}/knowledgebases/${knowledgeBaseName}/mcp?api-version=2026-11-01-preview'
     isSharedToAll: true
     audience: 'https://search.azure.com/'
     metadata: { ApiType: 'Azure' }

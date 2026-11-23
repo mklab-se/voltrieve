@@ -36,7 +36,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from voltrieve_client import Api, ApiError, Turn, api_token, api_url, azd_value, cached_token  # noqa: E402
 
 INDEXER_NAME = "voltrieve-docs-indexer"
-SEARCH_API_VERSION = "2026-08-01-preview"
+SEARCH_API_VERSION = "2026-11-01-preview"
 QUESTION = "What is the towing capacity of the Fjord?"
 SIGN_CODE = "K7Q"  # hard to guess: the answer has to come from the photo
 PHOTO_QUESTION = "Which characters are on the road sign in my photo? Answer with exactly those characters."

@@ -21,6 +21,7 @@ class SmokeOutcome:
     question: str
     passed: bool
     top_titles: list[str]
+    planning_model: str | None = None
 
 
 def run_smoke(client, questions: list[SmokeQuestion]) -> list[SmokeOutcome]:
@@ -33,8 +34,13 @@ def run_smoke(client, questions: list[SmokeQuestion]) -> list[SmokeOutcome]:
             q.expect_title_contains in str(s.get("title", "")) and s.get("doc_type") == q.expect_doc_type
             for s in sources
         )
-        outcome = SmokeOutcome(q.question, passed, [str(s.get("title", "")) for s in sources])
-        print(f"{'PASS' if passed else 'FAIL'}  {q.question}  ->  {', '.join(outcome.top_titles)}")
+        outcome = SmokeOutcome(
+            q.question, passed, [str(s.get("title", "")) for s in sources], result.planning_model
+        )
+        print(
+            f"{'PASS' if passed else 'FAIL'}  {q.question}  ->  {', '.join(outcome.top_titles)}"
+            f"  (planned by {outcome.planning_model or 'no named model'})"
+        )
         if result.partial:
             for activity in result.activity:
                 if "error" in activity:

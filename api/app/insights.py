@@ -26,7 +26,8 @@ PRICES = {
     "gpt-5.4-mini": (0.75, 0.075, 4.50),
     "gpt-5.4-nano": (0.20, 0.02, 1.25),
 }
-PLANNING_MODEL = "gpt-5.4-mini"  # Search plans its queries with this deployment
+# Prices the planning of a retrieve that does not name its model, or names one without a price.
+PLANNING_MODEL = "gpt-5.4-mini"
 SEARCH_REASONING_PER_MILLION = 0.022
 USD_TO_SEK = 10.5  # a fixed rate: the estimate is for trends, not the bill
 
@@ -53,7 +54,7 @@ def mask_prompt(text: str) -> str:
 
 
 def estimate_cost_sek(model: str, usage: dict, planning_input: int = 0, planning_output: int = 0,
-                      search_reasoning: int = 0) -> float | None:
+                      search_reasoning: int = 0, planning_model: str | None = None) -> float | None:
     """Estimated cost of a turn in SEK from token counts and list prices; None for an unknown model."""
     if model not in PRICES:
         return None
@@ -61,7 +62,7 @@ def estimate_cost_sek(model: str, usage: dict, planning_input: int = 0, planning
     cached = (usage.get("input_tokens_details") or {}).get("cached_tokens", 0)
     uncached = usage.get("input_tokens", 0) - cached
     usd = (uncached * price_in + cached * price_cached + usage.get("output_tokens", 0) * price_out) / 1e6
-    plan_in, _, plan_out = PRICES[PLANNING_MODEL]
+    plan_in, _, plan_out = PRICES.get(planning_model or PLANNING_MODEL, PRICES[PLANNING_MODEL])
     usd += (planning_input * plan_in + planning_output * plan_out) / 1e6
     usd += search_reasoning * SEARCH_REASONING_PER_MILLION / 1e6
     return round(usd * USD_TO_SEK, 5)
@@ -145,6 +146,7 @@ class TurnRecorder:
     _kbs: list[str] = field(default_factory=list, init=False)
     _usage: dict = field(default_factory=dict, init=False)
     _planning: list[int] = field(default_factory=lambda: [0, 0, 0], init=False)
+    _planning_model: str | None = field(default=None, init=False)
     _summary: TurnSummary | None = field(default=None, init=False)
 
     def __post_init__(self) -> None:
@@ -176,6 +178,7 @@ class TurnRecorder:
             self._planning[0] += data.get("planning_input_tokens", 0)
             self._planning[1] += data.get("planning_output_tokens", 0)
             self._planning[2] += data.get("search_reasoning_tokens", 0)
+            self._planning_model = data.get("planning_model") or self._planning_model
         elif step == "mcp_tool_called":
             _add(self._kbs, data.get("server"))
         elif step == "final_answer_sent" and self._outcome == "answered":
@@ -191,7 +194,8 @@ class TurnRecorder:
                 ms(self._first_status), ms(self._first_text), ms(end) or 0, self._model_calls,
                 list(self._tools), list(self._kbs), self._usage.get("input_tokens", 0), cached,
                 self._usage.get("output_tokens", 0), self._planning[2],
-                estimate_cost_sek(self.model, self._usage, *self._planning), self.cold_start, self.kind,
+                estimate_cost_sek(self.model, self._usage, *self._planning, self._planning_model),
+                self.cold_start, self.kind,
             )
         return self._summary
 

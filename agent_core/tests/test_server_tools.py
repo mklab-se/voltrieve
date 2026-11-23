@@ -118,7 +118,9 @@ async def test_knowledge_base_traces_sub_queries_and_titles(monkeypatch, user, e
         chunks=[Chunk("0", "V1 Manual", "Range is 500 km")],
         references=[Reference("0", "k1", 2.0, None)],
         activity=[
-            {"type": "modelQueryPlanning", "inputTokens": 10},
+            {"type": "modelQueryPlanning", "inputTokens": 10, "outputTokens": None,
+             "model": {"modelName": "gpt-6-luna", "deploymentId": "gpt-6-luna"}},
+            {"type": "agenticReasoning", "reasoningTokens": None},
             {"type": "searchIndex", "searchIndexArguments": {"search": "v1 range"}},
             {"type": "searchIndex", "searchIndexArguments": {"search": "battery capacity"}},
         ],
@@ -149,6 +151,10 @@ async def test_knowledge_base_traces_sub_queries_and_titles(monkeypatch, user, e
     assert event.data["step"] == "knowledge_base_retrieved"
     assert event.data["sub_queries"] == ["v1 range", "battery capacity"]
     assert event.data["references"] == ["V1 Manual"]
+    assert event.data["planning_model"] == "gpt-6-luna"
+    # A token count in the activity is optional, and can be null.
+    assert event.data["planning_input_tokens"] == 10 and event.data["planning_output_tokens"] == 0
+    assert event.data["search_reasoning_tokens"] == 0
 
 
 def test_get_prices_says_it_holds_base_prices_only():

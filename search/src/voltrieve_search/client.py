@@ -4,7 +4,9 @@ from collections.abc import Callable
 
 import httpx
 
-DEFAULT_API_VERSION = "2026-08-01-preview"
+# The MCP endpoint of a knowledge base uses it too (agents/prompt/create_agents.py imports it).
+# A base that plans with a GPT-6 model needs 2026-11-01-preview or later.
+DEFAULT_API_VERSION = "2026-11-01-preview"
 
 
 class SearchApiError(Exception):
