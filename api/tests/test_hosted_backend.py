@@ -106,6 +106,7 @@ async def test_relays_events_one_to_one_and_returns_the_outcome(http):
         "correlation_id": "corr-1",
         "parts": [],
         "kept": None,
+        "private": False,
     }
 
 
@@ -344,7 +345,7 @@ async def test_hosted_body_and_outcome_carry_parts_and_kept(http):
     result = await backend.run_turn(ctx(parts=[photo], context={"plate": "XYZ123"}), emit)
     assert result.kept == kept and result.unrecorded is False
     body = json.loads(route.calls.last.request.content)
-    assert body["parts"] == [photo] and body["kept"] is None
+    assert body["parts"] == [photo] and body["kept"] is None and body["private"] is True
     assert "XYZ123" not in route.calls.last.request.content.decode()  # the context is not sent
 
     await backend.run_turn(ctx(input_=[], kept=kept), emit)
@@ -366,8 +367,9 @@ async def test_an_outcome_without_kept_or_unrecorded_is_accepted_and_unrecorded_
 
 @respx.mock
 @pytest.mark.parametrize("attachment", [{"parts": [{"type": "input_image", "image_url": "data:AAAA"}]},
-                                        {"kept": {"items": [{"x": "AAAA"}], "head": [], "text": ""}}])
-async def test_a_failed_unstored_call_logs_the_status_and_the_error_type_only(http, caplog, attachment):
+                                        {"kept": {"items": [{"x": "AAAA"}], "head": [], "text": ""}},
+                                        {"context": {"plate": "AAAA"}}])
+async def test_a_failed_private_call_logs_the_status_the_error_type_and_the_frames(http, caplog, attachment):
     # The gateway answers 400 and echoes the request, as a validation error may.
     respx.post(INVOKE_URL).mock(side_effect=lambda request: httpx.Response(400, content=request.content))
     events = []
@@ -378,7 +380,8 @@ async def test_a_failed_unstored_call_logs_the_status_and_the_error_type_only(ht
     with caplog.at_level("DEBUG"):
         result = await make_backend(http).run_turn(ctx(input_="what is the question", **attachment), emit)
     assert result.status == "failed" and events[-1].data["code"] == "agent_unavailable"
-    assert "HTTP status 400" in caplog.text and "HostedAgentError" in caplog.text
+    assert "HostedAgentError, HTTP status 400" in caplog.text and "in _invoke" in caplog.text
+    assert json.loads(respx.calls.last.request.content)["private"] is True
     assert "AAAA" not in caplog.text and "question" not in caplog.text
 
 

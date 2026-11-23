@@ -15,7 +15,8 @@ from voltrieve_search.retrieve import (
 )
 
 from voltrieve_agent.events import RETRYING, status, trace
-from voltrieve_agent.tools import current_emit, current_unstored
+from voltrieve_agent.private import current_private
+from voltrieve_agent.tools import current_emit
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +51,7 @@ class KnowledgeBase:
         except SearchApiError as exc:
             if exc.status != 402:
                 raise
-            message = "(not logged)" if current_unstored.get() else exc.message
+            message = f"HTTP status {exc.status}" if current_private.get() else exc.message
             logger.error("Search refused %s: %s", self._kb_name, message)
             emit = current_emit.get()
             if emit is not None:

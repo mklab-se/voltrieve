@@ -216,7 +216,7 @@ async def test_a_failed_unstored_turn_logs_the_error_type_only(app, backend, cap
     job = Job(CLAIMS, "loop", None, "t1", SECRET_TEXT, parts=[PHOTO])
     with caplog.at_level(logging.DEBUG):
         await drain(app.state.turns.start(job))
-    assert "Turn failed" in caplog.text and "RuntimeError" in caplog.text
+    assert "Turn failed: RuntimeError" in caplog.text and "in fail" in caplog.text  # the frames
     assert_clean(caplog)
 
 

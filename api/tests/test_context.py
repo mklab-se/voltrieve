@@ -6,9 +6,12 @@ from itertools import product
 
 import pytest
 from pydantic import ValidationError
+from voltrieve_agent.events import trace
 
+from app.backends.loop import LoopBackend
 from app.context import ClientContext, context_line
-from tests.conftest import answer, pause, parse_sse
+from tests.conftest import answer, parse_sse, pause
+from tests.test_loop_backend import FakeOpenAI
 
 CAR = {
     "model": "Voltrieve Spark",
@@ -62,6 +65,8 @@ async def test_context_cannot_break_out_of_its_line():
     assert text.count("[") == 1 and text.count("]") == 1 and text.endswith("]")
     assert text.isprintable() and "  " not in text
     assert "registration A B" in text
+    # The sign between the facts cannot be used to add one.
+    assert line({"car": {"model": "Spark; speed 9 km/h"}}).count(";") == 0
 
 
 BAD = [
@@ -168,6 +173,131 @@ async def test_context_is_in_the_model_input_and_nowhere_else(client, auth, back
     assert "SPARK" not in r.text and "SPARK" not in repr(ctx)
 
 
+def secret_free(*texts):
+    for secret in ("SPARK", "From the client", "12400", "Prime", "+01:00"):
+        assert not any(secret in t for t in texts), secret
+
+
+async def leaky_failure(ctx, emit):
+    said = f"{ctx!r} {ctx.input} {ctx.context}"
+    await emit(trace("server_tool_called", "tools", "check_stock", tool="check_stock", arguments=said))
+    await emit(trace("server_tool_returned", "tools", "check_stock", tool="check_stock", output_preview=said))
+    try:
+        raise ValueError(said)
+    except ValueError as exc:
+        raise RuntimeError(said) from exc
+
+
+async def test_a_failed_turn_with_context_logs_the_type_and_the_frames(client, auth, backend, caplog, spans, make_token):
+    backend.script = [leaky_failure]
+    with caplog.at_level(logging.DEBUG):
+        r = await client.post("/chat", headers=auth, json={"message": "hello there", "context": CONTEXT})
+    assert parse_sse(r.text)[-1][1]["code"] == "internal_error"
+    secret_free(logged(caplog), span_text(spans), await live_feed(client, make_token))
+    assert "Turn failed: RuntimeError" in caplog.text and "ValueError" in caplog.text
+    assert "test_context.py" in caplog.text and "leaky_failure" in caplog.text
+    assert "turn input: hello there" in caplog.text  # the user's own message, as for any stored turn
+
+
+async def test_a_continuation_of_a_turn_with_context_is_as_quiet(client, auth, backend, caplog, spans, make_token):
+    backend.script = [pause(), leaky_failure]
+    with caplog.at_level(logging.DEBUG):
+        r = await client.post("/chat", headers=auth, json={"message": "hi", "context": CONTEXT})
+        await client.post("/chat/tool-results", headers=auth, json=results_of(parse_sse(r.text)[-1][1]))
+    assert backend.contexts[1].context == CONTEXT
+    secret_free(logged(caplog), span_text(spans), await live_feed(client, make_token))
+    assert "Turn failed: RuntimeError" in caplog.text
+
+
+async def test_a_turn_without_context_logs_as_before(client, auth, backend, caplog):
+    backend.script = [leaky_failure]
+    with caplog.at_level(logging.DEBUG):
+        await client.post("/chat", headers=auth, json={"message": "hello there"})
+    assert "Traceback" in caplog.text and "RuntimeError: TurnContext(" in caplog.text
+    assert "server_tool_called arguments" in caplog.text and "server_tool_returned output_preview" in caplog.text
+
+
+async def test_a_failed_close_and_repair_of_a_turn_with_context_log_no_text(app, client, auth, backend, caplog):
+    backend.script = [pause(), answer()]
+    r = await client.post("/chat", headers=auth, json={"message": "hi", "context": CONTEXT})
+    waiting = parse_sse(r.text)[-1][1]
+    backend.abandon_error = RuntimeError("cannot close SPARK")
+    backend.repair_error = RuntimeError("cannot repair SPARK")
+    body = {"message": "again", "conversation_id": waiting["conversation_id"], "context": CONTEXT}
+    with caplog.at_level(logging.DEBUG):
+        await client.post("/chat", headers=auth, json=body)
+    assert "Could not close" in caplog.text and "Conversation repair failed: RuntimeError" in caplog.text
+    secret_free(logged(caplog))
+
+
+async def test_a_pause_with_context_closed_by_a_turn_without_it_logs_no_text(client, auth, backend, caplog):
+    backend.script = [pause(), answer()]
+    r = await client.post("/chat", headers=auth, json={"message": "hi", "context": CONTEXT})
+    backend.abandon_error = RuntimeError("cannot close SPARK")
+    body = {"message": "again", "conversation_id": parse_sse(r.text)[-1][1]["conversation_id"]}
+    with caplog.at_level(logging.DEBUG):
+        await client.post("/chat", headers=auth, json=body)
+    assert "Could not close" in caplog.text
+    secret_free(logged(caplog))
+
+
+class FailingSources:
+    async def resolve(self, text):
+        raise RuntimeError(f"no answer for {text}")
+
+
+async def test_a_failed_source_lookup_of_a_turn_with_context_logs_no_text(app, client, auth, backend, caplog):
+    app.state.turns.sources = FailingSources()
+    backend.script = [answer("See SPARK.pdf")]
+    with caplog.at_level(logging.DEBUG):
+        await client.post("/chat", headers=auth, json={"message": "hi", "context": CONTEXT})
+    assert "Source lookup failed: RuntimeError" in caplog.text
+    secret_free(logged(caplog))
+
+
+async def test_the_in_process_loop_is_private_for_a_turn_with_context(app, client, auth, caplog):
+    class EchoingModel:
+        async def stream(self, *, instructions, conversation, input, tools, store=True):
+            raise RuntimeError(f"bad request: {input}")
+            yield
+
+    app.state.registry._instances["loop"] = LoopBackend(EchoingModel(), FakeOpenAI(), [])
+    with caplog.at_level(logging.DEBUG):
+        await client.post("/chat", headers=auth, json={"message": "hi", "context": CONTEXT})
+        assert "Model stream failed: RuntimeError" in caplog.text
+        secret_free(logged(caplog))
+        await client.post("/chat", headers=auth, json={"message": "hi"})
+    assert "bad request: hi" in caplog.text
+
+
+def results_of(waiting):
+    return {
+        "conversation_id": waiting["conversation_id"],
+        "turn_id": waiting["turn_id"],
+        "results": [{"call_id": "call_1", "output": "x"}],
+    }
+
+
+async def test_the_context_survives_pauses_and_goes_no_further(app, client, auth, backend):
+    backend.script = [pause(), pause(), answer()]
+    r = await client.post("/chat", headers=auth, json={"message": "hi", "context": CONTEXT})
+    for _ in range(2):
+        waiting = parse_sse(r.text)[-1][1]
+        kept = app.state.store.get(waiting["turn_id"])
+        assert kept.context == CONTEXT and "SPARK" not in repr(kept)
+        r = await client.post("/chat/tool-results", headers=auth, json=results_of(waiting))
+    assert parse_sse(r.text)[-1][0] == "done" and "SPARK" not in r.text
+    assert [c.context for c in backend.contexts] == [CONTEXT] * 3
+    assert all("From the client" not in str(c.input) for c in backend.contexts[1:])
+
+
+async def test_a_pause_without_context_has_none(client, auth, backend):
+    backend.script = [pause(), answer()]
+    r = await client.post("/chat", headers=auth, json={"message": "hi"})
+    await client.post("/chat/tool-results", headers=auth, json=results_of(parse_sse(r.text)[-1][1]))
+    assert backend.contexts[1].context == {}
+
+
 async def test_a_message_without_context_is_sent_as_it_is(client, auth, backend):
     backend.script = [answer(), answer()]
     await client.post("/chat", headers=auth, json={"message": "hi"})
@@ -179,11 +309,5 @@ async def test_a_message_without_context_is_sent_as_it_is(client, auth, backend)
 async def test_a_continuation_sends_no_context_line(client, auth, backend):
     backend.script = [pause(), answer()]
     r = await client.post("/chat", headers=auth, json={"message": "hi", "context": CONTEXT})
-    paused = parse_sse(r.text)[-1][1]
-    body = {
-        "conversation_id": paused["conversation_id"],
-        "turn_id": paused["turn_id"],
-        "results": [{"call_id": "call_1", "output": "x"}],
-    }
-    await client.post("/chat/tool-results", headers=auth, json=body)
+    await client.post("/chat/tool-results", headers=auth, json=results_of(parse_sse(r.text)[-1][1]))
     assert backend.contexts[1].input == [{"type": "function_call_output", "call_id": "call_1", "output": "x"}]

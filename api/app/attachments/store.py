@@ -4,6 +4,7 @@ The API runs with one replica, so this needs no other store. A restart loses the
 uploads again.
 """
 
+import json
 import secrets
 import time
 from collections.abc import Callable
@@ -23,9 +24,12 @@ class Stored:
     parts: list[Part] = field(repr=False)
     expires_at: float  # on the store's own clock
     oid: str = field(repr=False)
+    # What the content takes in memory. A photo is held as base64, a third more than the JPEG.
+    memory: int
 
     @property
     def size(self) -> int:
+        """The size of the processed file, for the trace."""
         return sum(p.size for p in self.parts)
 
     @property
@@ -55,18 +59,19 @@ class AttachmentStore:
         return len(self._items)
 
     @property
-    def size(self) -> int:
-        return sum(s.size for s in self._items.values())
+    def memory(self) -> int:
+        return sum(s.memory for s in self._items.values())
 
     def put(self, oid: str, kind: str, parts: list[Part]) -> Stored:
         """Keep an attachment. At a limit the oldest goes, the user's own first."""
-        stored = Stored(secrets.token_urlsafe(24), kind, parts, self._clock() + self.ttl, oid)
-        if stored.size > self._max_bytes:
+        memory = sum(len(json.dumps(p.content)) for p in parts)
+        stored = Stored(secrets.token_urlsafe(24), kind, parts, self._clock() + self.ttl, oid, memory)
+        if memory > self._max_bytes:
             raise ValueError("the attachment is larger than the store")
         self.evict_expired()
         while sum(s.oid == oid for s in self._items.values()) >= self._per_user:
             self._drop_oldest(oid)
-        while self.size + stored.size > self._max_bytes:
+        while self.memory + memory > self._max_bytes:
             self._drop_oldest(oid)
         self._items[stored.id] = stored
         return stored

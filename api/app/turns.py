@@ -9,7 +9,6 @@ which gives every open function call an output.
 
 import asyncio
 import logging
-import sys
 import time
 import uuid
 from collections import OrderedDict
@@ -18,6 +17,7 @@ from dataclasses import dataclass, field
 
 from voltrieve_agent.events import KEEPALIVE, KEEPALIVE_SECONDS, REVIEWING, THINKING, AgentEvent, status, format_event, trace
 from voltrieve_agent.model import merge_usage
+from voltrieve_agent.private import log_exception
 from voltrieve_agent.tools import ClientTool, UserContext
 from voltrieve_agent.unstored import head_outputs
 
@@ -39,15 +39,6 @@ GENERIC_ERROR = AgentEvent(
 )
 
 
-def log_failure(message: str, unstored: bool, *args: object) -> None:
-    """Log the exception being handled. For an unstored turn only its type: its text and traceback
-    may quote the request, and the request holds the attachment."""
-    if unstored:
-        logger.error(message + ": %s", *args, type(sys.exc_info()[1]).__name__)
-    else:
-        logger.exception(message, *args)
-
-
 @dataclass
 class PausedTurn:
     turn_id: str
@@ -60,7 +51,12 @@ class PausedTurn:
     usage: dict = field(default_factory=dict)
     text: str = ""  # the answer so far, so a continuation still finds its citations
     kept: dict | None = field(default=None, repr=False)  # what an unstored turn keeps in memory
+    context: dict = field(default_factory=dict, repr=False)  # what the client said when the turn began
     expires_at: float = 0.0
+
+    @property
+    def private(self) -> bool:
+        return bool(self.kept is not None or self.context)
 
     def abandon_outputs(self) -> list[dict]:
         """Outputs that close every open function_call of this turn. An unstored turn has stored
@@ -185,16 +181,21 @@ class Job:
     def unstored(self) -> bool:
         return bool(self.parts or self.kept)
 
+    @property
+    def private(self) -> bool:
+        """Whether nothing the turn says may be logged, error texts included."""
+        return bool(self.unstored or self.context)
+
 
 class _Run:
     """The events of one request: a queue the response drains, fed by a background task."""
 
-    def __init__(self, recorder: TurnRecorder | None = None, unstored: bool = False) -> None:
+    def __init__(self, recorder: TurnRecorder | None = None, private: bool = False) -> None:
         self.queue: asyncio.Queue[AgentEvent | None] = asyncio.Queue()
         self._start = time.perf_counter()
         self.held_tool_calls: AgentEvent | None = None
         self.recorder = recorder
-        self.unstored = unstored
+        self.private = private
         self.text = ""  # the answer so far, to find the documents it cites
 
     async def emit(self, event: AgentEvent) -> None:
@@ -232,8 +233,8 @@ class _Run:
             elapsed_ms=data.get("elapsed_ms"),
             **({k: data.get(k) for k in ("kind", "size")} if step == "attachment_used" else {}),
         )
-        if self.unstored:
-            return  # arguments and results may say what is in the attachment
+        if self.private:
+            return  # arguments and results may say what is in an attachment or the context
         # Arguments and results can hold user data: only at debug level, truncated.
         for key in ("arguments", "output_preview"):
             if key in data:
@@ -266,7 +267,7 @@ class TurnService:
         kind = "message" if isinstance(job.input, str) else "tool_results"
         # An expired turn runs nothing, and its turn id is client input: it stays off the feed.
         recorder = None if job.turn_expired else TurnRecorder(job.backend, self._model, user, cold_start=cold, kind=kind)
-        run = _Run(recorder, job.unstored)
+        run = _Run(recorder, job.private)
         run.text = job.text
         if job.turn_expired:
             pass  # nothing to show
@@ -365,7 +366,7 @@ class TurnService:
                 try:
                     await backend.repair(conversation_id)
                 except Exception:
-                    log_failure("Conversation repair failed", job.unstored)
+                    log_exception(logger, "Conversation repair failed", private=job.private)
                     self.store.mark_dirty(conversation_id)
                     await run.emit(
                         AgentEvent(
@@ -426,6 +427,7 @@ class TurnService:
                         usage,
                         run.text,
                         kept=outcome.kept,
+                        context=job.context,
                     )
                 )
                 if run.held_tool_calls is not None:
@@ -455,7 +457,7 @@ class TurnService:
                 # conversation), so check it before its next use.
                 self.store.mark_dirty(conversation_id)
         except Exception:
-            log_failure("Turn failed", job.unstored)
+            log_exception(logger, "Turn failed", private=job.private)
             if conversation_id:
                 self.store.mark_dirty(conversation_id)
             if run.recorder is not None:
@@ -473,12 +475,8 @@ class TurnService:
             return
         try:
             items = await asyncio.wait_for(self.sources.resolve(run.text), LOOKUP_TIMEOUT_SECONDS)
-        except Exception as exc:
-            # The lookup is made of the answer, which may say what is in the attachment.
-            if job.unstored:
-                logger.warning("Source lookup failed: %s", type(exc).__name__)
-            else:
-                logger.warning("Source lookup failed", exc_info=True)
+        except Exception:
+            log_exception(logger, "Source lookup failed", level=logging.WARNING, private=job.private)
             return
         if not items:
             return
@@ -501,7 +499,9 @@ class TurnService:
             if outputs:  # an unstored turn may have nothing in the conversation to close
                 await backend.abandon(paused.conversation_id, outputs)
         except Exception:
-            log_failure("Could not close the abandoned turn %s", paused.kept is not None, paused.turn_id)
+            log_exception(
+                logger, "Could not close the abandoned turn %s", paused.turn_id, private=paused.private
+            )
             self.store.mark_dirty(paused.conversation_id)
             return
         await run.emit(

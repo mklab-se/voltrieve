@@ -6,8 +6,9 @@ from the first bytes.
 """
 
 import asyncio
+from collections import Counter
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import aclosing, contextmanager
 from dataclasses import dataclass, field
 from typing import NoReturn
 
@@ -24,12 +25,20 @@ from .base import AttachmentHandler, Part
 MAX_LABEL = 80  # characters
 MAX_LABEL_BYTES = MAX_LABEL * 4
 HEAD_BYTES = 512  # what a handler sees before it accepts a file
-MAX_WAITING = 8
-READ_SECONDS = 60.0  # an upload holds a place in the queue while it arrives
+MAX_PER_USER = 2  # uploads at a time
+MAX_ARRIVING = 16  # in all, with the body on its way
+MAX_WAITING = 8  # in all, for the worker
+READ_SECONDS = 120.0  # for the whole body
+IDLE_SECONDS = 20.0  # for the next piece of it
+INTERRUPTED = "The upload was interrupted"
 
 
 def refuse(status: int, detail: str | dict) -> NoReturn:
-    raise HTTPException(status, detail, headers={"Cache-Control": "no-store"})
+    raise HTTPException(status, detail)
+
+
+def refuse_busy() -> NoReturn:
+    refuse(503, {"code": "busy"})
 
 
 @dataclass
@@ -124,15 +133,19 @@ async def read_upload(request: Request) -> Upload:
     form = _Form()
     try:
         parser = MultipartParser(options[b"boundary"], form.callbacks())
-        async with asyncio.timeout(READ_SECONDS):
-            async for chunk in request.stream():
+        async with asyncio.timeout(READ_SECONDS), aclosing(request.stream()) as chunks:
+            while True:
+                async with asyncio.timeout(IDLE_SECONDS):
+                    chunk = await anext(chunks, None)
+                if chunk is None:
+                    break
                 parser.write(chunk)
     except FormParserError:
         refuse(422, "Invalid multipart data")
     except TimeoutError:
         refuse(408, "The upload took too long")
     except ClientDisconnect:
-        refuse(400, "The upload was interrupted")  # nobody is there to read it
+        refuse(400, INTERRUPTED)  # nobody is there to read it
     if not form.ended:
         refuse(422, "Invalid multipart data")
     if form.handler is None:
@@ -147,23 +160,49 @@ async def read_upload(request: Request) -> Upload:
 
 
 class UploadQueue:
-    """One upload is processed at a time, since a decoded photo is large, and few may wait. An
-    upload counts from its arrival, so the bodies in memory are bounded too."""
+    """The uploads in hand. Each has its body in memory, so their number is bounded: per user, so that
+    nobody can keep the others out, while the body arrives, and while it waits for the worker, which
+    takes one at a time because a decoded photo is large."""
 
     def __init__(self) -> None:
-        self.held = 0
-        self._one = asyncio.Semaphore(1)
+        self.places: Counter[str] = Counter()  # by user
+        self.arriving = 0
+        self.waiting = 0
+        self._worker = asyncio.Semaphore(1)
 
     @contextmanager
-    def place(self) -> Iterator[None]:
-        if self.held > MAX_WAITING:  # one is processed, the others wait
-            refuse(503, {"code": "busy"})
-        self.held += 1
+    def place(self, oid: str) -> Iterator[None]:
+        """A user's place, from the arrival until the attachment is processed."""
+        if self.places[oid] >= MAX_PER_USER:
+            refuse_busy()
+        self.places[oid] += 1
         try:
             yield
         finally:
-            self.held -= 1
+            self.places[oid] -= 1
+            if not self.places[oid]:
+                del self.places[oid]
 
-    async def process(self, upload: Upload) -> list[Part]:
-        async with self._one:
+    async def read(self, request: Request) -> Upload:
+        if self.arriving >= MAX_ARRIVING:
+            refuse_busy()
+        self.arriving += 1
+        try:
+            return await read_upload(request)
+        finally:
+            self.arriving -= 1
+
+    async def process(self, request: Request, upload: Upload) -> list[Part]:
+        if self._worker.locked() and self.waiting >= MAX_WAITING:
+            refuse_busy()
+        self.waiting += 1
+        try:
+            await self._worker.acquire()
+        finally:
+            self.waiting -= 1
+        try:
+            if await request.is_disconnected():
+                refuse(400, INTERRUPTED)
             return await asyncio.to_thread(upload.handler.process, upload.data, upload.label)
+        finally:
+            self._worker.release()

@@ -40,6 +40,11 @@ class TurnContext:
     kept: dict | None = field(default=None, repr=False)
     context: dict = field(default_factory=dict, repr=False)
 
+    @property
+    def private(self) -> bool:
+        """Whether nothing the turn says may be logged, error texts included."""
+        return bool(self.parts or self.kept or self.context)
+
 
 class Backend(Protocol):
     async def create_conversation(self, owner_oid: str) -> str:

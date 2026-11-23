@@ -40,6 +40,7 @@ from voltrieve_agent.model import (
     TextDelta,
     merge_usage,
 )
+from voltrieve_agent.private import current_private, log_exception
 from voltrieve_agent.server_tools import KB_STATUSES
 from voltrieve_agent.tools import (
     ClientTool,
@@ -47,7 +48,6 @@ from voltrieve_agent.tools import (
     ToolSet,
     UserContext,
     current_correlation_id,
-    current_unstored,
 )
 from voltrieve_agent.unstored import Unstored, assistant_item
 
@@ -73,6 +73,11 @@ class TurnInput:
     # may be logged or traced.
     parts: list[dict] = field(default_factory=list, repr=False)
     kept: dict | None = field(default=None, repr=False)
+    # Nothing the turn says may be logged (see `private`). Always so with an attachment.
+    private: bool = False
+
+    def __post_init__(self) -> None:
+        self.private = bool(self.private or self.parts or self.kept)
 
 
 @dataclass
@@ -108,8 +113,8 @@ async def _record(
     if items:
         try:
             await model.record(turn.conversation_id, items)
-        except Exception as exc:
-            logger.error("Could not record an unstored turn: %s", type(exc).__name__)
+        except Exception:
+            log_exception(logger, "Could not record an unstored turn")
             failed = True
     # Outside the except block: an emit that raises must not be chained to an error that may
     # quote the items, since hosts log what escapes.
@@ -185,11 +190,11 @@ async def run_turn(
     max_iterations: int = 8,
 ) -> TurnOutcome:
     token = current_correlation_id.set(turn.correlation_id or turn.turn_id)
-    unstored = current_unstored.set(bool(turn.parts or turn.kept))  # as in Unstored.begin
+    private = current_private.set(current_private.get() or turn.private)
     try:
         return await _run(model, server_tools, turn, emit, max_iterations)
     finally:
-        current_unstored.reset(unstored)
+        current_private.reset(private)
         current_correlation_id.reset(token)
 
 
@@ -226,11 +231,8 @@ async def _run(model, server_tools, turn, emit, max_iterations) -> TurnOutcome:
                     item = await anext(items)
                 except StopAsyncIteration:
                     break
-                except Exception as exc:
-                    if unstored is None:
-                        logger.exception("Model stream failed")
-                    else:  # the error text may quote the input
-                        logger.error("Unstored model stream failed: %s", type(exc).__name__)
+                except Exception:
+                    log_exception(logger, "Model stream failed")
                     stream_error = True
                     break
                 if isinstance(item, TextDelta):
@@ -268,7 +270,7 @@ async def _run(model, server_tools, turn, emit, max_iterations) -> TurnOutcome:
         if stream_error:
             return await _fail(emit, "model_error", usage)
         if failed is not None:
-            message = failed.message if unstored is None else "(not logged)"
+            message = "(not logged)" if current_private.get() else failed.message
             logger.warning("Model reported %s: %s", failed.code, message)
             code = failed.code if failed.code in FAILURE_MESSAGES else "model_error"
             return await _fail(emit, code, usage)
@@ -320,7 +322,7 @@ async def _run(model, server_tools, turn, emit, max_iterations) -> TurnOutcome:
                         [_output_item(calls[0].call_id, answer), assistant_item(answer)],
                     )
                 except Exception:
-                    logger.exception("Could not record the final answer")
+                    log_exception(logger, "Could not record the final answer")
                     return await _fail(emit, "model_error", usage)
             await emit(trace("final_answer_sent", "tools", calls[0].name, tool=calls[0].name))
             await emit(AgentEvent("delta", {"text": answer}))
@@ -374,7 +376,7 @@ async def _run(model, server_tools, turn, emit, max_iterations) -> TurnOutcome:
                         if isinstance(item, Completed):
                             usage = merge_usage(usage, item.usage)
             except Exception:
-                logger.exception("Closing model call failed")
+                log_exception(logger, "Closing model call failed")
             return await _fail(emit, "too_many_iterations", usage)
 
         next_input = outputs

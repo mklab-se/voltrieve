@@ -39,8 +39,11 @@ class BodyTooLarge(HTTPException):
         super().__init__(413, "Request body too large")
 
 
+UPLOAD_PATH = "/attachments"
+
+
 def max_body_bytes(path: str) -> int:
-    return MAX_UPLOAD_BODY_BYTES if path == "/attachments" else MAX_BODY_BYTES
+    return MAX_UPLOAD_BODY_BYTES if path == UPLOAD_PATH else MAX_BODY_BYTES
 
 
 def forwarded_client(headers: dict[str, str]) -> str | None:
@@ -83,6 +86,8 @@ class RequestGuard:
                     h for h in message["headers"] if h[0].lower() != b"x-correlation-id"
                 ]
                 response_headers.append((b"x-correlation-id", cid.encode()))
+                if scope["path"] == UPLOAD_PATH:  # here, so that no answer of any kind is without it
+                    response_headers.append((b"cache-control", b"no-store"))
                 message = {**message, "headers": response_headers}
             await send(message)
 
@@ -106,9 +111,8 @@ class RequestGuard:
         except BodyTooLarge:
             if started:
                 raise
-            status = 413
-            response = JSONResponse({"detail": "Request body too large"}, 413, {"X-Correlation-Id": cid})
-            await response(scope, receive, send)
+            response = JSONResponse({"detail": "Request body too large"}, 413)
+            await response(scope, receive, send_wrapper)
         finally:
             logger.info(
                 "request",

@@ -5,8 +5,9 @@ Foundry Conversations and is handled here exactly as in the loop backend. The ho
 stateless: every call carries the new input or the client results, the client tools, the server
 tool outputs of a paused iteration and the user's claims (spec 6.5). A turn with an attachment
 also carries `parts`, and a continuation of one carries `kept` (what the unstored turn kept when
-it paused). The agent answers with the same events the loop emits, then one `outcome` event that
-is consumed here, not forwarded. It returns `kept` when the turn pauses and `unrecorded`.
+it paused). `private` says that nothing the turn says may be logged. The agent answers with the
+same events the loop emits, then one `outcome` event that is consumed here, not forwarded. It
+returns `kept` when the turn pauses and `unrecorded`.
 
 The Foundry session id of the agent is kept per conversation and passed back as a query
 parameter, so a conversation keeps landing on the same agent session. Losing it (a restart
@@ -36,6 +37,7 @@ import httpx
 from voltrieve_agent.events import STARTING_AGENT, AgentEvent, Emit, status
 from voltrieve_agent.http_client import make_http_client
 from voltrieve_agent.loop import TurnOutcome
+from voltrieve_agent.private import log_exception
 
 from app.backends.base import BackendUnavailable, ConversationBackend, TurnContext, close_all
 from app.settings import Settings
@@ -129,6 +131,7 @@ class HostedBackend(ConversationBackend):
             "correlation_id": ctx.correlation_id,
             "parts": ctx.parts,
             "kept": ctx.kept,
+            "private": ctx.private,
         }
 
     async def run_turn(self, ctx: TurnContext, emit: Emit) -> TurnOutcome:
@@ -137,15 +140,7 @@ class HostedBackend(ConversationBackend):
         try:
             return await self._invoke(ctx, emit)
         except Exception as exc:
-            if ctx.parts or ctx.kept:
-                # The request holds the attachment and an error may quote it: type and status only.
-                logger.error(
-                    "The hosted agent call failed: %s, HTTP status %s",
-                    type(exc).__name__,
-                    getattr(exc, "status_code", None),
-                )
-            else:
-                logger.exception("The hosted agent call failed")
+            log_exception(logger, "The hosted agent call failed", private=ctx.private)
             stream_broken = isinstance(exc, HostedAgentError) and exc.stream_started
         await emit(
             AgentEvent(
@@ -187,7 +182,7 @@ class HostedBackend(ConversationBackend):
         outcome: dict | None = None
         try:
             if response.status_code != 200:
-                if ctx.parts or ctx.kept:
+                if ctx.private:  # the body may quote the request
                     raise HostedAgentError(f"HTTP {response.status_code}", status_code=response.status_code)
                 body = (await response.aread())[:500].decode(errors="replace")
                 raise HostedAgentError(f"HTTP {response.status_code}: {body}", status_code=response.status_code)

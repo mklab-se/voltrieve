@@ -148,6 +148,8 @@ BAD_ATTACHMENT_BODIES = [
     {**BODY, "kept": {"items": {}, "head": [], "text": ""}},
     {**BODY, "kept": {"items": [], "head": "x", "text": ""}},
     {**BODY, "kept": {"items": [], "head": [], "text": 3}},
+    {**BODY, "private": "yes"},
+    {**BODY, "private": None},
 ]
 
 
@@ -253,8 +255,18 @@ async def test_nothing_of_the_parts_or_kept_is_logged(caplog):
     assert "AAAA" not in caplog.text and "secret text" not in caplog.text
 
 
-@pytest.mark.parametrize("extra", [{"parts": [PHOTO]}, {"kept": {"items": [], "head": [], "text": ""}}, {}])
-async def test_a_failed_unstored_turn_logs_the_error_type_only(caplog, monkeypatch, extra):
+@pytest.mark.parametrize(
+    "extra",
+    [
+        {"private": True},
+        {"parts": [PHOTO]},
+        {"kept": {"items": [], "head": [], "text": ""}},
+        {"parts": [PHOTO], "private": False},  # an attachment is private whatever the body says
+        {"private": False},
+        {},
+    ],
+)
+async def test_a_failed_private_turn_logs_the_error_type_and_the_frames(caplog, monkeypatch, extra):
     async def fail(*args):
         raise RuntimeError("could not read SPARK")
 
@@ -263,4 +275,19 @@ async def test_a_failed_unstored_turn_logs_the_error_type_only(caplog, monkeypat
         r = await invoke(Runtime(ScriptedModel(), [], allow_any_caller=True), {**BODY, **extra})
     assert parse_sse(r.text)[-1][1]["status"] == "failed"
     assert "Turn failed" in caplog.text and "RuntimeError" in caplog.text
-    assert ("SPARK" in caplog.text) is (not extra)
+    private = bool(extra.get("private") or extra.get("parts") or extra.get("kept"))
+    assert ("SPARK" in caplog.text) is (not private) is ("Traceback" in caplog.text)
+    assert "in fail" in caplog.text
+
+
+async def test_the_private_flag_reaches_the_loop(caplog):
+    class Echoing(ScriptedModel):
+        async def stream(self, *, instructions, conversation, input, tools, store=True):
+            raise RuntimeError(f"bad request: {input}")
+            yield
+
+    runtime = Runtime(Echoing(), [], allow_any_caller=True)
+    await invoke(runtime, {**BODY, "input": "SPARK", "private": True})
+    assert "Model stream failed: RuntimeError" in caplog.text and "SPARK" not in caplog.text
+    await invoke(runtime, {**BODY, "input": "SPARK"})
+    assert "bad request: SPARK" in caplog.text

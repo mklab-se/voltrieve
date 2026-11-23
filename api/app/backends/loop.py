@@ -47,6 +47,7 @@ class LoopBackend(ConversationBackend):
             correlation_id=ctx.correlation_id,
             parts=ctx.parts,
             kept=ctx.kept,
+            private=ctx.private,
         )
         return await run_turn(self._model_for(ctx), self._server_tools, turn, emit)
 

@@ -14,13 +14,14 @@ import threading
 
 import httpx
 import pytest
+import uvicorn
 from PIL import Image, ImageFilter
 from voltrieve_agent.events import AgentEvent, trace
 from voltrieve_agent.loop import TurnOutcome
 
 from app import attachments
 from app.attachments import Part
-from app.attachments.upload import READ_SECONDS
+from app.attachments import upload as uploading
 from app.backends import BackendRegistry
 from app.main import create_app
 from app.settings import Settings
@@ -374,7 +375,6 @@ async def test_a_handler_that_fails_gives_a_generic_500_logged_by_type(app, clie
     with caplog.at_level(logging.DEBUG):
         r = await upload(client, auth, b"NOTE secret", "front camera")
     assert r.status_code == 500 and r.json() == {"detail": "The attachment could not be processed."}
-    assert r.headers["cache-control"] == "no-store"
     assert "RuntimeError" in caplog.text
     text = logged(caplog) + r.text
     assert "secret" not in text and "front camera" not in text and "Traceback" not in text
@@ -415,40 +415,175 @@ async def until(condition):
             await asyncio.sleep(0.005)
 
 
-async def test_one_upload_is_processed_at_a_time_and_the_queue_is_bounded(app, client, auth, note):
+@pytest.fixture
+def user(make_token):
+    """The header of one user among many."""
+    return lambda n: {"Authorization": f"Bearer {make_token(oid=f'oid-{n}')}"}
+
+
+class Stalled:
+    """Uploads whose bodies begin and do not go on until `go` is set."""
+
+    def __init__(self, client):
+        self.client = client
+        self.go = asyncio.Event()
+        self.arriving = 0
+        self.tasks = []
+
+    async def start(self, auth, count=1):
+        request = form(("file", "n", b"NOTE"))
+        before = self.arriving
+
+        async def body():
+            yield request["content"][:20]
+            self.arriving += 1
+            await self.go.wait()
+            yield request["content"][20:]
+
+        for _ in range(count):
+            headers = {**auth, **request["headers"]}
+            post = self.client.post("/attachments", headers=headers, content=body())
+            self.tasks.append(asyncio.create_task(post))
+        await until(lambda: self.arriving == before + count)
+
+    async def finish(self):
+        self.go.set()
+        return [r.status_code for r in await asyncio.gather(*self.tasks)]
+
+
+BUSY = {"detail": {"code": "busy"}}
+
+
+async def test_one_user_cannot_take_the_places_of_another(client, user, note):
+    slow = Stalled(client)
+    await slow.start(user("a"), 2)
+    for _ in range(3):  # a third at a time is too many, and is refused again and again
+        r = await upload(client, user("a"), b"NOTE")
+        assert r.status_code == 503 and r.json() == BUSY and r.headers["cache-control"] == "no-store"
+    assert (await upload(client, user("b"), b"NOTE")).status_code == 201
+    assert await slow.finish() == [201, 201]
+    assert (await upload(client, user("a"), b"NOTE")).status_code == 201  # the places are free again
+
+
+async def test_a_user_holds_their_places_through_the_processing(client, user, note):
     gate = note.run = Gate()
-    tasks = [asyncio.create_task(upload(client, auth, b"NOTE"))]
+    tasks = [asyncio.create_task(upload(client, user("a"), b"NOTE")) for _ in range(2)]
     await until(gate.entered.is_set)
-    tasks += [asyncio.create_task(upload(client, auth, b"NOTE")) for _ in range(8)]
-    await until(lambda: app.state.uploads.held == 9)
-    r = await upload(client, auth, b"NOTE")  # the event loop is free, and the queue is full
-    assert r.status_code == 503 and r.json() == {"detail": {"code": "busy"}}
+    assert (await upload(client, user("a"), b"NOTE")).status_code == 503
+    gate.open.set()
+    assert [t.status_code for t in await asyncio.gather(*tasks)] == [201, 201]
+
+
+async def test_sixteen_bodies_may_arrive_at_once(client, user, note):
+    """Also while the worker has nothing to do."""
+    slow = Stalled(client)
+    for n in range(8):
+        await slow.start(user(f"slow{n}"), 2)
+    r = await upload(client, user("late"), b"NOTE")
+    assert r.status_code == 503 and r.json() == BUSY
+    await slow.finish()
+    assert (await upload(client, user("late"), b"NOTE")).status_code == 201
+
+
+async def test_slow_arrivals_are_bounded_and_do_not_use_the_workers_places(client, user, note):
+    slow = Stalled(client)
+    for n in range(7):
+        await slow.start(user(f"slow{n}"), 2)
+    await slow.start(user("slow7"))  # 15 bodies are on their way
+    gate = note.run = Gate()
+    quick = [asyncio.create_task(upload(client, user("q0"), b"NOTE"))]
+    await until(gate.entered.is_set)
+    for n in range(1, 9):  # 8 wait for the worker, one at a time through the last arriving place
+        quick.append(asyncio.create_task(upload(client, user(f"q{n}"), b"NOTE")))
+        await until(lambda: client_app(client).state.uploads.waiting == n)
+    r = await upload(client, user("q9"), b"NOTE")
+    assert r.status_code == 503 and r.json() == BUSY  # no place to wait for the worker
+    await slow.start(user("slow7"))  # 16
+    r = await upload(client, user("q9"), b"NOTE")
+    assert r.status_code == 503 and r.json() == BUSY  # no place to arrive
     assert (await client.get("/healthz")).status_code == 200
     gate.open.set()
-    assert [t.status_code for t in await asyncio.gather(*tasks)] == [201] * 9
+    assert [t.status_code for t in await asyncio.gather(*quick)] == [201] * 9
     assert gate.most == 1 and threading.get_ident() not in gate.threads
-    assert app.state.uploads.held == 0
-    assert (await upload(client, auth, b"NOTE")).status_code == 201
+    note.run = None
+    slow.go.set()
+    codes = await slow.finish()
+    assert set(codes) <= {201, 503} and codes.count(201) >= 9  # at most 8 wait when all come at once
+    uploads = client_app(client).state.uploads
+    assert (uploads.arriving, uploads.waiting, dict(uploads.places)) == (0, 0, {})
+
+
+def client_app(client):
+    return client._transport.app
+
+
+async def test_a_user_is_not_blocked_over_a_real_socket(app, user, note):
+    """Two half sent uploads of one user over TCP, and another user's whole one."""
+    server = uvicorn.Server(uvicorn.Config(app, port=0, log_config=None, lifespan="off"))
+    running = asyncio.create_task(server.serve())
+    await until(lambda: server.started)
+    port = server.servers[0].sockets[0].getsockname()[1]
+    request = form(("file", "n", b"NOTE"))
+    head = (
+        f"POST /attachments HTTP/1.1\r\nHost: t\r\nAuthorization: {user('a')['Authorization']}\r\n"
+        f"Content-Type: {request['headers']['Content-Type']}\r\nContent-Length: {len(request['content'])}\r\n\r\n"
+    ).encode()
+    writers = []
+    try:
+        for _ in range(2):
+            _, writer = await asyncio.open_connection("127.0.0.1", port)
+            writer.write(head + request["content"][:20])
+            writers.append(writer)
+        await until(lambda: app.state.uploads.arriving == 2)
+        async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}") as c:
+            assert (await upload(c, user("a"), b"NOTE")).status_code == 503
+            assert (await upload(c, user("b"), b"NOTE")).status_code == 201
+            for writer in writers:  # hanging up frees the places at once
+                writer.close()
+                await writer.wait_closed()
+            await until(lambda: app.state.uploads.arriving == 0)
+            assert (await upload(c, user("a"), b"NOTE")).status_code == 201
+    finally:
+        server.should_exit = True
+        await running
 
 
 async def test_a_refused_upload_gives_its_place_back(app, client, auth, blurry, note):
     for _ in range(12):
         assert (await upload(client, auth, b"hello")).status_code == 415
     assert (await upload(client, auth, blurry)).json()["status"] == "rejected"
-    assert app.state.uploads.held == 0
+    uploads = app.state.uploads
+    assert (uploads.arriving, uploads.waiting, dict(uploads.places)) == (0, 0, {})
 
 
-async def test_an_upload_that_never_ends_is_given_up(app, client, auth, monkeypatch):
-    assert READ_SECONDS <= 60
-    monkeypatch.setattr("app.attachments.upload.READ_SECONDS", 0.05)
+@pytest.mark.parametrize(("limit", "pause"), [("IDLE_SECONDS", 5), ("READ_SECONDS", 0.01)])
+async def test_an_upload_that_never_ends_is_given_up(app, client, auth, monkeypatch, limit, pause):
+    assert (uploading.READ_SECONDS, uploading.IDLE_SECONDS) == (120, 20)
+    monkeypatch.setattr(uploading, limit, 0.05)
 
     async def stalls():
         yield b"--bnd\r\n"
-        await asyncio.sleep(5)
+        for _ in range(500):  # a trickle is within the idle limit, and ends at the total one
+            await asyncio.sleep(pause)
+            yield b"Content"
 
     headers = {**auth, "Content-Type": "multipart/form-data; boundary=bnd"}
-    r = await client.post("/attachments", headers=headers, content=stalls())
-    assert r.status_code == 408 and app.state.uploads.held == 0
+    async with asyncio.timeout(2):
+        r = await client.post("/attachments", headers=headers, content=stalls())
+    assert r.status_code == 408 and r.headers["cache-control"] == "no-store"
+    assert app.state.uploads.arriving == 0
+
+
+def asgi_scope(auth):
+    headers = [(k.lower().encode(), v.encode()) for k, v in auth.items()]
+    headers.append((b"content-type", b"multipart/form-data; boundary=bnd"))
+    return {"type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1", "method": "POST",
+            "scheme": "http", "path": "/attachments", "raw_path": b"/attachments", "query_string": b"",
+            "root_path": "", "headers": headers, "client": ("127.0.0.1", 1), "server": ("test", 80)}
+
+
+async def ignore(message):
+    pass
 
 
 async def test_a_client_that_hangs_up_is_not_an_error(app, auth, caplog):
@@ -460,17 +595,65 @@ async def test_a_client_that_hangs_up_is_not_an_error(app, auth, caplog):
     async def receive():
         return messages.pop(0)
 
-    async def send(message):
-        pass
-
-    headers = [(k.lower().encode(), v.encode()) for k, v in auth.items()]
-    headers.append((b"content-type", b"multipart/form-data; boundary=bnd"))
-    scope = {"type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1", "method": "POST",
-             "scheme": "http", "path": "/attachments", "raw_path": b"/attachments", "query_string": b"",
-             "root_path": "", "headers": headers, "client": ("127.0.0.1", 1), "server": ("test", 80)}
-    await app(scope, receive, send)
-    assert app.state.uploads.held == 0
+    await app(asgi_scope(auth), receive, ignore)
+    assert dict(app.state.uploads.places) == {}
     assert not [r for r in caplog.records if r.levelno >= logging.ERROR]
+
+
+async def test_a_client_that_left_while_waiting_is_not_processed(app, client, user, note, caplog):
+    """The whole body came, but nobody is there to get the id."""
+    gate = note.run = Gate()
+    processed = []
+    first = asyncio.create_task(upload(client, user("a"), b"NOTE"))
+    await until(gate.entered.is_set)
+    messages = [{"type": "http.request", "body": form(("file", "n", b"NOTE"))["content"], "more_body": False}]
+
+    async def receive():
+        return messages.pop(0) if messages else {"type": "http.disconnect"}
+
+    gone = asyncio.create_task(app(asgi_scope(user("b")), receive, ignore))
+    await until(lambda: app.state.uploads.waiting == 1)
+    note.run = lambda data, label: processed.append(label)
+    gate.open.set()
+    assert (await first).status_code == 201
+    await gone
+    assert processed == [] and len(app.state.attachments) == 1
+    assert not [r for r in caplog.records if r.levelno >= logging.ERROR]
+
+
+async def test_every_answer_says_no_store(app, client, auth, jpeg, blurry, note, make_token):
+    async def body(size, chunked):
+        content = form(("file", "x.jpg", jpeg))
+        content["content"] += bytes(size)
+
+        async def chunks():
+            for start in range(0, len(content["content"]), 256 * 1024):
+                yield content["content"][start : start + 256 * 1024]
+
+        headers = {**auth, **content["headers"]}
+        return await client.post(
+            "/attachments", headers=headers, content=chunks() if chunked else content["content"]
+        )
+
+    no_role = {"Authorization": f"Bearer {make_token(roles=[])}"}
+    answers = [
+        (201, await upload(client, auth, jpeg)),
+        (201, await upload(client, auth, blurry)),
+        (401, await upload(client, {}, jpeg)),
+        (403, await upload(client, no_role, jpeg)),
+        (405, await client.get("/attachments", headers=auth)),
+        (413, await upload(client, auth, b"NOTE" + bytes(1000))),
+        (413, await body(9 * MB, chunked=False)),  # by the declared length
+        (413, await body(9 * MB, chunked=True)),  # while it arrives
+        (415, await upload(client, auth, b"hello")),
+        (422, await post_form(client, auth, ("label", None, b"x"))),
+    ]
+    note.run = lambda data, label: 1 / 0
+    answers.append((500, await upload(client, auth, b"NOTE")))
+    for status, r in answers:
+        assert (r.status_code, r.headers.get("cache-control")) == (status, "no-store")
+        assert r.headers["x-correlation-id"]
+    assert "cache-control" not in (await client.get("/healthz")).headers
 
 
 async def test_an_upload_is_logged_without_its_content(client, auth, jpeg, blurry, caplog):

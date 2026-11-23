@@ -1,17 +1,24 @@
 """Attachments kept in memory: who owns them, how long they live and how many fit."""
 
+import json
 import re
 
 import pytest
 
 from app.attachments import Part
+from app.attachments.photo import PhotoHandler
 from app.attachments.store import AttachmentStore, attachment_parts
+from tests.test_attachment_photo import striped, to_bytes
 
 MB = 1024 * 1024
 
 
-def part(size=100, label="front camera", detail="1200x800", text="AAAA"):
-    return Part(label, {"type": "input_image", "image_url": text}, size, detail)
+def part(memory=None, label="front camera", detail="1200x800", text="AAAA", size=100):
+    """A part of `size` bytes as a file, and with a content of `memory` bytes."""
+    content = {"type": "input_image", "image_url": text}
+    if memory is not None:
+        content["image_url"] = "A" * (memory - len(json.dumps({**content, "image_url": ""})))
+    return Part(label, content, size, detail)
 
 
 @pytest.fixture
@@ -55,21 +62,30 @@ def test_the_users_own_oldest_goes_first(store):
 def test_total_size_is_capped(store):
     others = [store.put(f"user{i}", "photo", [part(10 * MB)]) for i in range(4)]
     first = store.put("anna", "photo", [part(10 * MB)])
-    assert store.size == 50 * MB
+    assert store.memory == 50 * MB
     # At the limit the user's own goes first, although it is the newest of all.
     second = store.put("anna", "photo", [part(10 * MB)])
-    assert store.get("anna", first.id) is None and store.size == 50 * MB
+    assert store.get("anna", first.id) is None and store.memory == 50 * MB
     assert all(store.get(f"user{i}", o.id) for i, o in enumerate(others))
     # A user with nothing of their own pushes out the oldest of anyone.
     third = store.put("new", "photo", [part(5 * MB)])
     assert store.get("user0", others[0].id) is None
     assert store.get("user1", others[1].id) and store.get("anna", second.id) and store.get("new", third.id)
-    assert store.size == 45 * MB
+    assert store.memory == 45 * MB
 
 
-def test_the_size_is_the_sum_of_the_parts(store):
-    stored = store.put("anna", "bundle", [part(10), part(20)])
-    assert stored.size == 30 and store.size == 30
+def test_the_trace_gets_the_file_size_and_the_cap_counts_the_memory(store):
+    """A photo is held as base64, a third larger than the JPEG."""
+    stored = store.put("anna", "bundle", [part(1000, size=10), part(2000, size=20)])
+    assert stored.summary()["size"] == 30 and store.memory == 3000
+
+
+def test_a_photo_counts_with_its_encoded_length(store):
+    [photo] = PhotoHandler().process(to_bytes(striped(1200, 800)), "")
+    stored = store.put("anna", "photo", [photo])
+    assert stored.size == photo.size
+    assert len(photo.content["image_url"]) <= store.memory <= len(photo.content["image_url"]) + 200
+    assert store.memory > photo.size * 1.3
 
 
 def test_expired_attachments_go_before_anyones_live_one(store, clock):
@@ -90,13 +106,13 @@ def test_something_larger_than_the_whole_store_pushes_nobody_out(store):
 
 
 def test_evict_expired_frees_the_memory(store, clock):
-    store.put("anna", "photo", [part()])
+    store.put("anna", "photo", [part(100)])
     clock.now += 500
-    store.put("anna", "photo", [part()])
+    store.put("anna", "photo", [part(100)])
     clock.now += 500
-    assert store.evict_expired() == 1 and store.size == 100 and len(store) == 1
+    assert store.evict_expired() == 1 and store.memory == 100 and len(store) == 1
     clock.now += 500
-    assert store.evict_expired() == 1 and store.size == 0 and len(store) == 0
+    assert store.evict_expired() == 1 and store.memory == 0 and len(store) == 0
 
 
 def test_nothing_shows_in_the_repr(store):

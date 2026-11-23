@@ -12,7 +12,7 @@ from voltrieve_agent.events import AgentEvent, format_event
 
 from app.attachments import Rejected
 from app.attachments.store import Stored, attachment_parts
-from app.attachments.upload import read_upload, refuse
+from app.attachments.upload import refuse
 from app.auth import AuthError, Claims
 from app.backends import BACKEND_NAMES
 from app.backends.base import BackendUnavailable
@@ -153,11 +153,11 @@ async def _store_upload(request: Request, oid: str) -> dict:
     """Read, process and keep an upload, and return the answer to the client. An upload is logged
     with its kind, size, detail, status and code, and nothing else."""
     state = request.app.state
-    with state.uploads.place():
-        upload = await read_upload(request)
+    with state.uploads.place(oid):
+        upload = await state.uploads.read(request)
         kind = upload.handler.kind
         try:
-            parts = await state.uploads.process(upload)
+            parts = await state.uploads.process(request, upload)
         except Rejected as exc:
             logger.info("Attachment rejected: kind %s, %d bytes, code %s", kind, len(upload.data), exc.code)
             return {"id": None, "kind": kind, "status": "rejected", "code": exc.code, "message": exc.message}
@@ -259,7 +259,7 @@ def build_router() -> APIRouter:
         if failure:  # outside the except block, so that nothing is chained to it
             logger.error("Attachment failed: %s", failure)
             refuse(500, "The attachment could not be processed.")
-        return JSONResponse(answer, 201, headers={"Cache-Control": "no-store"})
+        return JSONResponse(answer, 201)
 
     @router.post("/chat")
     async def chat(
@@ -357,6 +357,7 @@ def build_router() -> APIRouter:
                 parts=attachment_parts(attachments),
                 kept=paused.kept,
                 attachments=[a.summary() for a in attachments],
+                context=paused.context,
             ),
         )
 

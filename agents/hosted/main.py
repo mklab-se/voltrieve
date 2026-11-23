@@ -3,7 +3,7 @@
 The Web API posts one JSON body per model-and-tools round:
 
     {conversation_id, turn_id, input, client_tools, pending_outputs,
-     user: {oid, username, roles}, correlation_id, parts, kept}
+     user: {oid, username, roles}, correlation_id, parts, kept, private}
 
 and this process answers with server-sent events. It runs `agent_core.run_turn` unchanged and
 relays every AgentEvent one to one (event name = type, data = one line of JSON). When the turn
@@ -16,6 +16,9 @@ lives in Foundry.
 when it paused, default none) are optional, and a body without them is accepted. An old agent
 ignores them: a new API with an old hosted agent answers without the photo, so deploy this agent
 before the API that sends them. Neither is ever logged.
+
+`private` (optional boolean) says that nothing the turn says may be logged, error texts included. It is
+always so with `parts` or `kept`.
 
 The Web API's managed identity is the only caller allowed to invoke the agent (spec 6.5), so
 the `user` claims in the body are trusted. The Foundry gateway replaces `x-ms-original-subject`
@@ -40,6 +43,7 @@ from starlette.responses import JSONResponse, Response, StreamingResponse
 from voltrieve_agent.events import KEEPALIVE, KEEPALIVE_SECONDS, AgentEvent, format_event
 from voltrieve_agent.loop import TurnInput, run_turn
 from voltrieve_agent.model import ModelClient
+from voltrieve_agent.private import log_exception
 from voltrieve_agent.tools import ClientTool, ServerTool, UserContext
 
 logger = logging.getLogger("voltrieve.hosted")
@@ -114,6 +118,9 @@ def parse_turn(body: object) -> TurnInput | None:
         kept = body.get("kept")
         if kept is not None and not _is_kept(kept):
             return None
+        private = body.get("private", False)
+        if not isinstance(private, bool):
+            return None
         return TurnInput(
             user=UserContext(
                 str(user["oid"]), str(user.get("username", "")), frozenset(user.get("roles") or [])
@@ -125,6 +132,7 @@ def parse_turn(body: object) -> TurnInput | None:
             correlation_id=body.get("correlation_id"),
             parts=parts,
             kept=kept,
+            private=private,
         )
     except (KeyError, TypeError, AttributeError):
         return None
@@ -160,11 +168,8 @@ async def stream_turn(runtime: Runtime, turn: TurnInput) -> AsyncIterator[bytes]
                     },
                 )
             )
-        except Exception as exc:
-            if turn.parts or turn.kept:  # an unstored turn: the error text may quote it
-                logger.error("Turn failed: %s", type(exc).__name__)
-            else:
-                logger.exception("Turn failed")
+        except Exception:
+            log_exception(logger, "Turn failed", private=turn.private)
             await queue.put(
                 AgentEvent(
                     "error",

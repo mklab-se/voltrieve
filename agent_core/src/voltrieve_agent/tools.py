@@ -9,14 +9,12 @@ from dataclasses import dataclass
 from jsonschema import Draft202012Validator, FormatChecker
 
 from voltrieve_agent.events import WORKING, Emit, trace
+from voltrieve_agent.private import log_exception
 
 logger = logging.getLogger(__name__)
 
 # Set by ToolSet.execute while a handler runs, so handlers can emit trace events.
 current_emit: ContextVar[Emit | None] = ContextVar("current_emit", default=None)
-# Set by the loop while it runs an unstored turn (one with an attachment). What such a turn says, and
-# any error text that may quote it, must stay out of the logs.
-current_unstored: ContextVar[bool] = ContextVar("current_unstored", default=False)
 # Set by the loop to the turn's correlation id, sent to downstream services as X-Correlation-Id.
 current_correlation_id: ContextVar[str | None] = ContextVar("current_correlation_id", default=None)
 
@@ -137,11 +135,8 @@ class ToolSet:
         token = current_emit.set(emit)
         try:
             return await tool.handler(arguments, user)
-        except Exception as exc:  # tool failures go back to the model, not up the stack
-            if current_unstored.get():
-                logger.error("Tool %s failed: %s", name, type(exc).__name__)
-            else:
-                logger.exception("Tool %s failed", name)
+        except Exception:  # tool failures go back to the model, not up the stack
+            log_exception(logger, "Tool %s failed", name)
             return f"Error: the tool '{name}' failed. Tell the user it is unavailable right now."
         finally:
             current_emit.reset(token)

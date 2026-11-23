@@ -49,7 +49,7 @@ class ClientContext(_Strict):
 
 
 def _clean(text: str | None) -> str:
-    return one_line(text or "", drop="[]")  # brackets mark the line's beginning and end
+    return one_line(text or "", drop="[];")  # the line's own punctuation
 
 
 def _car(car: ClientCar) -> str:
