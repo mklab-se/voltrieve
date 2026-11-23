@@ -34,7 +34,7 @@ retry uv run --project infra/scripts/entra voltrieve-entra assign-app-role \
   --app-role-id "$DEALER_APP_ROLE_ID"
 
 # A new agent version and fresh role assignments can take minutes to settle, so the check retries.
-# The agents go before the API, so only what an older API can answer. After the API: scripts/smoke.py
+# The agents go before the API, so only what an older API can answer. After the API: the full `uv run scripts/smoke.py`
 retry uv run scripts/smoke.py --basic
 echo "Note: sessions are bound to the agent version they started on; conversations in flight stay on the old version until the API restarts (or a call fails and the session is dropped)."
 echo "Agents deployed. Hosted agent: ${HOSTED_AGENT_NAME:-voltrieve-hosted} (principal $HOSTED_AGENT_PRINCIPAL_ID)"

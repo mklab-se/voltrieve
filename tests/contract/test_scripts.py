@@ -48,7 +48,7 @@ def sse(*events) -> str:
 
 
 def fake_deployment(
-    indexer_status="success", failing_backend=None, healthy=True, letter="P", rejected=None, car_event=None, used=True
+    indexer_status="success", failing_backend=None, healthy=True, code="K7Q", rejected=None, car_event=None, used=True
 ):
     def handler(request: httpx.Request) -> httpx.Response:
         url = request.url
@@ -71,7 +71,7 @@ def fake_deployment(
         photo = body.get("attachments") == ["a1"]
         return httpx.Response(200, text=sse(
             *([("trace", {"step": "attachment_used"})] if photo and used else []),
-            ("delta", {"text": f"It is the letter {letter}." if photo else "2100 kg"}),
+            ("delta", {"text": f"The sign says {code}." if photo else "2100 kg"}),
             ("done", {"conversation_id": "c", "turn_id": "t", "backend": "loop", "usage": {}})))
 
     return handler
@@ -129,9 +129,16 @@ def test_smoke_draws_a_photo_that_the_api_accepts():
     assert part.detail == "320x320" and len(data) < 10_000
 
 
+def test_smoke_accepts_the_code_in_any_case_and_refuses_part_of_it():
+    by_name = {n: ok for n, ok, _ in run(fake_deployment(code="the sign reads k7q"), backends=("loop",))}
+    assert by_name["photo on loop"] is True
+    by_name = {n: ok for n, ok, _ in run(fake_deployment(code="K7"), backends=("loop",))}
+    assert by_name["photo on loop"] is False
+
+
 @pytest.mark.parametrize("options,note", [
     ({"rejected": "too_blurry"}, "too_blurry"),
-    ({"letter": "Q"}, "did the photo reach the model?"),
+    ({"code": "P"}, "did the photo reach the model?"),
     ({"used": False}, "not used"),
 ])
 def test_smoke_reports_a_photo_that_does_not_work(options, note):

@@ -11,18 +11,17 @@ Checks, in order:
   2. the search indexer's last run succeeded
   3. one short turn on each backend through the API: an answer and `done`, no `error` event
   4. the same on the prompt agent with the car's tools declared, which no other turn reaches
-  5. a drawn road sign uploaded and asked about on each backend: the answer names its letter
+  5. a drawn road sign uploaded and asked about on each backend: the answer names its code
 
 `--basic` leaves out 4 and 5: the agents are deployed before the API, and an older API has neither.
 Prints one line per check and exits 1 if any failed. It needs `azd env select` (API_URL,
 DEALER_URL, SEARCH_ENDPOINT, API_CLIENT_ID) and `az login` as a user with Chat.User.
-scripts/deploy-agents.sh runs it at the end.
+scripts/deploy-agents.sh runs it with `--basic` at the end.
 """
 
 from __future__ import annotations
 
 import argparse
-import re
 import struct
 import subprocess
 import sys
@@ -39,7 +38,8 @@ from voltrieve_client import Api, ApiError, Turn, api_token, api_url, azd_value,
 INDEXER_NAME = "voltrieve-docs-indexer"
 SEARCH_API_VERSION = "2026-08-01-preview"
 QUESTION = "What is the towing capacity of the Fjord?"
-PHOTO_QUESTION = "Which letter is on the road sign in my photo?"
+SIGN_CODE = "K7Q"  # hard to guess: the answer has to come from the photo
+PHOTO_QUESTION = "Which characters are on the road sign in my photo? Answer with exactly those characters."
 # The names decide which prompt agent answers (CAR_AGENT_TOOL_NAMES in the API, a test checks it).
 # The agent has the schemas in its definition, and no tool is needed here.
 CAR_TOOLS = [
@@ -47,6 +47,12 @@ CAR_TOOLS = [
     for name in ("set_speed", "set_wipers", "honk", "park", "get_sign_photo")
 ]
 SIGN_SIDE = 320
+GLYPH_SCALE, GLYPH_GAP = 14, 14
+GLYPHS = {  # 5 by 7 pixels each
+    "K": ("10001", "10010", "10100", "11000", "10100", "10010", "10001"),
+    "7": ("11111", "00001", "00010", "00100", "01000", "01000", "01000"),
+    "Q": ("01110", "10001", "10001", "10001", "10101", "10010", "01101"),
+}
 BLUE, WHITE = b"\x00\x52\x9b", b"\xff\xff\xff"
 
 Check = tuple[str, bool, str]  # name, passed, note
@@ -81,13 +87,19 @@ def check_indexer(search_endpoint: str, token: str, http: httpx.Client) -> Check
 
 
 def sign_png() -> bytes:
-    """A drawn parking sign, a white P on blue, as a PNG."""
+    """A drawn parking sign, the characters of SIGN_CODE in white on blue, as a PNG."""
+    glyph_width, glyph_height = 5 * GLYPH_SCALE, 7 * GLYPH_SCALE
+    left = (SIGN_SIDE - (len(SIGN_CODE) * glyph_width + (len(SIGN_CODE) - 1) * GLYPH_GAP)) // 2
+    top = (SIGN_SIDE - glyph_height) // 2
 
     def is_white(x: int, y: int) -> bool:
-        stem = 110 <= x < 150 and 60 <= y < 260
-        bowl = 110 <= x < 225 and 60 <= y < 175
-        hole = 150 <= x < 185 and 95 <= y < 140
-        return stem or (bowl and not hole)
+        column, row = x - left, y - top
+        if not (0 <= row < glyph_height and column >= 0):
+            return False
+        index, inside = divmod(column, glyph_width + GLYPH_GAP)
+        if index >= len(SIGN_CODE) or inside >= glyph_width:
+            return False
+        return GLYPHS[SIGN_CODE[index]][row // GLYPH_SCALE][inside // GLYPH_SCALE] == "1"
 
     def chunk(kind: bytes, data: bytes) -> bytes:
         return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
@@ -134,8 +146,8 @@ def check_photo(backend: str, api: Api) -> Check:
     def problem(turn: Turn) -> str | None:
         if "attachment_used" not in turn.trace_steps:
             return "the photo was not used"
-        if not re.search(r"\bP\b", turn.text):
-            return "the answer does not name the letter: did the photo reach the model?"
+        if SIGN_CODE.lower() not in turn.text.lower():
+            return "the answer does not name the code on the sign: did the photo reach the model?"
         return None
 
     return check_answer(f"photo on {backend}", ask, problem)
