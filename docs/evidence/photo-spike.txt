@@ -1,0 +1,7 @@
+  loop step 4 answer: 'Tors 0-6'
+  loop step 2 answer: 'Tors 0-6'
+loop: read ok, recorded ok, remembered ok
+  prompt step 4 answer: '“Tors 0-6”'
+  prompt step 2 answer: 'Tors 0-6'
+prompt: read ok, recorded ok, remembered ok
+conversations deleted: 2
