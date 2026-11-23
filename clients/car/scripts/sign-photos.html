@@ -1,0 +1,27 @@
+<!doctype html>
+<title>Sign photos</title>
+<canvas style="width: 1200px; height: 400px"></canvas>
+<script type="module">
+  import { StreetScene } from "/src/scene/Scene.ts";
+  import { newCar } from "/src/sim/car.ts";
+  import { BLOCK_M, SIGN_AT_M, SIGN_IDS } from "/src/sim/street.ts";
+
+  const send = (name, body) => fetch(`/__photo/${name}`, { method: "POST", body });
+  try {
+    const street = new StreetScene(document.querySelector("canvas"));
+    const at = (block, speedKmh) => ({ ...newCar(), distanceM: block * BLOCK_M + SIGN_AT_M + 0.5, speedKmh });
+    const frame = () => new Promise(requestAnimationFrame);
+    // The facades are pictures that have to be loaded first.
+    for (let until = performance.now() + 4000; performance.now() < until; await frame()) street.render(at(0, 50), "off");
+    for (const speedKmh of [50, 90]) {
+      for (const [block, id] of SIGN_IDS.entries()) {
+        const car = at(block, speedKmh);
+        for (let i = 0; i < 3; i += 1, await frame()) street.render(car, "off");
+        await send(`${id}_${speedKmh}.jpg`, await street.photo(car, block));
+      }
+    }
+    await send("done", "");
+  } catch (e) {
+    await send("failed", String(e));
+  }
+</script>
