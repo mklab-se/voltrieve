@@ -49,7 +49,7 @@ Step 7 and `cheapest-awd-se` are the same question. At the default reasoning eff
 
 The recorded evidence comes from these scripts, which speak the same contract as the CLI. There is no transcript of `voltrieve` itself in `docs/evidence/`. `voltrieve login` and `logout` are tested against a fake MSAL application; a real browser sign-in was not exercised.
 
-`uv run scripts/smoke.py` is the quick check after a deployment (`scripts/deploy-agents.sh` runs it last): `/healthz` of the API and the dealer, the indexer's last run, and one question on each backend.
+`uv run scripts/smoke.py` is the quick check after a deployment: `/healthz` of the API and the dealer, the indexer's last run, one question on each backend, one with the car's tools on the prompt agent, and one about a drawn photo on each backend. `scripts/deploy-agents.sh` runs it last with `--basic`, without the car's tools and the photos, because the API may still be older than the agents.
 
 ## Backend A: prompt
 

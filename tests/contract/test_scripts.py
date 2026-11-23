@@ -47,7 +47,9 @@ def sse(*events) -> str:
     return "".join(f"event: {n}\ndata: {json.dumps(d)}\n\n" for n, d in events)
 
 
-def fake_deployment(indexer_status="success", failing_backend=None, healthy=True):
+def fake_deployment(
+    indexer_status="success", failing_backend=None, healthy=True, letter="P", rejected=None, car_event=None, used=True
+):
     def handler(request: httpx.Request) -> httpx.Response:
         url = request.url
         if url.path == "/healthz":
@@ -55,17 +57,27 @@ def fake_deployment(indexer_status="success", failing_backend=None, healthy=True
         if url.path.endswith("/status"):
             assert request.headers["authorization"] == "Bearer search-token"
             return httpx.Response(200, json={"lastResult": {"status": indexer_status, "itemsFailed": 0}})
+        assert request.headers["authorization"] == "Bearer user-token"
+        if url.path == "/attachments":
+            assert b'name="file"' in request.content and smoke.sign_png() in request.content
+            answer = {"id": None, "status": "rejected", "code": rejected} if rejected else {"id": "a1", "status": "ready"}
+            return httpx.Response(201, json=answer)
         assert url.path == "/chat"
+        body = json.loads(request.content)
+        if body["client_tools"] and car_event:
+            return httpx.Response(200, text=sse(car_event))
         if request.headers["x-agent-backend"] == failing_backend:
             return httpx.Response(200, text=sse(("error", {"code": "agent_unavailable", "message": "x"})))
+        photo = body.get("attachments") == ["a1"]
         return httpx.Response(200, text=sse(
-            ("delta", {"text": "2100 kg"}),
+            *([("trace", {"step": "attachment_used"})] if photo and used else []),
+            ("delta", {"text": f"It is the letter {letter}." if photo else "2100 kg"}),
             ("done", {"conversation_id": "c", "turn_id": "t", "backend": "loop", "usage": {}})))
 
     return handler
 
 
-def run(handler, backends=("prompt", "loop", "hosted")):
+def run(handler, backends=("prompt", "loop", "hosted"), **options):
     transport = httpx.MockTransport(handler)
     http = httpx.Client(transport=transport)
     original = voltrieve_client.httpx.Client
@@ -74,18 +86,85 @@ def run(handler, backends=("prompt", "loop", "hosted")):
     try:
         return smoke.run_checks(
             "https://api", "https://dealer", "https://search", lambda: "search-token", lambda: "user-token",
-            list(backends), http,
+            list(backends), http, **options,
         )
     finally:
         voltrieve_client.httpx.Client = original
 
 
-def test_smoke_checks_health_indexer_and_one_turn_per_backend():
+def test_smoke_checks_health_indexer_and_the_turns_of_each_backend():
     results = run(fake_deployment())
+    assert [name for name, _, _ in results] == [
+        "api /healthz", "dealer /healthz", "search indexer",
+        "turn on prompt", "car on prompt", "photo on prompt",
+        "turn on loop", "photo on loop",
+        "turn on hosted", "photo on hosted",
+    ]
+    assert all(ok for _, ok, _ in results), results
+
+
+def test_smoke_can_leave_out_what_an_older_api_does_not_have():
+    results = run(fake_deployment(rejected="unreadable"), basic=True)
     assert [name for name, _, _ in results] == [
         "api /healthz", "dealer /healthz", "search indexer", "turn on prompt", "turn on loop", "turn on hosted",
     ]
     assert all(ok for _, ok, _ in results), results
+
+
+def test_smoke_declares_the_tools_of_the_prompt_agent_of_the_car():
+    from app.backends.prompt import CAR_AGENT_TOOL_NAMES, PromptBackend
+    from app.schemas import ChatRequest
+
+    body = ChatRequest(message="x", client_tools=smoke.CAR_TOOLS)
+    names = {t.name for t in body.client_tools}
+    assert names == CAR_AGENT_TOOL_NAMES and len(body.client_tools) == 5
+    assert PromptBackend._agent_for(names) == "car"
+
+
+def test_smoke_draws_a_photo_that_the_api_accepts():
+    from app.attachments import identify
+
+    data = smoke.sign_png()
+    [part] = identify(data).process(data, "")
+    assert part.detail == "320x320" and len(data) < 10_000
+
+
+@pytest.mark.parametrize("options,note", [
+    ({"rejected": "too_blurry"}, "too_blurry"),
+    ({"letter": "Q"}, "did the photo reach the model?"),
+    ({"used": False}, "not used"),
+])
+def test_smoke_reports_a_photo_that_does_not_work(options, note):
+    by_name = {n: (ok, text) for n, ok, text in run(fake_deployment(**options), backends=("loop",))}
+    assert by_name["photo on loop"][0] is False and note in by_name["photo on loop"][1]
+    assert by_name["turn on loop"][0] is True
+
+
+def test_smoke_reports_an_api_without_attachments():
+    def old_api(request):
+        if request.url.path == "/attachments":
+            return httpx.Response(404, json={"detail": "Not Found"})
+        return fake_deployment()(request)
+
+    by_name = {n: (ok, text) for n, ok, text in run(old_api, backends=("loop",))}
+    assert by_name["photo on loop"][0] is False and "404" in by_name["photo on loop"][1]
+
+
+def test_smoke_reports_a_car_turn_that_is_refused_or_needs_a_tool():
+    refused = ("error", {"code": "unsupported_client_tool", "message": "x"})
+    by_name = {n: (ok, text) for n, ok, text in run(fake_deployment(car_event=refused), backends=("prompt",))}
+    assert by_name["car on prompt"] == (False, "error event: unsupported_client_tool")
+    assert by_name["turn on prompt"][0] is True and by_name["photo on prompt"][0] is True
+
+    def with_a_tool_call(request):
+        if request.url.path == "/chat/tool-results":
+            return httpx.Response(200, text=sse(("delta", {"text": "x"}), ("done", {"conversation_id": "c"})))
+        called = ("client_tool_calls", {"turn_id": "t", "conversation_id": "c", "calls": [
+            {"call_id": "1", "name": "honk", "arguments": "{}"}]})
+        return fake_deployment(car_event=called)(request)
+
+    by_name = {n: (ok, text) for n, ok, text in run(with_a_tool_call, backends=("prompt",))}
+    assert by_name["car on prompt"] == (False, "called a client tool")
 
 
 def test_smoke_reports_each_kind_of_failure():
@@ -100,7 +179,7 @@ def test_smoke_survives_an_unreachable_service():
         raise httpx.ConnectError("refused", request=request)
 
     results = run(down, backends=("loop",))
-    assert [ok for _, ok, _ in results] == [False, False, False, False]
+    assert [ok for _, ok, _ in results] == [False] * 5
 
 
 def _routing():

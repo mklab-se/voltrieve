@@ -130,6 +130,17 @@ class Api:
     def close(self) -> None:
         self._http.close()
 
+    def upload(self, data: bytes, label: str = "") -> dict:
+        """Upload an attachment and return the answer: `ready` with an id, or `rejected`."""
+        headers = {"Authorization": f"Bearer {self._token()}"}
+        try:
+            response = self._http.post("/attachments", files={"file": data}, data={"label": label}, headers=headers)
+        except httpx.HTTPError as exc:
+            raise ApiError(0, f"/attachments failed: {type(exc).__name__}") from exc
+        if response.status_code >= 400:
+            raise ApiError(response.status_code, response.text[:300])
+        return response.json()
+
     def _stream(self, path: str, body: dict, correlation_id: str | None) -> Iterator[Event]:
         headers = {"Authorization": f"Bearer {self._token()}", "X-Agent-Backend": self._backend}
         if correlation_id:
@@ -151,6 +162,7 @@ class Api:
         handlers: dict[str, ToolHandler] | None = None,
         correlation_id: str | None = None,
         max_rounds: int = 6,
+        attachments: list[str] | None = None,
     ) -> Turn:
         """Send a message and follow the turn to its end, answering client tool calls."""
         result = Turn(conversation_id=conversation_id)
@@ -158,6 +170,8 @@ class Api:
         body: dict = {"message": message, "client_tools": client_tools or []}
         if conversation_id:
             body["conversation_id"] = conversation_id
+        if attachments:
+            body["attachments"] = attachments
         stream = self._stream("/chat", body, correlation_id)
         for _ in range(max_rounds):
             pending = None

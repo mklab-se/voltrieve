@@ -3,12 +3,12 @@
 #
 #   scripts/deploy-agents.sh
 #
-# 1. create_agents.py   the two prompt agents (backend A)
+# 1. create_agents.py   the three prompt agents (backend A)
 # 2. deploy.py          builds the hosted agent image in ACR, creates the agent version, waits until
 #                       it is active and stores HOSTED_AGENT_PRINCIPAL_ID in the azd environment
 # 3. azd provision      Bicep assigns the hosted agent identity its roles on Foundry and Search
 # 4. assign-app-role    the hosted agent identity gets Dealer.Access (Graph, not Bicep)
-# 5. smoke.py           health of the API and dealer, the indexer, one turn per backend
+# 5. smoke.py --basic   health of the API and dealer, the indexer, one turn per backend
 # Run it after `azd up`, from the repository root, signed in with az and azd as the deployer.
 set -eu
 cd "$(dirname "$0")/.."
@@ -34,6 +34,7 @@ retry uv run --project infra/scripts/entra voltrieve-entra assign-app-role \
   --app-role-id "$DEALER_APP_ROLE_ID"
 
 # A new agent version and fresh role assignments can take minutes to settle, so the check retries.
-retry uv run scripts/smoke.py
+# The agents go before the API, so only what an older API can answer. After the API: scripts/smoke.py
+retry uv run scripts/smoke.py --basic
 echo "Note: sessions are bound to the agent version they started on; conversations in flight stay on the old version until the API restarts (or a call fails and the session is dropped)."
 echo "Agents deployed. Hosted agent: ${HOSTED_AGENT_NAME:-voltrieve-hosted} (principal $HOSTED_AGENT_PRINCIPAL_ID)"
