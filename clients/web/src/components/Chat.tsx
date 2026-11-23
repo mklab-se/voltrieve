@@ -4,7 +4,6 @@ import type { SourceItem } from "../types";
 import { Answer } from "./Answer";
 import { ASSISTANT_NAME, RunaAvatar } from "./Runa";
 import { SourceList } from "./SourceList";
-import { Speedometer } from "./Speedometer";
 
 const STARTERS = [
   "What is the towing capacity of the Fjord?",
@@ -16,15 +15,15 @@ const STARTERS = [
 interface Props {
   state: ChatState;
   busy: boolean;
-  /** Undefined while the gauge is off. */
-  gauge?: number;
+  /** Whether an answer names the backend that made it. */
+  underTheHood: boolean;
   onSend: (text: string) => void;
   onOpenSource: (source: SourceItem) => void;
   /** Why the last source could not be opened. */
   sourceError?: string;
 }
 
-export function Chat({ state, busy, gauge, onSend, onOpenSource, sourceError }: Props) {
+export function Chat({ state, busy, underTheHood, onSend, onOpenSource, sourceError }: Props) {
   const [text, setText] = useState("");
   const endRef = useRef<HTMLDivElement>(null);
   const last = state.turns[state.turns.length - 1];
@@ -47,13 +46,12 @@ export function Chat({ state, busy, gauge, onSend, onOpenSource, sourceError }: 
 
   return (
     <section className="chat" aria-label="Chat">
-      {gauge !== undefined && <Speedometer value={gauge} />}
       <div className="messages" aria-live="polite">
         {state.turns.length === 0 && (
           <div className="empty">
             <RunaAvatar size="large" />
             <h2>Ask {ASSISTANT_NAME} something</h2>
-            <p className="muted">Each answer appears here. The recorder shows how it got there.</p>
+            <p className="muted">Charging, service, tyres or warranty: she looks it up in the Voltrieve documents.</p>
             <div className="starters">
               {STARTERS.map((s) => (
                 <button key={s} className="chip" onClick={() => onSend(s)} disabled={busy}>
@@ -85,7 +83,7 @@ export function Chat({ state, busy, gauge, onSend, onOpenSource, sourceError }: 
                 </p>
               )}
               {t.sources && t.sources.length > 0 && <SourceList sources={t.sources} onOpen={onOpenSource} />}
-              {t.backend && <p className="meta">via {t.backend} · turn {t.id}</p>}
+              {underTheHood && t.backend && <p className="meta">via {t.backend} · turn {t.id}</p>}
             </div>
           </div>
         ))}

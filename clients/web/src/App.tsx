@@ -5,9 +5,9 @@ import { fetchSourceUrl, openSource } from "./sources";
 import { Chat } from "./components/Chat";
 import { Header } from "./components/Header";
 import { ConfigMissing, Loading, SignIn } from "./components/Notices";
-import { Recorder } from "./components/Recorder";
+import { UnderTheHood, readUnderTheHood, rememberUnderTheHood } from "./components/UnderTheHood";
 import { readConfig, type AppConfig } from "./config";
-import { runClientTool, toolsFor, type Theme } from "./tools";
+import { runClientTool, type Theme } from "./tools";
 import { chatReducer, initialChatState } from "./turns";
 import type { Backend, ClientToolCall, SourceItem } from "./types";
 
@@ -18,14 +18,6 @@ function initialTheme(): Theme {
   const set = document.documentElement.dataset.theme;
   if (set === "light" || set === "dark") return set;
   return matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-}
-
-function initialGaugeOn(): boolean {
-  try {
-    return localStorage.getItem("gauge") === "on";
-  } catch {
-    return false;
-  }
 }
 
 export function App() {
@@ -70,9 +62,8 @@ export function Workspace({ config, auth, session }: { config: AppConfig; auth: 
   const [backend, setBackend] = useState<Backend>("loop");
   const [busy, setBusy] = useState(false);
   const [theme, setTheme] = useState<Theme>(initialTheme);
-  const [gauge, setGauge] = useState(0);
-  const [gaugeOn, setGaugeOn] = useState(initialGaugeOn);
-  const [view, setView] = useState<"chat" | "recorder">("chat");
+  const [underTheHood, setUnderTheHood] = useState(readUnderTheHood);
+  const [view, setView] = useState<"chat" | "timeline">("chat");
   const [sourceError, setSourceError] = useState<string>();
   const abort = useRef<AbortController | null>(null);
   const conversationId = useRef<string | undefined>(undefined);
@@ -110,7 +101,6 @@ export function Workspace({ config, auth, session }: { config: AppConfig; auth: 
             conversationId: conversationId.current,
             message,
             correlationId,
-            clientTools: toolsFor(gaugeOn),
           },
           ctrl.signal,
         );
@@ -129,7 +119,7 @@ export function Workspace({ config, auth, session }: { config: AppConfig; auth: 
           if (!paused) break;
           const results = paused.calls.map((call) => ({
             call_id: call.call_id,
-            output: runClientTool(call, { setTheme: applyTheme, setGauge }),
+            output: runClientTool(call, { setTheme: applyTheme }),
           }));
           events = streamToolResults(
             {
@@ -153,7 +143,7 @@ export function Workspace({ config, auth, session }: { config: AppConfig; auth: 
         setBusy(false);
       }
     },
-    [applyTheme, auth, backend, config.apiUrl, gaugeOn],
+    [applyTheme, auth, backend, config.apiUrl],
   );
 
   function openDocument(source: SourceItem) {
@@ -165,14 +155,10 @@ export function Workspace({ config, auth, session }: { config: AppConfig; auth: 
     );
   }
 
-  function toggleGauge() {
-    const next = !gaugeOn;
-    setGaugeOn(next);
-    try {
-      localStorage.setItem("gauge", next ? "on" : "off");
-    } catch {
-      /* storage may be unavailable */
-    }
+  function toggleUnderTheHood() {
+    setUnderTheHood(!underTheHood);
+    rememberUnderTheHood(!underTheHood);
+    setView("chat"); // on a small screen the panel has a tab of its own
   }
 
   function toggleTheme() {
@@ -180,32 +166,32 @@ export function Workspace({ config, auth, session }: { config: AppConfig; auth: 
   }
 
   return (
-    <div className="app" data-view={view}>
+    <div className="app" data-view={view} data-hood={underTheHood}>
       <Header
-        backend={backend}
-        onBackend={setBackend}
         session={session}
         onSignOut={() => void auth.signOut()}
         theme={theme}
         onToggleTheme={toggleTheme}
-        gaugeOn={gaugeOn}
-        onToggleGauge={toggleGauge}
+        underTheHood={underTheHood}
+        onToggleUnderTheHood={toggleUnderTheHood}
         onNewChat={() => dispatch({ type: "reset" })}
         busy={busy}
       />
-      <nav className="tabs" aria-label="View">
-        <button className={view === "chat" ? "on" : ""} onClick={() => setView("chat")}>
-          Chat
-        </button>
-        <button className={view === "recorder" ? "on" : ""} onClick={() => setView("recorder")}>
-          Timeline
-        </button>
-      </nav>
+      {underTheHood && (
+        <nav className="tabs" aria-label="View">
+          <button className={view === "chat" ? "on" : ""} aria-pressed={view === "chat"} onClick={() => setView("chat")}>
+            Chat
+          </button>
+          <button className={view === "timeline" ? "on" : ""} aria-pressed={view === "timeline"} onClick={() => setView("timeline")}>
+            Timeline
+          </button>
+        </nav>
+      )}
       <main className="panes">
         <Chat
           state={state}
           busy={busy}
-          gauge={gaugeOn ? gauge : undefined}
+          underTheHood={underTheHood}
           onSend={(t) => {
             setSourceError(undefined);
             void send(t);
@@ -213,7 +199,7 @@ export function Workspace({ config, auth, session }: { config: AppConfig; auth: 
           onOpenSource={openDocument}
           sourceError={sourceError}
         />
-        <Recorder state={state} />
+        {underTheHood && <UnderTheHood state={state} backend={backend} onBackend={setBackend} busy={busy} />}
       </main>
     </div>
   );

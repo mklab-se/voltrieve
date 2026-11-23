@@ -127,24 +127,49 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
 .notice.error { background: var(--danger-soft); color: var(--danger); border-radius: 8px; padding: 8px 12px; font-size: 14px; }
 
 /* App shell */
-.app { height: 100%; display: grid; grid-template-rows: auto auto 1fr; min-height: 0; }
+.app { height: 100%; display: flex; flex-direction: column; min-height: 0; }
 .topbar {
   display: flex; align-items: center; gap: 16px; padding: 10px 16px;
   border-bottom: 1px solid var(--line); background: var(--surface); flex-wrap: wrap;
 }
 .brand { display: flex; align-items: center; gap: 8px; color: var(--accent); margin-right: auto; }
 .brand-name { color: var(--ink); font-weight: 700; letter-spacing: -0.01em; }
-.brand-sub { font: 11px var(--mono); text-transform: uppercase; letter-spacing: 0.12em; color: var(--ink-3); padding-left: 8px; border-left: 1px solid var(--line); }
 .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 9px; padding: 2px; background: var(--surface-2); }
 .seg button { border: 0; background: transparent; padding: 5px 14px; border-radius: 7px; font: 13px var(--mono); color: var(--ink-2); }
 .seg button.on { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
 .actions { display: flex; gap: 8px; align-items: center; }
-.who { display: grid; text-align: left; padding: 3px 12px; line-height: 1.2; }
-.who-name { font-size: 13px; color: var(--ink); }
-.who-out { font-size: 11px; color: var(--ink-3); }
+
+/* The account menu */
+.account { position: relative; }
+.account summary { display: flex; align-items: center; gap: 8px; padding: 4px 12px 4px 5px; cursor: pointer; list-style: none; user-select: none; }
+.account summary::-webkit-details-marker { display: none; }
+.account summary:hover, .account[open] summary { border-color: var(--ink-3); color: var(--ink); }
+.initial {
+  width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; flex: none;
+  background: var(--accent-soft); color: var(--accent); font-size: 12px; font-weight: 700;
+}
+.account-name { font-size: 13.5px; color: var(--ink); max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-menu {
+  position: absolute; right: 0; top: calc(100% + 8px); z-index: 10; min-width: 240px; max-width: calc(100vw - 24px);
+  padding: 6px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.18); display: grid;
+}
+.account-menu button { border: 0; background: transparent; border-radius: 8px; padding: 9px 10px; text-align: left; font-size: 14px; }
+.account-menu button:hover { background: var(--surface-2); }
+.account-id { padding: 6px 10px 10px; margin-bottom: 6px; font-size: 12px; color: var(--ink-3); border-bottom: 1px solid var(--line); }
+.account-id span { display: block; color: var(--ink); font-size: 13.5px; overflow-wrap: anywhere; }
+.switch { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.switch-track { width: 34px; height: 20px; border-radius: 999px; background: var(--ink-3); position: relative; flex: none; transition: background 0.15s; }
+.switch-track::after {
+  content: ""; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%;
+  background: var(--surface); transition: transform 0.15s;
+}
+.switch[aria-checked="true"] .switch-track { background: var(--accent); }
+.switch[aria-checked="true"] .switch-track::after { transform: translateX(14px); }
 
 .tabs { display: none; }
-.panes { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 460px); min-height: 0; }
+.panes { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); min-height: 0; }
+.app[data-hood="true"] .panes { grid-template-columns: minmax(0, 1fr) minmax(360px, 420px); }
 
 /* Chat */
 .chat { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
@@ -219,12 +244,14 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
 .composer textarea:focus { outline: none; border-color: var(--accent); }
 .composer .primary { height: 42px; }
 
-/* Recorder: always dark, like an instrument panel */
-.recorder {
+/* Under the hood: the backend picker and the timeline */
+.hood {
   background: var(--rec-bg); color: var(--rec-ink); border-left: 1px solid var(--line);
-  display: grid; grid-template-rows: auto 1fr; min-height: 0; min-width: 0;
-  font-family: var(--mono);
+  display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; min-width: 0; font-family: var(--mono);
 }
+.hood-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--rec-line); }
+.hood-bar > span { font: 600 12px var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--rec-ink-2); }
+.recorder { display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; min-width: 0; }
 .recorder .muted { color: var(--rec-ink-2); }
 .rec-head { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--rec-line); }
 .rec-head h2 { font: 600 12px var(--mono); letter-spacing: 0.14em; text-transform: uppercase; margin-right: auto; }
@@ -265,44 +292,22 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
 /* Phone */
 @media (max-width: 800px) {
   .topbar { gap: 10px; padding: 10px 12px; }
-  .brand-sub { display: none; }
   .actions { margin-left: auto; }
-  .who-name { display: none; }
-  .who { padding: 6px 10px; }
-  .who-out { font-size: 13px; color: var(--ink-2); }
-  .seg { order: 3; width: 100%; }
-  .seg button { flex: 1; }
+  .account-name { display: none; }
+  .account summary { padding: 4px; }
   .tabs { display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1px solid var(--line); background: var(--surface); }
   .tabs button { border: 0; background: transparent; padding: 10px; color: var(--ink-3); border-bottom: 2px solid transparent; font-weight: 600; }
   .tabs button.on { color: var(--ink); border-bottom-color: var(--accent); }
-  .panes { grid-template-columns: minmax(0, 1fr); }
-  .app[data-view="chat"] .recorder, .app[data-view="recorder"] .chat { display: none; }
-  .recorder { border-left: 0; }
+  .app[data-hood="true"] .panes { grid-template-columns: minmax(0, 1fr); }
+  .app[data-view="chat"] .hood, .app[data-view="timeline"] .chat { display: none; }
+  .hood { border-left: 0; }
   .ev { grid-template-columns: 64px 1fr; gap: 10px; }
   .bubble { max-width: 94%; }
   .composer { padding: 10px 12px calc(12px + env(safe-area-inset-bottom)); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation: none !important; }
-}
-
-.ghost[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
-
-/* The speedometer, moved by the set_gauge client tool. */
-.gauge { flex: none; display: flex; justify-content: center; padding: 8px 0 2px; border-bottom: 1px solid var(--line); }
-.gauge svg { width: 150px; height: auto; display: block; }
-.gauge path { fill: none; stroke-width: 7; stroke-linecap: round; }
-.gauge-track { stroke: var(--surface-2); }
-.gauge-fill { stroke: var(--accent); transition: stroke-dasharray 0.7s cubic-bezier(0.3, 1.4, 0.5, 1); }
-.gauge-tick { stroke: var(--ink-3); stroke-width: 1; }
-.gauge-label { fill: var(--ink-3); font: 500 7px var(--mono); }
-.gauge-needle { transform-origin: 60px 60px; transition: transform 0.7s cubic-bezier(0.3, 1.4, 0.5, 1); }
-.gauge-needle line { stroke: var(--danger); stroke-width: 2.2; stroke-linecap: round; }
-.gauge-hub { fill: var(--ink); }
-.gauge-value { fill: var(--ink); font: 700 13px var(--mono); }
-@media (prefers-reduced-motion: reduce) {
-  .gauge-fill, .gauge-needle { transition: none; }
+  *, *::before, *::after { animation: none !important; transition: none !important; }
 }
 
 /* Privacy notice under the chat input */

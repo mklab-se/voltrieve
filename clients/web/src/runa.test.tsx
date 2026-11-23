@@ -5,7 +5,7 @@ import { chatReducer, initialChatState, type ChatState } from "./turns";
 
 // Issue #15: the assistant is called Runa, and the chat never hides that it is an AI.
 const render = (state: ChatState) =>
-  renderToStaticMarkup(<Chat state={state} busy={false} onSend={() => {}} onOpenSource={() => {}} />);
+  renderToStaticMarkup(<Chat state={state} busy={false} underTheHood={false} onSend={() => {}} onOpenSource={() => {}} />);
 
 describe("Runa in the chat", () => {
   it("labels each answer with Runa's name and avatar", () => {

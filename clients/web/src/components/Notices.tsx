@@ -29,12 +29,9 @@ export function SignIn({ auth, error }: { auth: Auth; error?: string }) {
   return (
     <main className="gate">
       <div className="gate-card">
-        <p className="eyebrow">Voltrieve · Flight Recorder</p>
-        <h1>Watch an agent work</h1>
-        <p>
-          Ask Runa about Voltrieve vehicles and see every hop the agent takes: token check, model calls, retrieval, tools. This
-          web app has one tool of its own: it can change its theme when you ask.
-        </p>
+        <p className="eyebrow">Voltrieve</p>
+        <h1>Welcome to My Voltrieve</h1>
+        <p>Sign in to see your car and ask Runa about it.</p>
         {error && <p className="notice error">{error}</p>}
         <button className="primary" onClick={() => void auth.signIn()}>
           {auth.kind === "fake" ? "Continue as dev tester" : "Sign in with Microsoft"}
