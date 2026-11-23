@@ -15,19 +15,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  deploy:
+  build:
     # GitHub Pages needs a public repository on the free plan.
     if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.3 # no major tags since v8
+      - run: uv run scripts/build_site.py
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+  # A job of its own: in the same job, the deployment often looked before the artifact was visible.
+  deploy:
+    needs: build
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.3.3
-      - run: uv run scripts/build_site.py
-      - uses: actions/upload-pages-artifact@v5
-        with:
-          path: site
       - id: deployment
         uses: actions/deploy-pages@v5
