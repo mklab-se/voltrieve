@@ -57,7 +57,7 @@ var storageBlobDataContributor = 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
 var foundryUser = '53ca6127-db72-4b80-b1b0-d745d6d5456d'
 var storageBlobDelegator = 'db58b8e5-c6ad-4a2a-8342-4190687cbf4a'
 
-resource rg 'Microsoft.Resources/resourceGroups@2024-03-01' = {
+resource rg 'Microsoft.Resources/resourceGroups@2026-06-01' = {
   name: 'rg-voltrieve-${environmentName}'
   location: location
   tags: tags

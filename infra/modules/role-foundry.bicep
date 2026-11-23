@@ -9,7 +9,7 @@ param roleDefinitionId string
 @allowed(['ServicePrincipal', 'User'])
 param principalType string
 
-resource target 'Microsoft.CognitiveServices/accounts@2026-09-15-preview' existing = {
+resource target 'Microsoft.CognitiveServices/accounts@2026-11-15-preview' existing = {
   name: resourceName
 }
 

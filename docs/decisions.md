@@ -13,12 +13,13 @@ The user decided to use the latest API versions, preview included. This replaced
 | Search data plane (REST) | `2026-08-01-preview` |
 | Knowledge base MCP endpoint | `2026-08-01-preview` |
 | Search management (Bicep) | `2026-09-01-preview` |
-| `Microsoft.CognitiveServices/*` | `2026-09-15-preview` |
+| `Microsoft.CognitiveServices/*` | `2026-11-15-preview` |
 | `Microsoft.App/*` | `2026-07-01` |
 | `Microsoft.Storage/*` | `2026-09-01` |
-| `Microsoft.ContainerRegistry/registries` | `2026-09-01-preview` |
+| `Microsoft.ContainerRegistry/registries` | `2026-11-01` |
 | `Microsoft.OperationalInsights/workspaces` | `2026-03-01` |
-| `Microsoft.Web/staticSites` | `2025-03-01` |
+| `Microsoft.Web/staticSites` | `2025-05-01` |
+| `Microsoft.Resources/resourceGroups` | `2026-06-01` |
 | `Microsoft.ManagedIdentity/userAssignedIdentities` | `2024-11-30` |
 | `Microsoft.Insights/components` | `2020-02-02` |
 
@@ -28,7 +29,7 @@ The user decided to use the latest API versions, preview included. This replaced
 
 ### Bicep BCP081 warnings are expected
 
-The lint reports BCP081 ("does not have types available") for `Microsoft.CognitiveServices/*@2026-09-15-preview` and `Microsoft.Storage/*@2026-09-01`. These versions are newer than Bicep's type data. The warnings do not block deployment, but Bicep cannot validate those resources' properties before deploying, so errors there appear at deployment time. `infra/tests/test_bicep.sh` does not fail on them.
+The lint reports BCP081 ("does not have types available") for `Microsoft.CognitiveServices/*@2026-11-15-preview`, `Microsoft.ContainerRegistry/registries@2026-11-01`, `Microsoft.Web/staticSites@2025-05-01`, `Microsoft.Resources/resourceGroups@2026-06-01` and `Microsoft.Storage/*@2026-09-01`. These versions are newer than Bicep's type data. The warnings do not block deployment, but Bicep cannot validate those resources' properties before deploying, so errors there appear at deployment time. `infra/tests/test_bicep.sh` does not fail on them.
 
 ## Search
 

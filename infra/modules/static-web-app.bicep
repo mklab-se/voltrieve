@@ -6,7 +6,7 @@ param tags object = {}
 param serviceName string
 
 // Free tier: no idle cost. azd deploys a built SPA to the site tagged with its service name.
-resource site 'Microsoft.Web/staticSites@2025-03-01' = {
+resource site 'Microsoft.Web/staticSites@2025-05-01' = {
   name: name
   location: location
   tags: union(tags, { 'azd-service-name': serviceName })

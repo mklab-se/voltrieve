@@ -15,7 +15,7 @@ resource appInsights 'Microsoft.Insights/components@2020-02-02' existing = {
   name: appInsightsName
 }
 
-resource account 'Microsoft.CognitiveServices/accounts@2026-09-15-preview' = {
+resource account 'Microsoft.CognitiveServices/accounts@2026-11-15-preview' = {
   name: name
   location: location
   tags: tags
@@ -30,7 +30,7 @@ resource account 'Microsoft.CognitiveServices/accounts@2026-09-15-preview' = {
   }
 }
 
-resource project 'Microsoft.CognitiveServices/accounts/projects@2026-09-15-preview' = {
+resource project 'Microsoft.CognitiveServices/accounts/projects@2026-11-15-preview' = {
   parent: account
   name: projectName
   location: location
@@ -41,7 +41,7 @@ resource project 'Microsoft.CognitiveServices/accounts/projects@2026-09-15-previ
   }
 }
 
-resource chatDeployment 'Microsoft.CognitiveServices/accounts/deployments@2026-09-15-preview' = {
+resource chatDeployment 'Microsoft.CognitiveServices/accounts/deployments@2026-11-15-preview' = {
   parent: account
   name: chatModelName
   dependsOn: [project]
@@ -59,7 +59,7 @@ resource chatDeployment 'Microsoft.CognitiveServices/accounts/deployments@2026-0
 }
 
 // Chained with dependsOn: the service rejects concurrent deployment writes on one account.
-resource embeddingDeployment 'Microsoft.CognitiveServices/accounts/deployments@2026-09-15-preview' = {
+resource embeddingDeployment 'Microsoft.CognitiveServices/accounts/deployments@2026-11-15-preview' = {
   parent: account
   name: embeddingModelName
   dependsOn: [chatDeployment]
@@ -76,7 +76,7 @@ resource embeddingDeployment 'Microsoft.CognitiveServices/accounts/deployments@2
   }
 }
 
-resource planningDeployment 'Microsoft.CognitiveServices/accounts/deployments@2026-09-15-preview' = {
+resource planningDeployment 'Microsoft.CognitiveServices/accounts/deployments@2026-11-15-preview' = {
   parent: account
   name: planningModelName
   dependsOn: [embeddingDeployment]
@@ -94,7 +94,7 @@ resource planningDeployment 'Microsoft.CognitiveServices/accounts/deployments@20
 }
 
 // The App Insights connection string is an ingestion endpoint identifier, not a secret.
-resource appInsightsConnection 'Microsoft.CognitiveServices/accounts/projects/connections@2026-09-15-preview' = {
+resource appInsightsConnection 'Microsoft.CognitiveServices/accounts/projects/connections@2026-11-15-preview' = {
   parent: project
   name: 'appinsights'
   properties: {

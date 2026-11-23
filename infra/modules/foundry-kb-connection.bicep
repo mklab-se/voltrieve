@@ -5,16 +5,16 @@ param searchEndpoint string
 param knowledgeBaseName string
 param connectionName string = 'voltrieve-kb-mcp'
 
-resource account 'Microsoft.CognitiveServices/accounts@2026-09-15-preview' existing = {
+resource account 'Microsoft.CognitiveServices/accounts@2026-11-15-preview' existing = {
   name: accountName
 }
 
-resource project 'Microsoft.CognitiveServices/accounts/projects@2026-09-15-preview' existing = {
+resource project 'Microsoft.CognitiveServices/accounts/projects@2026-11-15-preview' existing = {
   parent: account
   name: projectName
 }
 
-resource connection 'Microsoft.CognitiveServices/accounts/projects/connections@2026-09-15-preview' = {
+resource connection 'Microsoft.CognitiveServices/accounts/projects/connections@2026-11-15-preview' = {
   parent: project
   name: connectionName
   properties: {
