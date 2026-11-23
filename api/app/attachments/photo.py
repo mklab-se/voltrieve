@@ -48,11 +48,14 @@ class PhotoHandler:
 
     def process(self, data: bytes, label: str) -> list[Part]:
         try:
-            image = self._open(data)
+            return [self._part(data, label)]
         except Rejected:
             raise
-        except Exception:  # any Pillow decoding problem, bomb errors and truncation included
+        except Exception:  # any Pillow problem, bomb errors and truncation included
             raise Rejected("unreadable", MESSAGES["unreadable"]) from None
+
+    def _part(self, data: bytes, label: str) -> Part:
+        image = self._open(data)
         if min(image.size) < MIN_SIDE:
             raise Rejected("too_small", MESSAGES["too_small"])
         if sharpness(image) < MIN_SHARPNESS:
@@ -63,13 +66,22 @@ class PhotoHandler:
         jpeg = buffer.getvalue()
         url = "data:image/jpeg;base64," + base64.b64encode(jpeg).decode("ascii")
         content = {"type": "input_image", "image_url": url, "detail": "high"}
-        return [Part(label, content, len(jpeg), f"{image.width}x{image.height}")]
+        return Part(label, content, len(jpeg), f"{image.width}x{image.height}")
 
     @staticmethod
     def _open(data: bytes) -> Image.Image:
+        """The picture, upright and on white. It is a new image made of the pixels alone: Pillow
+        would write a comment found in the file into the new JPEG."""
         image = Image.open(io.BytesIO(data), formats=FORMATS)
         width, height = image.size  # from the header, nothing is decoded yet
         if width * height > MAX_PIXELS:
             raise Rejected("unreadable", MESSAGES["unreadable"])
         image.load()
-        return ImageOps.exif_transpose(image).convert("RGB")
+        image = ImageOps.exif_transpose(image)
+        pixels = Image.new("RGB", image.size, "white")
+        if image.has_transparency_data:
+            image = image.convert("RGBA")
+            pixels.paste(image, mask=image)
+        else:
+            pixels.paste(image.convert("RGB"))
+        return pixels

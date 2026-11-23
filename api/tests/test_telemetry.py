@@ -237,3 +237,13 @@ def test_client_address_is_the_first_forwarded_address():
 
     assert forwarded_client({"x-forwarded-for": "203.0.113.7, 100.64.0.2"}) == "203.0.113.7"
     assert forwarded_client({"x-forwarded-for": "  "}) is None and forwarded_client({}) is None
+
+
+def test_an_error_that_escapes_the_turn_span_leaves_no_text_on_it(spans):
+    """An error text may quote an attachment, and OpenTelemetry puts it on the span by default."""
+    with pytest.raises(RuntimeError), telemetry.turn_span(turn_id="t1"):
+        raise RuntimeError("what the attachment says")
+    [span] = spans.get_finished_spans()
+    assert span.name == "chat.turn" and span.attributes["turn_id"] == "t1"
+    assert span.events == () and span.status.description is None
+    assert "what the attachment says" not in span.to_json()

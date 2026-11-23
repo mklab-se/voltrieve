@@ -1,6 +1,7 @@
 """Attachment handlers: identify an upload by its content and turn it into content parts.
 
-A new kind is one more handler in HANDLERS.
+A new kind is one more handler in HANDLERS. A kind above 8 MB also needs the limit in main.py raised,
+and text that a handler produces must be cleaned by the handler.
 """
 
 from .base import AttachmentHandler, Part, Rejected
