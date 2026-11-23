@@ -71,11 +71,18 @@ Red days come from a small list of Swedish public holidays for 2026 and 2027 in 
 - Create: `tests/photos/compare.py`, `docs/evidence/photos-routing.json`, `docs/evidence/photos-comparison.txt`, `docs/evidence/photos-privacy.txt`, `docs/evidence/car-tools.txt`
 
 - [ ] **Step 1: Run the routing suite before** on the deployed version and keep it. Run: `uv run tests/routing/check.py --repeats 1 --label before-photos`.
-- [ ] **Step 2: Ask, then deploy** (`azd up`, `scripts/deploy-agents.sh`, `scripts/deploy-web.sh web`, `car`, `dashboard`).
+- [ ] **Step 2: Ask, then deploy in this order.** The hosted agent goes before the API: with a new API and an old agent, photo turns answer without the photo and the log protection is missing.
+  1. A provision preview, then `azd provision` (registrations, two sites, CORS, `PROMPT_AGENT_CAR`). Not `azd up`.
+  2. `scripts/deploy-agents.sh` (three prompt agents, then the hosted agent).
+  3. `azd deploy api`. The new revision drops sessions bound to the old hosted version.
+  4. Smoke, with one car-tools turn on the prompt agent and one upload per backend.
+  5. On the hosted agent: 3 photos, a pause and a continuation, before anything else is measured (large `kept` through the gateway is not proven). Note the API's memory peak.
+  6. `web` and `dashboard` together, then `car`.
+  Rollback in reverse, API first. On an empty environment `azd up` comes first, then `deploy-agents.sh`, then an API restart; photos count as unavailable until then. `docs/deploy.md` gets this order.
 - [ ] **Step 3: The first 20 photo turns,** report the cost and the times, and wait for a yes.
 - [ ] **Step 4: The rest:** the sign questions, the broken lamp left and right (`VP-14375`, `VP-14440`, taken from `parts-index.json`), the undamaged car, a drawn sign asked about as a broken part, a blurred photo, "which part is this?". Then `compare.py` (three approaches and four places for the rules). Then the routing suite again as `--label after-photos`.
 - [ ] **Step 5: The car's tools** with a script on all three backends: wipers, horn, speed, park, sign photo through the tool. "honk" after a sign question is stored as usual.
-- [ ] **Step 6: Privacy:** after a photo turn, list the conversation's items: text only. Query Application Insights and the live feed for `SPARK`, `base64` and `From the client` in the run's time span. Expected: nothing.
+- [ ] **Step 6: Privacy:** after a photo turn, list the conversation's items: text only. Query Application Insights (traces, exceptions and dependencies) and the live feed for `SPARK`, `base64` and `From the client` in the run's time span, also after a photo turn that fails on purpose. Expected: nothing. The runbook says that failures of private turns arrive as traces, not exceptions.
 - [ ] **Step 7: Sign in** to the three sites by hand with the product owner, and note what was seen.
 - [ ] **Step 8: Commit** `Measure photos, the car tools and routing on the three backends`
 
