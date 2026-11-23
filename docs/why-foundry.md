@@ -16,7 +16,7 @@ Recommendation: own loop when clients bring tools, hosted agent when you also ne
 
 ## 1. What happened with client tools
 
-All three backends share one client contract. The CLI sends its tools on every turn, the SPA sends none:
+All three backends share one client contract. The CLI sends its tools on every turn, the website sends only `set_theme`:
 
 ```json
 POST /chat
@@ -63,7 +63,7 @@ client.responses.create(
 )
 ```
 
-So the tools go into the definition, and there are two agents: `voltrieve-prompt-cli` with the CLI's three tools and `voltrieve-prompt-web` without them. The API picks one by whether the request carries `client_tools`. A tool outside the definition never reaches Foundry: the API answers with the `unsupported_client_tool` error (runbook step 11).
+So the tools go into the definition, and there are three agents: `voltrieve-prompt-cli` with the CLI's four tools, `voltrieve-prompt-web` with the web client's `set_theme` and `voltrieve-prompt-car` with the car's five tools. The API picks the first, in the order web, CLI, car, whose tools include every declared one. A tool outside the definition never reaches Foundry: the API answers with the `unsupported_client_tool` error (runbook step 11).
 
 Function calls still come back to the caller. Dealer tools and client tools are function tools on the agent, so the API runs the dealer calls and relays client calls. Sending `function_call_output` with `agent_reference` plus `conversation` works. A prompt agent therefore does not remove the relay: backend A reuses the same loop as backend B.
 
@@ -335,7 +335,7 @@ Alternatives for the same client:
 
 | | A: prompt agent | B: own loop | C: hosted agent |
 | --- | --- | --- | --- |
-| How client tools work | In the agent definition. Two agents, API picks one. Unknown tool is refused by the API. | Per request, in `tools`. | Per request, in our Invocations body, turned into tools inside the agent. |
+| How client tools work | In the agent definition. Three agents, API picks one. Unknown tool is refused by the API. | Per request, in `tools`. | Per request, in our Invocations body, turned into tools inside the agent. |
 | How the knowledge bases are attached | One MCP tool per base, each with a project connection. Both expose `knowledge_base_retrieve`, so only the server label and description differ. | `search_voltrieve_docs` and `search_spare_parts` server tools, retrieve endpoint | Same as B |
 | What is visible in the trace | `mcp_tool_called` with an output preview. No references or activity. | `server_tool_called`, `knowledge_base_retrieved` (sub-queries, references), `server_tool_returned` | Same as B |
 | What Foundry provides | Tool definition, MCP call, versions, project identity | Models and Conversations | Models, Conversations, runtime, agent identity, versions |

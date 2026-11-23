@@ -4,7 +4,9 @@ Which model should run the agent, and does it depend on the architecture? This p
 
 ## The result
 
-All three backends run `gpt-6.1-terra`, chosen from these results, and Search plans with `gpt-5.4-mini`. A last run on that setup, 48 turns per backend:
+All three backends run `gpt-6.1-terra`, chosen from these results. `gpt-6-luna` plans the Search queries (`PLANNING_MODEL_NAME`) and `gpt-5.4-mini` is the way back. The numbers below were measured with `gpt-5.4-mini` as the planner. A last run on that setup, 48 turns per backend:
+
+<!-- MEASURE: the same run with gpt-6-luna as the planner -->
 
 | Architecture | Median TTFT | Turns over 10 s | Two-base total | Article numbers |
 | --- | --- | --- | --- | --- |
@@ -39,7 +41,7 @@ The first `status` event reached the client in a median of 0.11 to 0.12 seconds 
 
 ## Every agent model, on the own loop
 
-48 runs each. Search planning stayed on `gpt-5.4-mini`.
+48 runs each. Search planning stayed on `gpt-5.4-mini` in this run.
 
 | Model | Right sources | Articles | Simple question | Two bases | USD per 1,000 turns |
 | --- | --- | --- | --- | --- | --- |
@@ -63,7 +65,7 @@ Azure AI Search calls a model of its own to plan each search, so this is a separ
 | `gpt-5.6-terra` | 20 of 20 | 78 of 78 | 10.2 s | 2.00 / 12.00 |
 | `gpt-6-luna`, `gpt-6.1-terra` | Refused by Search | | | |
 
-GPT-6 models are refused with `HTTP 400: Unsupported model type`, which matches Microsoft's list of supported models. The planning model made little difference, and the gaps here come from 8 runs, so they could be noise. So the agent and Search planning need separate deployments if the agent runs on GPT-6. That also stops them sharing a token limit.
+At the time, GPT-6 models were refused with `HTTP 400: Unsupported model type`, which matched Microsoft's list of supported models. The newer Search versions accept `gpt-6-luna` (see [Decisions](decisions.md#search-moved-to-the-foundry-iq-versions)); these rows were not run again. The planning model made little difference, and the gaps here come from 8 runs, so they could be noise. So the agent and Search planning need separate deployments if the agent runs on GPT-6. That also stops them sharing a token limit.
 
 ## After the sales folders
 
