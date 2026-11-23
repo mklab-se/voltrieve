@@ -1,3 +1,4 @@
+// Copied to clients/car; keep the two alike.
 export type Backend = "loop" | "prompt" | "hosted";
 export const BACKENDS: readonly Backend[] = ["loop", "prompt", "hosted"];
 

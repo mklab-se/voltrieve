@@ -1,3 +1,4 @@
+// Copied to clients/car; keep the two alike.
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { Answer } from "./components/Answer";

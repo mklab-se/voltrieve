@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   attachedReducer,
   attachPhoto,
+  dropped,
   fitWithin,
   PhotoNotSent,
   shrink,
@@ -96,7 +97,7 @@ describe("choosing a photo", () => {
   function choose(shrinkImpl: () => Promise<Blob>, isCurrent = () => true) {
     const actions: AttachedAction[] = [];
     const upload = vi.fn(async () => {});
-    return { actions, upload, done: attachPhoto(file, 1, { dispatch: (a) => actions.push(a), isCurrent, upload }, shrinkImpl) };
+    return { actions, upload, done: attachPhoto({ file }, 1, { dispatch: (a) => actions.push(a), isCurrent, upload }, shrinkImpl) };
   }
 
   it("uploads it at once", async () => {
@@ -116,6 +117,23 @@ describe("choosing a photo", () => {
     const { upload, done } = choose(async () => blob, () => false);
     await done;
     expect(upload).not.toHaveBeenCalled();
+  });
+});
+
+describe("dropping files", () => {
+  const picture = new File(["x"], "a.jpg", { type: "image/jpeg" });
+  const other = new File(["x"], "b.jpg", { type: "image/jpeg" });
+  const text = new File(["x"], "c.txt", { type: "text/plain" });
+
+  it("takes one, and says so when there are more", () => {
+    expect(dropped([])).toBeUndefined();
+    expect(dropped([picture])).toEqual({ file: picture });
+    expect(dropped([picture, other])).toEqual({ file: picture, note: "One photo was taken. You can attach one at a time." });
+  });
+
+  it("takes a picture before anything else", () => {
+    expect(dropped([text, picture])!.file).toBe(picture);
+    expect(dropped([text])).toEqual({ file: text });
   });
 });
 
@@ -150,7 +168,7 @@ describe("the upload", () => {
     [503, "error", "The service is busy with other photos. Wait a moment and try again."],
     [401, "error", "Your sign-in is no longer valid. Sign in again to attach a photo."],
     [403, "error", "Your account is not allowed to attach photos."],
-    [500, "error", "The photo could not be uploaded (500). Try again."],
+    [500, "error", "The photo could not be uploaded. Try again."],
   ])("explains HTTP %i", async (status, kind, message) => {
     expect(await upload(async () => json({ detail: { code: "busy" } }, status))).toEqual({ status: kind, message });
   });
@@ -200,6 +218,9 @@ describe("the attached photo", () => {
 
 describe("a turn with a photo", () => {
   const photo = (state: Attached) => state.photo;
+  const never = () => {
+    throw new Error("It was not lost twice.");
+  };
 
   function chat(fetchImpl: unknown) {
     const base = { apiUrl: "https://api", token: "t", backend: "loop" as const, message: "Is this OK?", correlationId: "x" };
@@ -213,10 +234,10 @@ describe("a turn with a photo", () => {
     const fetchImpl = vi.fn(async () => answered());
     const again = vi.fn();
     let state = attached(...ready());
-    await collect(withPhoto(photo(state), chat(fetchImpl), again));
-    await collect(withPhoto(photo(state), chat(fetchImpl), again));
+    await collect(withPhoto(photo(state), chat(fetchImpl), again, never));
+    await collect(withPhoto(photo(state), chat(fetchImpl), again, never));
     state = attachedReducer(state, { type: "remove" });
-    await collect(withPhoto(photo(state), chat(fetchImpl), again));
+    await collect(withPhoto(photo(state), chat(fetchImpl), again, never));
     expect(named(fetchImpl)).toEqual([["a1"], ["a1"], undefined]);
     expect(again).not.toHaveBeenCalled();
   });
@@ -224,7 +245,7 @@ describe("a turn with a photo", () => {
   it("uploads the photo again by itself when the API has lost it", async () => {
     const fetchImpl = vi.fn().mockResolvedValueOnce(unknown()).mockResolvedValueOnce(answered());
     const again = vi.fn(async (): Promise<UploadResult> => ({ status: "ready", id: "a2" }));
-    const events = await collect(withPhoto(photo(attached(...ready())), chat(fetchImpl), again));
+    const events = await collect(withPhoto(photo(attached(...ready())), chat(fetchImpl), again, never));
     expect(events.map((e) => e.type)).toEqual(["delta", "done"]);
     expect(again).toHaveBeenCalledTimes(1);
     expect(again).toHaveBeenCalledWith({ key: 1, blob });
@@ -234,16 +255,26 @@ describe("a turn with a photo", () => {
   it("shows an error when the API has lost it a second time", async () => {
     const fetchImpl = vi.fn(async () => unknown());
     const again = vi.fn(async (): Promise<UploadResult> => ({ status: "ready", id: "a2" }));
-    const events = await collect(withPhoto(photo(attached(...ready())), chat(fetchImpl), again));
+    const lost = vi.fn();
+    const events = await collect(withPhoto(photo(attached(...ready())), chat(fetchImpl), again, lost));
     expect(events).toMatchObject([{ type: "error", data: { code: "unknown_attachment" } }]);
     expect(fetchImpl).toHaveBeenCalledTimes(2);
     expect(again).toHaveBeenCalledTimes(1);
+    expect(lost).toHaveBeenCalledTimes(1);
+    expect(lost).toHaveBeenCalledWith(1);
+  });
+
+  it("keeps the photo, to try again, when the API has lost it twice", () => {
+    const state = attached(...ready("a2"), { type: "lost", key: 1 });
+    expect(state).toEqual({ photo: { key: 1, status: "failed", blob } });
+    expect(render(initialChatState, state)).toContain("Try again");
+    expect(attached(...ready(), { type: "lost", key: 2 }).photo!.status).toBe("ready");
   });
 
   it("uploads again for no other failure", async () => {
     const fetchImpl = vi.fn(async () => json({ detail: "turn_in_progress" }, 409));
     const again = vi.fn();
-    const events = await collect(withPhoto(photo(attached(...ready())), chat(fetchImpl), again));
+    const events = await collect(withPhoto(photo(attached(...ready())), chat(fetchImpl), again, never));
     expect(events).toMatchObject([{ type: "error", data: { code: "http_409" } }]);
     expect(again).not.toHaveBeenCalled();
   });
@@ -251,7 +282,7 @@ describe("a turn with a photo", () => {
   it("is not sent when the new upload is refused: the text goes back to the field", async () => {
     const message = "The photo is blurred. Hold still or slow down and take a new one.";
     const again = async (): Promise<UploadResult> => ({ status: "rejected", message });
-    const turn = withPhoto(photo(attached(...ready())), chat(async () => unknown()), again);
+    const turn = withPhoto(photo(attached(...ready())), chat(async () => unknown()), again, never);
     await expect(collect(turn)).rejects.toBeInstanceOf(PhotoNotSent);
 
     let state = chatReducer(initialChatState, { type: "draft", text: "Is this OK?" });
@@ -297,11 +328,11 @@ describe("HTTP errors of a turn", () => {
   });
 });
 
-function render(state: ChatState, photo: Attached = {}): string {
+function render(state: ChatState, photo: Attached = {}, busy = false): string {
   return renderToStaticMarkup(
     createElement(Chat, {
       state,
-      busy: false,
+      busy,
       underTheHood: false,
       photo: { attached: photo, choose: () => {}, retry: () => {}, remove: () => {} },
       onDraft: () => {},
@@ -315,7 +346,8 @@ describe("the chat", () => {
   const sendButton = (html: string) => html.match(/<button class="primary"[^>]*>/)![0];
   const drafted = chatReducer(initialChatState, { type: "draft", text: "Is this OK?" });
 
-  it("has the photo's thumbnail in the user's bubble", () => {
+  // The URL comes after the first render, and a picture without one would load the page itself.
+  it("has the photo's thumbnail in the user's bubble, never as a picture without an address", () => {
     const state = chatReducer(initialChatState, {
       type: "start",
       message: "Is this OK?",
@@ -324,7 +356,8 @@ describe("the chat", () => {
       photo: blob,
     });
     expect(state.turns[0]!.photo).toBe(blob);
-    expect(render(state)).toMatch(/<div class="bubble user"><img[^>]*alt="Your photo"[^>]*\/?>Is this OK\?<\/div>/);
+    expect(render(state)).toContain('<div class="bubble user"><span class="photo-thumb" role="img" aria-label="Your photo"></span>Is this OK?</div>');
+    expect(render(state, attached(...ready()))).not.toMatch(/<img(?![^>]* src=)/);
   });
 
   it("has a named button for a photo, and says that photos are not stored", () => {
@@ -340,6 +373,28 @@ describe("the chat", () => {
     const preview = render(drafted, attached(...ready())).match(/<div class="photo-preview".*?<\/div>/)![0];
     expect(preview).toContain('aria-label="Remove the photo"');
     expect(preview).toContain("Photos are not stored in the conversation.");
+  });
+
+  it("says once that photos are not stored, with and without a photo", () => {
+    for (const state of [{}, attached(...ready())])
+      expect(render(drafted, state).match(/Photos are not stored in the conversation\./g)).toHaveLength(1);
+  });
+
+  it("does not let the photo be changed while an answer is on its way", () => {
+    const button = (html: string, label: string) => html.match(new RegExp(`<button[^>]*aria-label="${label}"[^>]*>`))![0];
+    for (const label of ["Attach a photo", "Remove the photo"]) {
+      expect(button(render(drafted, attached(...ready())), label)).not.toContain("disabled");
+      expect(button(render(drafted, attached(...ready()), true), label)).toContain("disabled");
+    }
+    const failed = attached(...ready(), { type: "lost", key: 1 });
+    expect(render(drafted, failed, true)).toMatch(/<button[^>]*disabled=""[^>]*>Try again<\/button>/);
+  });
+
+  it("says that one photo of several was taken", () => {
+    const note = "One photo was taken. You can attach one at a time.";
+    const state = attached({ type: "chosen", key: 1, note }, { type: "uploading", key: 1, blob }, { type: "uploaded", key: 1, result: { status: "ready", id: "a" } });
+    expect(render(drafted, state)).toContain(note);
+    expect(attachedReducer(state, { type: "chosen", key: 2 })).toEqual({ photo: { key: 2, status: "preparing" } });
   });
 
   it("waits with sending until the photo is uploaded", () => {

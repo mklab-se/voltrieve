@@ -11,15 +11,17 @@ export function showBlob(blob: Blob, show: (url: string) => void): () => void {
 export function PhotoThumb({ blob, alt }: { blob: Blob; alt: string }) {
   const [url, setUrl] = useState<string>();
   useEffect(() => showBlob(blob, setUrl), [blob]);
+  if (!url) return <span className="photo-thumb" role="img" aria-label={alt} />;
   return <img className="photo-thumb" src={url} alt={alt} />;
 }
 
 interface ButtonProps {
+  disabled: boolean;
   onFile: (file: File) => void;
   ref?: Ref<HTMLButtonElement>;
 }
 
-export function PhotoButton({ onFile, ref }: ButtonProps) {
+export function PhotoButton({ disabled, onFile, ref }: ButtonProps) {
   const input = useRef<HTMLInputElement>(null);
   return (
     <>
@@ -29,6 +31,7 @@ export function PhotoButton({ onFile, ref }: ButtonProps) {
         className="ghost photo-button"
         aria-label="Attach a photo"
         title="Attach a photo, or drop one here"
+        disabled={disabled}
         onClick={() => input.current?.click()}
       >
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" aria-hidden="true">
@@ -41,6 +44,7 @@ export function PhotoButton({ onFile, ref }: ButtonProps) {
         type="file"
         accept="image/jpeg,image/png,image/webp"
         hidden
+        disabled={disabled}
         onChange={(e) => {
           const file = e.target.files?.[0];
           e.target.value = ""; // so that the same file can be chosen again
@@ -51,6 +55,8 @@ export function PhotoButton({ onFile, ref }: ButtonProps) {
   );
 }
 
+export const NOT_STORED = "Photos are not stored in the conversation.";
+
 const STATUS: Record<AttachedPhoto["status"], string> = {
   preparing: "Reading the photo…",
   uploading: "Uploading the photo…",
@@ -60,24 +66,28 @@ const STATUS: Record<AttachedPhoto["status"], string> = {
 
 interface PreviewProps {
   photo: AttachedPhoto;
+  disabled: boolean;
   onRetry: () => void;
   onRemove: () => void;
 }
 
-export function PhotoPreview({ photo, onRetry, onRemove }: PreviewProps) {
+export function PhotoPreview({ photo, disabled, onRetry, onRemove }: PreviewProps) {
   return (
     <div className="photo-preview" data-status={photo.status}>
       {photo.blob ? <PhotoThumb blob={photo.blob} alt="The attached photo" /> : <span className="photo-thumb" />}
-      <p className="photo-text">
-        <span role="status">{STATUS[photo.status]}</span>
-        <span className="photo-note">Photos are not stored in the conversation.</span>
+      <p className="photo-text" role="status">
+        <span>{STATUS[photo.status]}</span>
+        <span className="photo-note">
+          {photo.note && `${photo.note} `}
+          {NOT_STORED}
+        </span>
       </p>
       {photo.status === "failed" && (
-        <button type="button" className="ghost" onClick={onRetry}>
+        <button type="button" className="ghost" disabled={disabled} onClick={onRetry}>
           Try again
         </button>
       )}
-      <button type="button" className="ghost icon" aria-label="Remove the photo" title="Remove the photo" onClick={onRemove}>
+      <button type="button" className="ghost icon" aria-label="Remove the photo" title="Remove the photo" disabled={disabled} onClick={onRemove}>
         ✕
       </button>
     </div>

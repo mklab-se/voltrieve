@@ -10,7 +10,13 @@ export function MyCar({ owner }: { owner: string }) {
   return (
     <section className="car" aria-label="Your car" data-open={open}>
       <p className="car-owner">Welcome, {owner}</p>
-      <img className="car-photo" src={`${import.meta.env.BASE_URL}spark.webp`} alt={`Your ${car.model} in ${car.color}`} />
+      <img
+        className="car-photo"
+        src={`${import.meta.env.BASE_URL}spark.webp`}
+        width="1200"
+        height="800"
+        alt={`Your ${car.model} in ${car.color}`}
+      />
       <div className="car-name">
         <h2>{car.model}</h2>
         <p>

@@ -1,3 +1,4 @@
+// Copied to clients/car; keep the two alike.
 import type { SourceItem } from "../types";
 
 interface Props {

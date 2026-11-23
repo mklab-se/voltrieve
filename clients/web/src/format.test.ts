@@ -1,3 +1,4 @@
+// Copied to clients/car; keep the two alike.
 import { describe, expect, it } from "vitest";
 import { componentFamily, formatElapsed } from "./format";
 

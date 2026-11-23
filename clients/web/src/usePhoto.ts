@@ -1,18 +1,20 @@
 import { useCallback, useEffect, useReducer, useRef } from "react";
-import { attachedReducer, attachPhoto, uploadPhoto, type Attached, type Prepared, type UploadResult } from "./attachments";
+import { attachedReducer, attachPhoto, uploadPhoto, type Attached, type Chosen, type Prepared, type UploadResult } from "./attachments";
 import type { Auth } from "./auth";
 
 const LABEL = "Photo from the customer"; // what the model sees, so not the file name
 
 export interface PhotoControls {
   attached: Attached;
-  choose: (file: File) => void;
+  choose: (chosen: Chosen) => void;
   retry: () => void;
   remove: () => void;
 }
 
 interface UsePhoto extends PhotoControls {
   upload: (photo: Prepared) => Promise<UploadResult>;
+  /** The API has lost the photo, also after a new upload. */
+  lost: (key: number) => void;
   reset: () => void;
 }
 
@@ -43,6 +45,8 @@ export function usePhoto(apiUrl: string, auth: Auth): UsePhoto {
     [apiUrl, auth],
   );
 
+  const lost = useCallback((key: number) => dispatch({ type: "lost", key }), []);
+
   function drop() {
     abort.current?.abort(); // one user may have few uploads at a time
     current.current = 0;
@@ -51,11 +55,12 @@ export function usePhoto(apiUrl: string, auth: Auth): UsePhoto {
   return {
     attached,
     upload,
-    choose(file) {
+    lost,
+    choose(chosen) {
       drop();
       const key = (lastKey.current += 1);
       current.current = key;
-      void attachPhoto(file, key, { dispatch, isCurrent: () => current.current === key, upload });
+      void attachPhoto(chosen, key, { dispatch, isCurrent: () => current.current === key, upload });
     },
     retry() {
       const { photo } = attached;

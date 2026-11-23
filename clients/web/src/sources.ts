@@ -1,3 +1,4 @@
+// Copied to clients/car; keep the two alike.
 import type { SourceItem } from "./types";
 
 const HREF_PREFIX = "#source=";
@@ -38,15 +39,22 @@ export function sourceFromHref(href: string | undefined): string | undefined {
   }
 }
 
-/** Ask the API for a short signed link to one document. Each click gets a fresh one. */
+const NOT_OPENED = "The document could not be opened. Try again.";
+
+/** Ask the API for a short signed link to one document. Each click gets a fresh one. The errors are for a customer. */
 export async function fetchSourceUrl(apiUrl: string, token: string, link: string, fetchImpl: typeof fetch = fetch): Promise<string> {
-  const response = await fetchImpl(`${apiUrl.replace(/\/+$/, "")}${link}`, {
-    headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
-  });
+  let response: Response;
+  let url: unknown;
+  try {
+    response = await fetchImpl(`${apiUrl.replace(/\/+$/, "")}${link}`, {
+      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+    });
+    if (response.ok) url = ((await response.json()) as { url?: unknown }).url;
+  } catch {
+    throw new Error(NOT_OPENED);
+  }
   if (response.status === 403 || response.status === 404) throw new Error("This document cannot be opened.");
-  if (!response.ok) throw new Error(`The document could not be opened (${response.status}).`);
-  const { url } = (await response.json()) as { url?: unknown };
-  if (typeof url !== "string" || !BLOB_URL.test(url)) throw new Error("The API answered with an unexpected link.");
+  if (typeof url !== "string" || !BLOB_URL.test(url)) throw new Error(NOT_OPENED);
   return url;
 }
 
