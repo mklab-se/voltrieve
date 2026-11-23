@@ -90,6 +90,13 @@ export interface FeedStats {
   running: number;
 }
 
+const BACKENDS = ["loop", "prompt", "hosted"];
+
+function place(backend: string): number {
+  const at = BACKENDS.indexOf(backend);
+  return at < 0 ? BACKENDS.length : at;
+}
+
 /** What the tiles show, from the turns in the feed (not the whole day: see the workbook). */
 export function stats(turns: FeedTurn[]): FeedStats {
   const byBackend = new Map<string, number[]>();
@@ -98,7 +105,8 @@ export function stats(turns: FeedTurn[]): FeedStats {
     byBackend.set(t.backend, [...(byBackend.get(t.backend) ?? []), t.first_text_ms]);
   }
   return {
-    medianFirstText: Object.fromEntries([...byBackend].map(([b, v]) => [b, median(v)])),
+    // In one order, so that the tiles stay where they are while the feed moves.
+    medianFirstText: Object.fromEntries([...byBackend].sort(([a], [b]) => place(a) - place(b)).map(([b, v]) => [b, median(v)])),
     tools: counted(turns.map((t) => t.tools)),
     knowledgeBases: counted(turns.map((t) => t.knowledge_bases)),
     costSek: turns.reduce((sum, t) => sum + (t.cost_sek ?? 0), 0),

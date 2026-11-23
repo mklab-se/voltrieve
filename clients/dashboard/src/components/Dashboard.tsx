@@ -67,10 +67,7 @@ export function Dashboard({ apiUrl, auth, liveMetricsUrl, workbookUrl }: Props) 
   return (
     <section className="dash" aria-label="Operations dashboard">
       <div className="dash-head">
-        <div>
-          <p className="eyebrow">Operations</p>
-          <h2>Live dashboard</h2>
-        </div>
+        <h2>Live dashboard</h2>
         <span className={`live-dot ${connected ? "on" : ""}`}>{connected ? "Live" : "Reconnecting"}</span>
         <label className="switch" title="Prompts are masked and never stored. Off by default for screens in front of an audience.">
           <input type="checkbox" checked={showPrompts} onChange={(e) => setShowPrompts(e.target.checked)} />
@@ -104,7 +101,7 @@ export function Dashboard({ apiUrl, auth, liveMetricsUrl, workbookUrl }: Props) 
                 <span className="pill" data-backend={t.backend}>{t.backend}</span>
                 <span className="who-id" title="A pseudonym, not the user's identity">user {t.user.slice(0, 6)}</span>
                 <span className={`state ${t.outcome}`}>{OUTCOME[t.outcome]}{t.error_code ? `: ${t.error_code}` : ""}</span>
-                <span className="timing">{seconds(t.first_text_ms)} / {seconds(t.duration_ms)}</span>
+                <span className="timing" title="First text / whole answer">{seconds(t.first_text_ms)} / {seconds(t.duration_ms)}</span>
                 {typeof t.cost_sek === "number" && <span className="cost">{sek(t.cost_sek)}</span>}
               </div>
               {showPrompts && t.prompt && <p className="prompt">“{t.prompt}”</p>}

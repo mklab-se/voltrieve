@@ -64,6 +64,13 @@ describe("stats", () => {
     expect(s.costSek).toBeCloseTo(0.04);
     expect(s.running).toBe(1);
   });
+
+  it("keeps the backends in one order, whichever answered last", () => {
+    const order = (...backends: string[]) =>
+      Object.keys(stats(backends.map((backend, n) => turn({ turn_id: `${n}`, backend, first_text_ms: 1 }))).medianFirstText);
+    expect(order("hosted", "prompt", "loop")).toEqual(["loop", "prompt", "hosted"]);
+    expect(order("new", "prompt", "hosted")).toEqual(["prompt", "hosted", "new"]);
+  });
 });
 
 describe("buildLiveRequest", () => {
