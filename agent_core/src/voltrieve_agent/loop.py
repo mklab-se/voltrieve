@@ -47,6 +47,7 @@ from voltrieve_agent.tools import (
     ToolSet,
     UserContext,
     current_correlation_id,
+    current_unstored,
 )
 from voltrieve_agent.unstored import Unstored, assistant_item
 
@@ -184,9 +185,11 @@ async def run_turn(
     max_iterations: int = 8,
 ) -> TurnOutcome:
     token = current_correlation_id.set(turn.correlation_id or turn.turn_id)
+    unstored = current_unstored.set(bool(turn.parts or turn.kept))  # as in Unstored.begin
     try:
         return await _run(model, server_tools, turn, emit, max_iterations)
     finally:
+        current_unstored.reset(unstored)
         current_correlation_id.reset(token)
 
 

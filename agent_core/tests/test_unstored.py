@@ -10,8 +10,10 @@ from types import SimpleNamespace
 import openai
 import pytest
 from openai.types.responses import ResponseFunctionToolCallItem
+from voltrieve_search.client import SearchApiError
 
 from voltrieve_agent.curated import CURATED_ANSWERS
+from voltrieve_agent.knowledge import KnowledgeBase
 from voltrieve_agent.loop import TurnInput, run_turn
 from voltrieve_agent.model import (
     Completed,
@@ -631,3 +633,64 @@ def test_head_outputs_drops_extra_keys_and_never_raises_on_a_malformed_kept():
     assert head_outputs(kept) == [output("c1", "ok")]
     for bad in (None, {}, [], "AAAA", {"head": "AAAA"}, {"head": {"a": IMG}}, {"head": [[IMG]]}):
         assert head_outputs(bad) == []
+
+
+def failing_tool(error):
+    async def handler(args, user):
+        raise error
+
+    return ServerTool("check_stock", "d", ANY_OBJECT, handler)
+
+
+def tool_rounds():
+    return [[*call_items("c1"), Completed({})], [TextDelta("Sorry"), Completed({})]]
+
+
+async def test_a_failed_tool_of_an_unstored_turn_logs_the_error_type_only(user, events, caplog):
+    tool = failing_tool(RuntimeError("no stock for SPARK"))
+    with caplog.at_level(logging.DEBUG):
+        out = await run_turn(FakeModel(tool_rounds()), [tool], photo_turn(user), events)
+    assert out.status == "done"
+    assert "Tool check_stock failed: RuntimeError" in caplog.text
+    assert "SPARK" not in caplog.text and "Traceback" not in caplog.text
+
+
+async def test_a_failed_tool_of_a_stored_turn_logs_the_traceback(user, events, caplog):
+    tool = failing_tool(RuntimeError("detail for the log"))
+    with caplog.at_level(logging.DEBUG):
+        # An unstored turn before it must not leave the log quiet.
+        await run_turn(FakeModel(tool_rounds()), [tool], photo_turn(user), events)
+        caplog.clear()
+        await run_turn(FakeModel(tool_rounds()), [tool], TurnInput(user, "c", "t", "hi"), events)
+    assert "detail for the log" in caplog.text and "Traceback" in caplog.text
+
+
+async def test_a_continued_unstored_turn_keeps_tool_errors_out_of_the_log(user, events, caplog):
+    kept = {"items": [], "head": [], "text": ""}
+    turn = TurnInput(user, "c", "t", [output("c0")], kept=kept)
+    with caplog.at_level(logging.DEBUG):
+        await run_turn(
+            FakeModel(tool_rounds()), [failing_tool(RuntimeError("SPARK"))], turn, events
+        )
+    assert "RuntimeError" in caplog.text and "SPARK" not in caplog.text
+
+
+@pytest.mark.parametrize("unstored", [True, False])
+async def test_search_error_text_is_only_logged_for_a_stored_turn(
+    user, events, caplog, monkeypatch, unstored
+):
+    def refuse(*args, **kwargs):
+        raise SearchApiError(402, "no allowance for SPARK")
+
+    monkeypatch.setattr("voltrieve_agent.knowledge.retrieve", refuse)
+    knowledge = KnowledgeBase("https://search", None)
+
+    async def handler(args, user):
+        return await knowledge.search("SPARK")
+
+    tool = ServerTool("check_stock", "d", ANY_OBJECT, handler)
+    turn = photo_turn(user) if unstored else TurnInput(user, "c", "t", "hi")
+    with caplog.at_level(logging.DEBUG):
+        await run_turn(FakeModel(tool_rounds()), [tool], turn, events)
+    assert "Search refused" in caplog.text
+    assert ("SPARK" in caplog.text) is not unstored

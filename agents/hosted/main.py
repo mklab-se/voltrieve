@@ -160,8 +160,11 @@ async def stream_turn(runtime: Runtime, turn: TurnInput) -> AsyncIterator[bytes]
                     },
                 )
             )
-        except Exception:
-            logger.exception("Turn failed")
+        except Exception as exc:
+            if turn.parts or turn.kept:  # an unstored turn: the error text may quote it
+                logger.error("Turn failed: %s", type(exc).__name__)
+            else:
+                logger.exception("Turn failed")
             await queue.put(
                 AgentEvent(
                     "error",

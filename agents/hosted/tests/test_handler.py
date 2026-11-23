@@ -251,3 +251,16 @@ async def test_nothing_of_the_parts_or_kept_is_logged(caplog):
         await invoke(Runtime(ScriptedModel([TextDelta("a"), Completed({})]), [], allow_any_caller=True), body)
         await invoke(Runtime(ScriptedModel(), [], allow_any_caller=True), {**BODY, "parts": "AAAA"})
     assert "AAAA" not in caplog.text and "secret text" not in caplog.text
+
+
+@pytest.mark.parametrize("extra", [{"parts": [PHOTO]}, {"kept": {"items": [], "head": [], "text": ""}}, {}])
+async def test_a_failed_unstored_turn_logs_the_error_type_only(caplog, monkeypatch, extra):
+    async def fail(*args):
+        raise RuntimeError("could not read SPARK")
+
+    monkeypatch.setattr(main, "run_turn", fail)
+    with caplog.at_level("DEBUG"):
+        r = await invoke(Runtime(ScriptedModel(), [], allow_any_caller=True), {**BODY, **extra})
+    assert parse_sse(r.text)[-1][1]["status"] == "failed"
+    assert "Turn failed" in caplog.text and "RuntimeError" in caplog.text
+    assert ("SPARK" in caplog.text) is (not extra)

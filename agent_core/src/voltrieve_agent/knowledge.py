@@ -15,7 +15,7 @@ from voltrieve_search.retrieve import (
 )
 
 from voltrieve_agent.events import RETRYING, status, trace
-from voltrieve_agent.tools import current_emit
+from voltrieve_agent.tools import current_emit, current_unstored
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +50,8 @@ class KnowledgeBase:
         except SearchApiError as exc:
             if exc.status != 402:
                 raise
-            logger.error("Search refused %s: %s", self._kb_name, exc.message)
+            message = "(not logged)" if current_unstored.get() else exc.message
+            logger.error("Search refused %s: %s", self._kb_name, message)
             emit = current_emit.get()
             if emit is not None:
                 await emit(trace("search_quota_exhausted", "search", self._kb_name))
