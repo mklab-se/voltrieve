@@ -68,8 +68,8 @@ def build_backend(name: str, model: ScriptedModel):
     if name == "loop":
         return LoopBackend(model, FakeOpenAI(), server_tools)
     if name == "prompt":
-        # Both agents share one script, since a scenario uses one of them.
-        return PromptBackend(model, model, FakeOpenAI(), [t for t in server_tools if t.name not in KB_SEARCH_TOOLS])
+        # The agents share one script, since a scenario uses one of them.
+        return PromptBackend(model, model, model, FakeOpenAI(), [t for t in server_tools if t.name not in KB_SEARCH_TOOLS])
     return _hosted(model, server_tools)
 
 
@@ -227,3 +227,18 @@ def test_the_cli_and_the_prompt_agent_declare_the_same_client_tools():
 
     assert {t["name"] for t in shared} == CLI_AGENT_TOOL_NAMES
     assert not LEFT_OUT_OF_THE_PROMPT_AGENT & (CLI_AGENT_TOOL_NAMES | WEB_AGENT_TOOL_NAMES)
+
+
+def test_the_car_tools_of_the_prompt_agent_are_the_names_the_api_expects():
+    """The car client's own copy is compared in plan B. Here: the agent script and the API agree."""
+    from app.backends.prompt import CAR_AGENT_TOOL_NAMES
+
+    car = load_module("create_agents", "agents/prompt/create_agents.py").CAR_TOOLS
+    assert {t["name"] for t in car} == CAR_AGENT_TOOL_NAMES == {
+        "set_speed", "set_wipers", "honk", "park", "get_sign_photo"
+    }
+    by_name = {t["name"]: t["parameters"] for t in car}
+    assert by_name["set_speed"]["required"] == ["kmh"]
+    assert by_name["set_wipers"]["properties"]["mode"]["enum"] == ["off", "slow", "fast"]
+    assert by_name["honk"]["properties"]["times"]["maximum"] == 5
+    assert "required" not in by_name["park"] and "required" not in by_name["get_sign_photo"]

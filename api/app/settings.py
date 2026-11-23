@@ -22,9 +22,10 @@ class Settings(BaseSettings):
     storage_account_name: str = ""
     source_containers: str = ""  # comma separated
 
-    # Backend A: the names of the two prompt agents the API drives.
+    # Backend A: the names of the three prompt agents the API drives.
     prompt_agent_cli: str = "voltrieve-prompt-cli"
     prompt_agent_web: str = "voltrieve-prompt-web"
+    prompt_agent_car: str = "voltrieve-prompt-car"
 
     # Backend C: the name of the Foundry hosted agent (agents/hosted/deploy.py creates it).
     hosted_agent_name: str = "voltrieve-hosted"

@@ -3,11 +3,16 @@
 The Web API posts one JSON body per model-and-tools round:
 
     {conversation_id, turn_id, input, client_tools, pending_outputs,
-     user: {oid, username, roles}, correlation_id}
+     user: {oid, username, roles}, correlation_id, parts, kept}
+
+`parts` (attachment content parts, default []) and `kept` (what an unstored turn kept when it
+paused, default none) are optional, and unknown keys are ignored, so an old API and a new agent
+work together in both directions. Neither is ever logged.
 
 and this process answers with server-sent events. It runs `agent_core.run_turn` unchanged and
 relays every AgentEvent one to one (event name = type, data = one line of JSON). When the turn
-ends it sends one more event, `outcome` {status, pending_outputs, client_call_ids, usage}, which
+ends it sends one more event, `outcome` {status, pending_outputs, client_call_ids, usage, kept,
+unrecorded}, which
 the Web API consumes instead of forwarding. The agent holds no state between requests: a
 continuation resends client_tools and pending_outputs, and the conversation itself lives in
 Foundry.
@@ -77,6 +82,15 @@ def check_caller(allowed_oid: str, allow_any: bool = False) -> bool:
     return True
 
 
+def _is_kept(kept: object) -> bool:
+    return (
+        isinstance(kept, dict)
+        and isinstance(kept.get("items"), list)
+        and isinstance(kept.get("head"), list)
+        and isinstance(kept.get("text"), str)
+    )
+
+
 def parse_turn(body: object) -> TurnInput | None:
     """Build the TurnInput from the request body (pending outputs are folded into the input), or None if malformed."""
     if not isinstance(body, dict):
@@ -94,6 +108,12 @@ def parse_turn(body: object) -> TurnInput | None:
         if isinstance(input_, list):
             # The server tool outputs of the paused iteration go in with the client results.
             input_ = [*pending, *input_]
+        parts = body.get("parts", [])
+        if not isinstance(parts, list):
+            return None
+        kept = body.get("kept")
+        if kept is not None and not _is_kept(kept):
+            return None
         return TurnInput(
             user=UserContext(
                 str(user["oid"]), str(user.get("username", "")), frozenset(user.get("roles") or [])
@@ -103,6 +123,8 @@ def parse_turn(body: object) -> TurnInput | None:
             input=input_,
             client_tools=tools,
             correlation_id=body.get("correlation_id"),
+            parts=parts,
+            kept=kept,
         )
     except (KeyError, TypeError, AttributeError):
         return None
@@ -133,6 +155,8 @@ async def stream_turn(runtime: Runtime, turn: TurnInput) -> AsyncIterator[bytes]
                         "pending_outputs": outcome.pending_outputs,
                         "client_call_ids": outcome.client_call_ids,
                         "usage": outcome.usage,
+                        "kept": outcome.kept,
+                        "unrecorded": outcome.unrecorded,
                     },
                 )
             )

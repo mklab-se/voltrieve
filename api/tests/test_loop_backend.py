@@ -3,8 +3,10 @@
 import httpx
 import pytest
 from voltrieve_agent.model import Completed, FunctionCall, TextDelta
+from voltrieve_agent.tools import ClientTool, UserContext
 
 from app.backends import BackendRegistry
+from app.backends.base import TurnContext
 from app.backends.loop import LoopBackend
 from app.main import create_app
 from app.settings import Settings
@@ -19,7 +21,7 @@ class ScriptedModel:
         self.rounds = list(rounds)
         self.inputs = []
 
-    async def stream(self, *, instructions, conversation, input, tools):
+    async def stream(self, *, instructions, conversation, input, tools, store=True):
         self.inputs.append(input)
         for item in self.rounds.pop(0):
             yield item
@@ -186,3 +188,33 @@ def test_build_loop_backend_without_settings_is_unavailable(caplog):
         build_loop_backend(Settings())
     assert "FOUNDRY" not in str(e.value)
     assert "FOUNDRY_PROJECT_ENDPOINT" in caplog.text
+
+
+async def test_the_loop_backend_passes_parts_and_kept_to_the_loop_and_returns_what_is_kept():
+    photo = {"type": "input_image", "image_url": "data:image/jpeg;base64,AAAA"}
+    model = ScriptedModel(
+        [FunctionCall("call_9", "read_file", "{}"), Completed({})],
+        [TextDelta("Seen."), Completed({})],
+    )
+    backend = LoopBackend(model, FakeOpenAI(), [])
+    user = UserContext("oid-anna", "anna", frozenset())
+    events = []
+
+    async def emit(event):
+        events.append(event)
+
+    first = TurnContext(user, "conv_real", "t1", "Can I park?", [ClientTool("read_file", "Read", {"type": "object"})],
+                        parts=[photo])
+    outcome = await backend.run_turn(first, emit)
+    assert outcome.status == "paused" and outcome.kept["items"][0]["content"][-1] == photo
+    result = [{"type": "function_call_output", "call_id": "call_9", "output": "ok"}]
+    second = TurnContext(user, "conv_real", "t1", result, first.client_tools, kept=outcome.kept)
+    done = await backend.run_turn(second, emit)
+    assert done.status == "done"
+    assert model.inputs[1][: len(outcome.kept["items"])] == outcome.kept["items"]
+
+
+async def test_abandoning_with_nothing_to_close_does_not_call_foundry():
+    openai = FakeOpenAI()
+    await LoopBackend(ScriptedModel(), openai, []).abandon("conv_real", [])
+    assert openai.conversations.items.created == []

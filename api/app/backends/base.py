@@ -33,6 +33,11 @@ class TurnContext:
     # together with the client results. Empty for a new message.
     pending_outputs: list[dict] = field(default_factory=list)
     correlation_id: str | None = None
+    # Attachment content parts, what an unstored turn kept when it paused, and structured context
+    # for later tools. None of these may be logged, so none is in the repr.
+    parts: list[dict] = field(default_factory=list, repr=False)
+    kept: dict | None = field(default=None, repr=False)
+    context: dict = field(default_factory=dict, repr=False)
 
 
 class Backend(Protocol):

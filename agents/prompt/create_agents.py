@@ -1,16 +1,16 @@
-"""Create (a new version of) the two Foundry prompt agents used by backend A.
+"""Create (a new version of) the three Foundry prompt agents used by backend A.
 
     uv run create_agents.py
 
 Reads FOUNDRY_PROJECT_ENDPOINT, CHAT_DEPLOYMENT, SEARCH_ENDPOINT, KB_CONNECTION_NAME and
 PARTS_KB_CONNECTION_NAME from the environment (`azd env get-values` has them) and authenticates with Entra
-(DefaultAzureCredential). Optional: PROMPT_AGENT_CLI and PROMPT_AGENT_WEB override the names.
+(DefaultAzureCredential). Optional: PROMPT_AGENT_CLI, PROMPT_AGENT_WEB and PROMPT_AGENT_CAR override the names.
 
-Both agents carry the instructions, each knowledge base as an MCP tool through its project
+All three agents carry the instructions, each knowledge base as an MCP tool through its project
 connection, and the dealer operations as function tools. The two MCP tools expose the same tool
-name, knowledge_base_retrieve, so only the server label and description tell them apart. The CLI agent also carries the CLI's
-client tools: a prompt agent cannot be given tools per request, so they must be in its
-definition.
+name, knowledge_base_retrieve, so only the server label and description tell them apart. Each agent also carries its client's
+tools (the CLI's, the web app's, the car's): a prompt agent cannot be given tools per request, so
+they must be in its definition.
 """
 
 import os
@@ -28,12 +28,14 @@ from voltrieve_agent.server_tools import (
 
 CLI_AGENT_NAME = "voltrieve-prompt-cli"
 WEB_AGENT_NAME = "voltrieve-prompt-web"
+CAR_AGENT_NAME = "voltrieve-prompt-car"
 KB_NAME = "voltrieve-kb"
 PARTS_KB_NAME = "voltrieve-parts-kb"
 KB_API_VERSION = "2026-08-01-preview"
 
 MAX_NOISE = 10
 MAX_HONKS = 5
+MAX_SPEED_KMH = 150
 
 # Copy of CLIENT_TOOLS in clients/cli/src/voltrieve_cli/tools.py. The CLI is a separate project,
 # so the schemas are repeated here. tests/contract fails when the two differ. The API checks
@@ -89,6 +91,52 @@ WEB_TOOLS = [
 ]
 
 
+# The car's tools, the counterpart of CLI_TOOLS: CAR_AGENT_TOOL_NAMES in the API. The car client
+# declares the same schemas (plan B), and tests/contract compares the names.
+CAR_TOOLS = [
+    {
+        "name": "set_speed",
+        "description": "Set the speed of the car the user drives, in km/h. 0 stops the car.",
+        "parameters": {
+            "type": "object",
+            "properties": {"kmh": {"type": "integer", "minimum": 0, "maximum": MAX_SPEED_KMH}},
+            "required": ["kmh"],
+        },
+    },
+    {
+        "name": "set_wipers",
+        "description": "Set the windscreen wipers of the car the user drives.",
+        "parameters": {
+            "type": "object",
+            "properties": {"mode": {"type": "string", "enum": ["off", "slow", "fast"]}},
+            "required": ["mode"],
+        },
+    },
+    {
+        "name": "honk",
+        "description": f"Sound the horn of the car the user drives. At most {MAX_HONKS} times.",
+        "parameters": {
+            "type": "object",
+            "properties": {"times": {"type": "integer", "minimum": 1, "maximum": MAX_HONKS}},
+            "required": ["times"],
+        },
+    },
+    {
+        "name": "park",
+        "description": "Park the car in the next free bay on the right. Returns when it has stopped.",
+        "parameters": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "get_sign_photo",
+        "description": (
+            "Get the car's last photo of a parking sign. Use it when the user asks about "
+            "parking here and no photo is attached."
+        ),
+        "parameters": {"type": "object", "properties": {}},
+    },
+]
+
+
 def _function_tool(name: str, description: str, parameters: dict) -> FunctionTool:
     # strict=False: the schemas do not meet strict mode (optional properties, formats).
     return FunctionTool(name=name, description=description, parameters=parameters, strict=False)
@@ -120,14 +168,13 @@ def agent_definition(
     search_endpoint: str,
     connection_name: str,
     parts_connection_name: str,
-    with_cli_tools: bool,
+    client_tools: list[dict],
 ) -> PromptAgentDefinition:
     tools = [
         kb_mcp_tool(search_endpoint, KB_NAME, DOCS_DESCRIPTION, connection_name),
         kb_mcp_tool(search_endpoint, PARTS_KB_NAME, PARTS_DESCRIPTION, parts_connection_name),
         *dealer_function_tools(),
     ]
-    client_tools = CLI_TOOLS if with_cli_tools else WEB_TOOLS
     tools += [_function_tool(t["name"], t["description"], t["parameters"]) for t in client_tools]
     return PromptAgentDefinition(
         model=chat_deployment,
@@ -151,8 +198,9 @@ def main() -> None:
     connection_name = _require("KB_CONNECTION_NAME")
     parts_connection_name = _require("PARTS_KB_CONNECTION_NAME")
     agents = {
-        os.environ.get("PROMPT_AGENT_CLI") or CLI_AGENT_NAME: True,
-        os.environ.get("PROMPT_AGENT_WEB") or WEB_AGENT_NAME: False,
+        os.environ.get("PROMPT_AGENT_CLI") or CLI_AGENT_NAME: CLI_TOOLS,
+        os.environ.get("PROMPT_AGENT_WEB") or WEB_AGENT_NAME: WEB_TOOLS,
+        os.environ.get("PROMPT_AGENT_CAR") or CAR_AGENT_NAME: CAR_TOOLS,
     }
 
     from azure.ai.projects import AIProjectClient
@@ -161,9 +209,9 @@ def main() -> None:
     with DefaultAzureCredential() as credential, AIProjectClient(
         endpoint=endpoint, credential=credential
     ) as project:
-        for name, with_cli in agents.items():
+        for name, client_tools in agents.items():
             definition = agent_definition(
-                chat_deployment, search_endpoint, connection_name, parts_connection_name, with_cli
+                chat_deployment, search_endpoint, connection_name, parts_connection_name, client_tools
             )
             version = project.agents.create_version(agent_name=name, definition=definition)
             print(f"{name}: version {version.version} ({len(definition.tools)} tools)")

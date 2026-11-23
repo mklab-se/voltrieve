@@ -47,10 +47,18 @@ class PausedTurn:
     expected_call_ids: frozenset[str]
     usage: dict = field(default_factory=dict)
     text: str = ""  # the answer so far, so a continuation still finds its citations
+    kept: dict | None = field(default=None, repr=False)  # what an unstored turn keeps in memory
     expires_at: float = 0.0
 
     def abandon_outputs(self) -> list[dict]:
-        """Outputs that close every open function_call of this turn."""
+        """Outputs that close every open function_call of this turn. An unstored turn has stored
+        only the calls whose outputs are in its head, so only those are closed."""
+        if self.kept is not None:
+            return [
+                item
+                for item in self.kept.get("head") or []
+                if isinstance(item, dict) and item.get("type") == "function_call_output"
+            ]
         return [
             *self.pending_outputs,
             *(
@@ -152,6 +160,10 @@ class Job:
     stale: PausedTurn | None = None  # a paused turn to close before running
     turn_expired: bool = False  # answer turn_expired instead of running
     expired: PausedTurn | None = None  # with turn_expired: also close this turn
+    # Attachment parts, what an unstored turn kept, and structured context. Never logged.
+    parts: list[dict] = field(default_factory=list, repr=False)
+    kept: dict | None = field(default=None, repr=False)
+    context: dict = field(default_factory=dict, repr=False)
 
 
 class _Run:
@@ -364,6 +376,9 @@ class TurnService:
                 client_tools=job.client_tools,
                 pending_outputs=job.pending_outputs,
                 correlation_id=correlation_id.get(),
+                parts=job.parts,
+                kept=job.kept,
+                context=job.context,
             )
             outcome = await backend.run_turn(ctx, run.emit)
             usage = merge_usage(job.usage, outcome.usage)
@@ -382,6 +397,7 @@ class TurnService:
                         frozenset(outcome.client_call_ids),
                         usage,
                         run.text,
+                        kept=outcome.kept,
                     )
                 )
                 if run.held_tool_calls is not None:
@@ -390,6 +406,9 @@ class TurnService:
                     data = {**run.held_tool_calls.data, "conversation_id": conversation_id}
                     await run.queue.put(AgentEvent("client_tool_calls", data))
             elif outcome.status == "done":
+                if outcome.unrecorded:
+                    # The answer was given but not recorded: repair before the conversation is used.
+                    self.store.mark_dirty(conversation_id)
                 await self._send_sources(run, job.turn_id)
                 await run.emit(
                     AgentEvent(
@@ -446,7 +465,9 @@ class TurnService:
         """Give the open function calls of an abandoned or expired turn an output."""
         try:
             backend = self._registry.get_backend(paused.backend)
-            await backend.abandon(paused.conversation_id, paused.abandon_outputs())
+            outputs = paused.abandon_outputs()
+            if outputs:  # an unstored turn may have nothing in the conversation to close
+                await backend.abandon(paused.conversation_id, outputs)
         except Exception:
             logger.exception("Could not close the abandoned turn %s", paused.turn_id)
             self.store.mark_dirty(paused.conversation_id)

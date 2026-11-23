@@ -5,6 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import httpx
+import pytest
 from voltrieve_agent.events import AgentEvent
 from voltrieve_agent.model import ResponsesModelClient
 from voltrieve_agent.server_tools import KB_SEARCH_TOOLS, build_server_tools
@@ -12,7 +13,12 @@ from voltrieve_agent.tools import ClientTool, UserContext
 
 from app.backends import BACKEND_NAMES, BackendRegistry
 from app.backends.base import TurnContext
-from app.backends.prompt import CLI_AGENT_TOOL_NAMES, WEB_AGENT_TOOL_NAMES, PromptBackend
+from app.backends.prompt import (
+    CAR_AGENT_TOOL_NAMES,
+    CLI_AGENT_TOOL_NAMES,
+    WEB_AGENT_TOOL_NAMES,
+    PromptBackend,
+)
 from app.main import create_app
 from app.settings import Settings
 from app.turns import TurnStore
@@ -82,6 +88,7 @@ def make_backend(openai, dealer=None):
     return PromptBackend(
         ResponsesModelClient(openai, agent_name="agent-cli"),
         ResponsesModelClient(openai, agent_name="agent-web"),
+        ResponsesModelClient(openai, agent_name="agent-car"),
         openai,
         tools,
     )
@@ -249,11 +256,14 @@ def test_prompt_backend_is_listed_and_names_match_the_agent_script():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     assert {t["name"] for t in module.CLI_TOOLS} == CLI_AGENT_TOOL_NAMES
-    cli = [t.name for t in module.agent_definition("m", "https://s", "conn", "parts-conn", True).tools if t.type == "function"]
-    web = [t.name for t in module.agent_definition("m", "https://s", "conn", "parts-conn", False).tools if t.type == "function"]
+    def definition(tools):
+        return module.agent_definition("m", "https://s", "conn", "parts-conn", tools)
+
+    cli = [t.name for t in definition(module.CLI_TOOLS).tools if t.type == "function"]
+    web = [t.name for t in definition(module.WEB_TOOLS).tools if t.type == "function"]
+    car = [t.name for t in definition(module.CAR_TOOLS).tools if t.type == "function"]
     assert not set(KB_SEARCH_TOOLS) & set(cli + web)
-    mcp = [t for t in module.agent_definition("m", "https://s", "conn", "parts-conn", False).tools
-           if t.type == "mcp"]
+    mcp = [t for t in definition(module.WEB_TOOLS).tools if t.type == "mcp"]
     assert [t.server_label for t in mcp] == ["voltrieve-kb", "voltrieve-parts-kb"]
     assert [t.project_connection_id for t in mcp] == ["conn", "parts-conn"]
     assert "/knowledgebases/voltrieve-parts-kb/mcp" in mcp[1].server_url
@@ -262,3 +272,55 @@ def test_prompt_backend_is_listed_and_names_match_the_agent_script():
     assert set(web) - set(cli) == WEB_AGENT_TOOL_NAMES
     assert {t["name"] for t in module.WEB_TOOLS} == WEB_AGENT_TOOL_NAMES
     assert {"check_stock", "get_prices", "book_test_drive"} <= set(web)
+    assert set(car) - set(web) == CAR_AGENT_TOOL_NAMES and not set(KB_SEARCH_TOOLS) & set(car)
+    assert {t["name"] for t in module.CAR_TOOLS} == CAR_AGENT_TOOL_NAMES
+
+
+def tool(name):
+    return ClientTool(name, "d", {"type": "object"})
+
+
+@pytest.mark.parametrize(
+    "tools,agent",
+    [
+        ({"honk", "get_local_time"}, "agent-cli"),
+        ({"honk", "park"}, "agent-car"),
+        ({"set_theme"}, "agent-web"),
+        (set(), "agent-web"),
+        ({"honk"}, "agent-cli"),
+        ({"get_sign_photo"}, "agent-car"),
+    ],
+)
+async def test_prompt_agent_is_the_first_that_has_every_declared_tool(tools, agent):
+    openai = FakeOpenAI([text("a"), completed(1)])
+    outcome, _ = await run(make_backend(openai), ctx(tools=[tool(n) for n in sorted(tools)]))
+    assert outcome.status == "done" and agent_of(openai.calls[0]) == agent
+
+
+async def test_mixed_tools_are_unsupported():
+    openai = FakeOpenAI()
+    outcome, events = await run(make_backend(openai), ctx(tools=[tool("park"), tool("set_theme")]))
+    assert outcome.status == "failed" and openai.calls == []
+    error = events[-1]
+    assert error.data == {
+        "code": "unsupported_client_tool",
+        "message": "No prompt agent has all of these client tools: park, set_theme.",
+    }
+    assert any(e.data.get("step") == "unsupported_client_tool" for e in events if e.type == "trace")
+
+
+async def test_an_unknown_tool_keeps_the_error_and_names_the_car_tools_as_supported():
+    _, events = await run(make_backend(FakeOpenAI()), ctx(tools=[tool("read_file")]))
+    message = events[-1].data["message"]
+    assert events[-1].data["code"] == "unsupported_client_tool"
+    assert "get_sign_photo" in message and "Not supported: read_file." in message
+
+
+async def test_parts_and_kept_reach_the_model_through_the_prompt_agent():
+    photo = {"type": "input_image", "image_url": "data:image/jpeg;base64,AAAA"}
+    openai = FakeOpenAI([text("a"), completed(1)])
+    await run(make_backend(openai), TurnContext(
+        user=UserContext("oid-anna", "anna", frozenset()), conversation_id="conv_real", turn_id="t1",
+        input="hi", parts=[photo],
+    ))
+    assert openai.calls[0]["store"] is False and photo in openai.calls[0]["input"][0]["content"]

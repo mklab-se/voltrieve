@@ -3,8 +3,10 @@
 Only `run_turn` is remote. The conversation (creation, ownership, repair, abandon) stays in
 Foundry Conversations and is handled here exactly as in the loop backend. The hosted agent is
 stateless: every call carries the new input or the client results, the client tools, the server
-tool outputs of a paused iteration and the user's claims (spec 6.5). The agent answers with the
-same events the loop emits, then one `outcome` event that is consumed here, not forwarded.
+tool outputs of a paused iteration and the user's claims (spec 6.5). A turn with an attachment
+also carries `parts`, and a continuation of one carries `kept` (what the unstored turn kept when
+it paused). The agent answers with the same events the loop emits, then one `outcome` event that
+is consumed here, not forwarded. It returns `kept` when the turn pauses and `unrecorded`.
 
 The Foundry session id of the agent is kept per conversation and passed back as a query
 parameter, so a conversation keeps landing on the same agent session. Losing it (a restart
@@ -124,6 +126,8 @@ class HostedBackend(ConversationBackend):
                 "roles": sorted(ctx.user.roles),
             },
             "correlation_id": ctx.correlation_id,
+            "parts": ctx.parts,
+            "kept": ctx.kept,
         }
 
     async def run_turn(self, ctx: TurnContext, emit: Emit) -> TurnOutcome:
@@ -194,11 +198,14 @@ class HostedBackend(ConversationBackend):
         status = outcome.get("status")
         if status not in OUTCOME_STATUSES:
             raise HostedAgentError(f"unknown outcome status {status!r}")
+        kept = outcome.get("kept")
         return TurnOutcome(
             status,
             outcome.get("pending_outputs") or [],
             outcome.get("usage") or {},
             outcome.get("client_call_ids") or [],
+            kept=kept if isinstance(kept, dict) else None,
+            unrecorded=outcome.get("unrecorded") is True,
         )
 
 

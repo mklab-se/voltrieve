@@ -27,9 +27,13 @@ class ScriptedModel:
     def __init__(self, *rounds):
         self.rounds = list(rounds)
         self.calls = []
+        self.recorded = []
 
-    async def stream(self, *, instructions, conversation, input, tools):
-        self.calls.append({"conversation": conversation, "input": input, "tools": tools})
+    async def record(self, conversation, items):
+        self.recorded.append((conversation, items))
+
+    async def stream(self, *, instructions, conversation, input, tools, store=True):
+        self.calls.append({"conversation": conversation, "input": input, "tools": tools, "store": store})
         for item in self.rounds.pop(0):
             yield item
 
@@ -75,6 +79,8 @@ async def test_streams_events_then_outcome():
         "pending_outputs": [],
         "client_call_ids": [],
         "usage": {"total_tokens": 5},
+        "kept": None,
+        "unrecorded": False,
     }
     assert model.calls[0]["conversation"] == "conv_1"
 
@@ -132,7 +138,22 @@ async def test_model_failure_is_an_error_event_and_a_failed_outcome():
     assert events[-1][1]["status"] == "failed"
 
 
-@pytest.mark.parametrize("body", [{"input": "x"}, {**BODY, "input": 3}, {**BODY, "user": {}}])
+BAD_ATTACHMENT_BODIES = [
+    {**BODY, "parts": "photo"},
+    {**BODY, "parts": None},
+    {**BODY, "parts": {"type": "input_image"}},
+    {**BODY, "kept": []},
+    {**BODY, "kept": "x"},
+    {**BODY, "kept": {"items": [], "head": []}},
+    {**BODY, "kept": {"items": {}, "head": [], "text": ""}},
+    {**BODY, "kept": {"items": [], "head": "x", "text": ""}},
+    {**BODY, "kept": {"items": [], "head": [], "text": 3}},
+]
+
+
+@pytest.mark.parametrize(
+    "body", [{"input": "x"}, {**BODY, "input": 3}, {**BODY, "user": {}}, *BAD_ATTACHMENT_BODIES]
+)
 async def test_malformed_body_is_400(body):
     r = await invoke(Runtime(ScriptedModel(), [], allow_any_caller=True), body)
     assert r.status_code == 400
@@ -177,3 +198,56 @@ async def test_the_turn_is_logged_with_correlation_id_and_user_oid(caplog):
         await invoke(Runtime(ScriptedModel([TextDelta("a"), Completed({})]), [], allow_any_caller=True))
     [line] = [r.getMessage() for r in caplog.records if r.getMessage().startswith("turn ")]
     assert "correlation_id corr-1" in line and "user_oid oid-anna" in line
+
+
+PHOTO = {"type": "input_image", "image_url": "data:image/jpeg;base64,AAAA"}
+CALL = FunctionCall("call_1", "take_photo", "{}")
+TAKE_PHOTO = [{"name": "take_photo", "description": "d", "parameters": {"type": "object"}}]
+
+
+async def test_a_body_without_parts_and_kept_is_accepted():
+    assert "parts" not in BODY and "kept" not in BODY
+    model = ScriptedModel([TextDelta("Hi"), Completed({})])
+    r = await invoke(Runtime(model, [], allow_any_caller=True))
+    assert r.status_code == 200 and model.calls[0]["store"] is True
+
+
+async def test_hosted_agent_passes_parts_and_kept_to_the_loop():
+    body = {**BODY, "input": "Can I park?", "parts": [PHOTO], "client_tools": TAKE_PHOTO}
+    model = ScriptedModel([CALL, Completed({})])
+    events = parse_sse((await invoke(Runtime(model, [], allow_any_caller=True), body)).text)
+    assert model.calls[0]["store"] is False and PHOTO in model.calls[0]["input"][0]["content"]
+    outcome = events[-1][1]
+    assert outcome["status"] == "paused" and outcome["unrecorded"] is False
+    assert outcome["kept"]["items"][0]["content"][-1] == PHOTO and outcome["kept"]["text"] == ""
+    # The continuation: the kept items go back in the body, as JSON.
+    results = [{"type": "function_call_output", "call_id": "call_1", "output": "ok"}]
+    body2 = {**BODY, "input": results, "client_tools": TAKE_PHOTO, "kept": outcome["kept"]}
+    model2 = ScriptedModel([TextDelta("Yes."), Completed({})])
+    events2 = parse_sse((await invoke(Runtime(model2, [], allow_any_caller=True), body2)).text)
+    assert events2[-1][1]["status"] == "done"
+    assert model2.calls[0]["store"] is False
+    assert model2.calls[0]["input"][: len(outcome["kept"]["items"])] == outcome["kept"]["items"]
+
+
+async def test_the_outcome_says_when_the_answer_could_not_be_recorded():
+    class CannotRecord(ScriptedModel):
+        async def record(self, conversation, items):
+            raise RuntimeError("down")
+
+    body = {**BODY, "parts": [PHOTO]}
+    recorded = ScriptedModel([TextDelta("Yes."), Completed({})])
+    events = parse_sse((await invoke(Runtime(recorded, [], allow_any_caller=True), body)).text)
+    assert events[-1][1]["unrecorded"] is False and recorded.recorded[0][0] == "conv_1"
+    failing = CannotRecord([TextDelta("Yes."), Completed({})])
+    events = parse_sse((await invoke(Runtime(failing, [], allow_any_caller=True), body)).text)
+    assert events[-1][1]["status"] == "done" and events[-1][1]["unrecorded"] is True
+
+
+async def test_nothing_of_the_parts_or_kept_is_logged(caplog):
+    kept = {"items": [PHOTO], "head": [], "text": "secret text"}
+    body = {**BODY, "parts": [PHOTO], "kept": kept, "input": []}
+    with caplog.at_level("DEBUG"):
+        await invoke(Runtime(ScriptedModel([TextDelta("a"), Completed({})]), [], allow_any_caller=True), body)
+        await invoke(Runtime(ScriptedModel(), [], allow_any_caller=True), {**BODY, "parts": "AAAA"})
+    assert "AAAA" not in caplog.text and "secret text" not in caplog.text

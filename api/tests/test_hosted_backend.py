@@ -29,7 +29,7 @@ def sse(*events: tuple[str, dict], comment: bool = False) -> bytes:
     return text.encode()
 
 
-def outcome(status="done", pending=(), call_ids=(), usage=None):
+def outcome(status="done", pending=(), call_ids=(), usage=None, **extra):
     return (
         "outcome",
         {
@@ -37,6 +37,7 @@ def outcome(status="done", pending=(), call_ids=(), usage=None):
             "pending_outputs": list(pending),
             "client_call_ids": list(call_ids),
             "usage": usage or {},
+            **extra,
         },
     )
 
@@ -103,6 +104,8 @@ async def test_relays_events_one_to_one_and_returns_the_outcome(http):
         "pending_outputs": [],
         "user": {"oid": "oid-anna", "username": "anna@example.com", "roles": ["Chat.User"]},
         "correlation_id": "corr-1",
+        "parts": [],
+        "kept": None,
     }
 
 
@@ -324,3 +327,38 @@ async def test_failed_new_message_turn_marks_the_conversation_dirty(validator, a
         r = await c.post("/chat", headers={**auth, "X-Agent-Backend": "hosted"}, json={"message": "hi"})
     assert parse_sse(r.text)[-1][0] == "error"
     assert store.needs_repair("conv_real")
+
+
+@respx.mock
+async def test_hosted_body_and_outcome_carry_parts_and_kept(http):
+    photo = {"type": "input_image", "image_url": "data:image/jpeg;base64,AAAA"}
+    kept = {"items": [photo], "head": [], "text": "One. "}
+    route = respx.post(INVOKE_URL).respond(
+        200, content=sse(outcome("paused", call_ids=["c9"], kept=kept, unrecorded=False))
+    )
+
+    async def emit(event):
+        pass
+
+    backend = make_backend(http)
+    result = await backend.run_turn(ctx(parts=[photo], context={"plate": "XYZ123"}), emit)
+    assert result.kept == kept and result.unrecorded is False
+    body = json.loads(route.calls.last.request.content)
+    assert body["parts"] == [photo] and body["kept"] is None
+    assert "XYZ123" not in route.calls.last.request.content.decode()  # the context is not sent
+
+    await backend.run_turn(ctx(input_=[], kept=kept), emit)
+    assert json.loads(route.calls.last.request.content)["kept"] == kept
+
+
+@respx.mock
+async def test_an_outcome_without_kept_or_unrecorded_is_accepted_and_unrecorded_is_carried(http):
+    respx.post(INVOKE_URL).respond(200, content=sse(outcome()))
+
+    async def emit(event):
+        pass
+
+    result = await make_backend(http).run_turn(ctx(), emit)
+    assert result.kept is None and result.unrecorded is False
+    respx.post(INVOKE_URL).respond(200, content=sse(outcome(unrecorded=True)))
+    assert (await make_backend(http).run_turn(ctx(), emit)).unrecorded is True

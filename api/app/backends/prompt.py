@@ -30,6 +30,14 @@ logger = logging.getLogger(__name__)
 CLI_AGENT_TOOL_NAMES = frozenset({"make_noise", "honk", "get_local_time", "show_banner"})
 # The same for the web agent and WEB_TOOLS.
 WEB_AGENT_TOOL_NAMES = frozenset({"set_theme"})
+# The same for the car agent and CAR_TOOLS.
+CAR_AGENT_TOOL_NAMES = frozenset({"set_speed", "set_wipers", "honk", "park", "get_sign_photo"})
+# The agents in the order they are tried: the first that has every declared tool is used.
+AGENT_TOOL_NAMES = {
+    "web": WEB_AGENT_TOOL_NAMES,
+    "cli": CLI_AGENT_TOOL_NAMES,
+    "car": CAR_AGENT_TOOL_NAMES,
+}
 
 CITATION_OPEN = "\u3010"  # the marks Foundry puts around a citation: 【5:0†file.pdf】
 CITATION_CLOSE = "\u3011"
@@ -95,19 +103,26 @@ class PromptBackend(LoopBackend):
         self,
         cli_model: ModelClient,
         web_model: ModelClient,
+        car_model: ModelClient,
         openai_client,
         server_tools: list[ServerTool],
         closers=(),
     ):
         super().__init__(web_model, openai_client, server_tools, closers)
-        self._cli_model = cli_model
+        self._models = {"web": web_model, "cli": cli_model, "car": car_model}
+
+    @staticmethod
+    def _agent_for(names: set[str]) -> str | None:
+        """The first agent whose tools include every declared one. No tools means the web agent."""
+        return next((agent for agent, tools in AGENT_TOOL_NAMES.items() if names <= tools), None)
 
     def _model_for(self, ctx: TurnContext) -> ModelClient:
-        return self._cli_model if {t.name for t in ctx.client_tools} & CLI_AGENT_TOOL_NAMES else self._model
+        return self._models[self._agent_for({t.name for t in ctx.client_tools}) or "web"]
 
     async def run_turn(self, ctx: TurnContext, emit: Emit) -> TurnOutcome:
-        known = CLI_AGENT_TOOL_NAMES | WEB_AGENT_TOOL_NAMES
-        unsupported = sorted({t.name for t in ctx.client_tools} - known)
+        declared = {t.name for t in ctx.client_tools}
+        known = frozenset().union(*AGENT_TOOL_NAMES.values())
+        unsupported = sorted(declared - known)
         if unsupported:
             names = ", ".join(unsupported)
             await emit(
@@ -126,6 +141,26 @@ class PromptBackend(LoopBackend):
                         "message": "The prompt agent only supports the client tools in its "
                         f"definition ({', '.join(sorted(known))}). "
                         f"Not supported: {names}.",
+                    },
+                )
+            )
+            return TurnOutcome("failed")
+        if self._agent_for(declared) is None:
+            names = ", ".join(sorted(declared))
+            await emit(
+                trace(
+                    "unsupported_client_tool",
+                    "api",
+                    f"no prompt agent has all of: {names}",
+                    tools=sorted(declared),
+                )
+            )
+            await emit(
+                AgentEvent(
+                    "error",
+                    {
+                        "code": "unsupported_client_tool",
+                        "message": f"No prompt agent has all of these client tools: {names}.",
                     },
                 )
             )
@@ -171,6 +206,7 @@ def build_prompt_backend(settings: Settings) -> PromptBackend:
     return PromptBackend(
         ResponsesModelClient(openai_client, agent_name=settings.prompt_agent_cli),
         ResponsesModelClient(openai_client, agent_name=settings.prompt_agent_web),
+        ResponsesModelClient(openai_client, agent_name=settings.prompt_agent_car),
         openai_client,
         server_tools,
         closers=[partial(close_all, http, openai_client, project, credential)],
