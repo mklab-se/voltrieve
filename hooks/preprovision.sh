@@ -5,5 +5,9 @@ if [ -z "$DOMAIN" ]; then
   echo "preprovision: could not determine the verified domain; set VOLTRIEVE_VERIFIED_DOMAIN" >&2
   exit 1
 fi
-# WEB_URL exists from the second provision on; the first one is covered by set-spa-redirect.
-uv run --project infra/scripts/entra voltrieve-entra setup --verified-domain "$DOMAIN" ${WEB_URL:+--web-redirect-uri "$WEB_URL"}
+# The three URLs exist from the second provision on; the first one is covered by set-spa-redirect.
+# Setup replaces each registration's redirect URIs, so a known URL is passed again here.
+uv run --project infra/scripts/entra voltrieve-entra setup --verified-domain "$DOMAIN" \
+  ${WEB_URL:+--web-redirect-uri "$WEB_URL"} \
+  ${CAR_URL:+--car-redirect-uri "$CAR_URL"} \
+  ${DASHBOARD_URL:+--dashboard-redirect-uri "$DASHBOARD_URL"}

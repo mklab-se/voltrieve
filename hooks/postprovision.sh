@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 eval "$(azd env get-values)"
-export STORAGE_ACCOUNT_NAME DOCS_CONTAINER PARTS_CONTAINER STORAGE_RESOURCE_ID FOUNDRY_ENDPOINT EMBEDDING_DEPLOYMENT EMBEDDING_MODEL SEARCH_ENDPOINT FOUNDRY_OPENAI_ENDPOINT PLANNING_DEPLOYMENT PLANNING_MODEL API_PRINCIPAL_ID DEALER_SP_OBJECT_ID DEALER_APP_ROLE_ID WEB_URL
+export STORAGE_ACCOUNT_NAME DOCS_CONTAINER PARTS_CONTAINER STORAGE_RESOURCE_ID FOUNDRY_ENDPOINT EMBEDDING_DEPLOYMENT EMBEDDING_MODEL SEARCH_ENDPOINT FOUNDRY_OPENAI_ENDPOINT PLANNING_DEPLOYMENT PLANNING_MODEL API_PRINCIPAL_ID DEALER_SP_OBJECT_ID DEALER_APP_ROLE_ID WEB_URL CAR_URL DASHBOARD_URL
 
 # The role assignments for the signed-in user are created for the azd user, so the
 # CLI must be signed in as the same user or every call below fails with 403.
@@ -23,5 +23,8 @@ retry uv run --project infra/scripts/entra voltrieve-entra assign-app-role \
   --principal-object-id "$API_PRINCIPAL_ID" \
   --resource-sp-object-id "$DEALER_SP_OBJECT_ID" \
   --app-role-id "$DEALER_APP_ROLE_ID"
-# The Static Web App URL only exists after provisioning, so the first deployment adds it here.
-retry uv run --project infra/scripts/entra voltrieve-entra set-spa-redirect --uri "$WEB_URL"
+# The Static Web App URLs only exist after provisioning, so the first deployment adds them here,
+# each to the registration of its own app.
+retry uv run --project infra/scripts/entra voltrieve-entra set-spa-redirect --app web --uri "$WEB_URL"
+retry uv run --project infra/scripts/entra voltrieve-entra set-spa-redirect --app car --uri "$CAR_URL"
+retry uv run --project infra/scripts/entra voltrieve-entra set-spa-redirect --app dashboard --uri "$DASHBOARD_URL"

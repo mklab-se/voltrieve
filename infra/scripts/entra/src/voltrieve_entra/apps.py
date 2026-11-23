@@ -99,12 +99,24 @@ def cli_application_body(api_client_id: str, scope_id: str) -> dict:
     }
 
 
-def web_application_body(api_client_id: str, scope_id: str, redirect_uris: list[str]) -> dict:
+def _spa_application_body(api_client_id: str, scope_id: str, localhost: str, redirect_uris: list[str]) -> dict:
     return {
         "signInAudience": "AzureADMyOrg",
-        "spa": {"redirectUris": ["http://localhost:5173", *redirect_uris]},
+        "spa": {"redirectUris": [localhost, *redirect_uris]},
         "requiredResourceAccess": _required_access(api_client_id, scope_id),
     }
+
+
+def web_application_body(api_client_id: str, scope_id: str, redirect_uris: list[str]) -> dict:
+    return _spa_application_body(api_client_id, scope_id, "http://localhost:5173", redirect_uris)
+
+
+def dashboard_application_body(api_client_id: str, scope_id: str, redirect_uris: list[str]) -> dict:
+    return _spa_application_body(api_client_id, scope_id, "http://localhost:5174", redirect_uris)
+
+
+def car_application_body(api_client_id: str, scope_id: str, redirect_uris: list[str]) -> dict:
+    return _spa_application_body(api_client_id, scope_id, "http://localhost:5175", redirect_uris)
 
 
 def dealer_application_body(role_id: str) -> dict:
@@ -152,12 +164,18 @@ def pre_authorized_body(scope_id: str) -> dict:
     }
 
 
-def ensure_spa_redirect(g: GraphClient, uri: str, sleep: Sleep = time.sleep) -> list[str]:
-    """Add uri to the web app's SPA redirect URIs, keeping the existing ones."""
-    found = g.get("/applications?$filter=displayName eq 'voltrieve-web'") or {}
+SPA_APPS = {"web": "voltrieve-web", "car": "voltrieve-car", "dashboard": "voltrieve-dashboard"}
+
+
+def ensure_spa_redirect(g: GraphClient, uri: str, sleep: Sleep = time.sleep, app: str = "web") -> list[str]:
+    """Add uri to the SPA redirect URIs of one browser app (web, car or dashboard), keeping the existing ones."""
+    if app not in SPA_APPS:
+        raise ValueError(f"unknown app '{app}'; expected one of {', '.join(SPA_APPS)}")
+    display_name = SPA_APPS[app]
+    found = g.get(f"/applications?$filter=displayName eq '{display_name}'") or {}
     matches = found.get("value", [])
     if len(matches) != 1:
-        raise RuntimeError(f"expected one application named 'voltrieve-web', found {len(matches)}")
+        raise RuntimeError(f"expected one application named '{display_name}', found {len(matches)}")
     app = matches[0]
 
     def call() -> list[str]:
@@ -273,6 +291,8 @@ def setup(
     web_redirect_uris: list[str],
     sleep: Sleep = time.sleep,
     on_password: Callable[[str], None] | None = None,
+    car_redirect_uris: list[str] | None = None,
+    dashboard_redirect_uris: list[str] | None = None,
 ) -> dict[str, str]:
     scope_id = stable_id("scope:access_as_user")
     chat_role_id = stable_id("role:Chat.User")
@@ -295,6 +315,15 @@ def setup(
     web = ensure_application(
         g, "voltrieve-web", web_application_body(api["appId"], scope_id, web_redirect_uris), sleep
     )
+    car = ensure_application(
+        g, "voltrieve-car", car_application_body(api["appId"], scope_id, car_redirect_uris or []), sleep
+    )
+    dashboard = ensure_application(
+        g,
+        "voltrieve-dashboard",
+        dashboard_application_body(api["appId"], scope_id, dashboard_redirect_uris or []),
+        sleep,
+    )
     dealer = ensure_application(
         g, "voltrieve-dealer", dealer_application_body(dealer_role_id), sleep
     )
@@ -308,13 +337,15 @@ def setup(
     api_sp = ensure_service_principal(g, api["appId"], sleep)
     cli_sp = ensure_service_principal(g, cli["appId"], sleep)
     web_sp = ensure_service_principal(g, web["appId"], sleep)
+    car_sp = ensure_service_principal(g, car["appId"], sleep)
+    dashboard_sp = ensure_service_principal(g, dashboard["appId"], sleep)
     dealer_sp = ensure_service_principal(g, dealer["appId"], sleep)
     _retrying(
         lambda: g.patch(f"/servicePrincipals/{dealer_sp['id']}", {"appRoleAssignmentRequired": True}),
         sleep,
     )
 
-    for client_sp in (cli_sp, web_sp):
+    for client_sp in (cli_sp, web_sp, car_sp, dashboard_sp):
         ensure_oauth2_grant(g, client_sp["id"], api_sp["id"], SCOPE_VALUE, sleep)
 
     # Only the deployer sees the dashboard: it shows other people's prompts, masked.
@@ -333,6 +364,8 @@ def setup(
         "API_SCOPE_ID": scope_id,
         "CLI_CLIENT_ID": cli["appId"],
         "WEB_CLIENT_ID": web["appId"],
+        "CAR_CLIENT_ID": car["appId"],
+        "DASHBOARD_CLIENT_ID": dashboard["appId"],
         "DEALER_CLIENT_ID": dealer["appId"],
         "DEALER_APP_ROLE_ID": dealer_role_id,
         "DEALER_SP_OBJECT_ID": dealer_sp["id"],

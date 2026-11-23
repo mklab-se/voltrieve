@@ -15,6 +15,7 @@ param chatDeployment string
 param searchEndpoint string
 param promptAgentCli string
 param promptAgentWeb string
+param promptAgentCar string
 param hostedAgentName string
 @description('Comma separated list of allowed browser origins.')
 param corsOrigins string
@@ -75,6 +76,7 @@ resource api 'Microsoft.App/containerApps@2026-07-01' = {
             { name: 'SOURCE_CONTAINERS', value: sourceContainers }
             { name: 'PROMPT_AGENT_CLI', value: promptAgentCli }
             { name: 'PROMPT_AGENT_WEB', value: promptAgentWeb }
+            { name: 'PROMPT_AGENT_CAR', value: promptAgentCar }
             { name: 'HOSTED_AGENT_NAME', value: hostedAgentName }
             { name: 'CORS_ORIGINS', value: corsOrigins }
             { name: 'AGENT_BACKEND', value: 'loop' }

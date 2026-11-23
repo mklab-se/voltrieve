@@ -44,7 +44,7 @@ def test_setup_twice_yields_same_ids_and_no_duplicates(graph_mock, graph):
     first = apps.setup(graph, "tid", "deployer-oid", DOMAIN, [])
     second = apps.setup(graph, "tid", "deployer-oid", DOMAIN, [])
     assert first == second
-    assert graph_mock.calls("POST", "/applications") == 4
+    assert graph_mock.calls("POST", "/applications") == 6
     assert graph_mock.calls("POST", "/users") == 1
 
 
@@ -169,7 +169,7 @@ def test_setup_grant_bodies(graph_mock, graph):
     sps = {s["appId"]: s["id"] for s in graph_mock.service_principals.values()}
     assert sorted((g["clientId"], g["resourceId"], g["consentType"], g["scope"]) for g in graph_mock.grants) == sorted(
         (sps[env[k]], env["API_SP_OBJECT_ID"], "AllPrincipals", "access_as_user")
-        for k in ("CLI_CLIENT_ID", "WEB_CLIENT_ID")
+        for k in ("CLI_CLIENT_ID", "WEB_CLIENT_ID", "CAR_CLIENT_ID", "DASHBOARD_CLIENT_ID")
     )
 
 
@@ -253,3 +253,77 @@ def test_only_the_deployer_may_view_the_dashboard(graph_mock, graph):
     env = apps.setup(graph, "tid", "deployer-oid", DOMAIN, [])
     tester = next(u["id"] for u in graph_mock.users.values())
     assert env["DASHBOARD_VIEW_ROLE_ID"] not in graph_mock.role_assignments_for(tester)
+
+
+def test_car_and_dashboard_bodies_use_their_own_localhost_port():
+    car = apps.car_application_body("api-id", "s", ["https://car.example"])
+    assert car["spa"]["redirectUris"] == ["http://localhost:5175", "https://car.example"]
+    dash = apps.dashboard_application_body("api-id", "s", [])
+    assert dash["spa"]["redirectUris"] == ["http://localhost:5174"]
+    web = apps.web_application_body("api-id", "s", [])
+    for body in (car, dash):
+        assert body["requiredResourceAccess"] == web["requiredResourceAccess"]
+
+
+def test_setup_creates_car_and_dashboard_once_with_the_web_scope(graph_mock, graph):
+    first = apps.setup(graph, "tid", "deployer-oid", DOMAIN, [])
+    second = apps.setup(graph, "tid", "deployer-oid", DOMAIN, [])
+    assert first["CAR_CLIENT_ID"] == second["CAR_CLIENT_ID"]
+    assert first["DASHBOARD_CLIENT_ID"] == second["DASHBOARD_CLIENT_ID"]
+    names = [a["displayName"] for a in graph_mock.applications.values()]
+    assert names.count("voltrieve-car") == 1 and names.count("voltrieve-dashboard") == 1
+    web = _app(graph_mock, "voltrieve-web")
+    for name in ("voltrieve-car", "voltrieve-dashboard"):
+        assert _app(graph_mock, name)["requiredResourceAccess"] == web["requiredResourceAccess"]
+    assert _app(graph_mock, "voltrieve-car")["spa"]["redirectUris"] == ["http://localhost:5175"]
+    assert _app(graph_mock, "voltrieve-dashboard")["spa"]["redirectUris"] == ["http://localhost:5174"]
+    # Each client has its own service principal and admin consent for the scope.
+    assert len(graph_mock.grants) == 4
+
+
+def test_setup_passes_car_and_dashboard_redirect_uris(graph_mock, graph):
+    apps.setup(graph, "tid", "deployer-oid", DOMAIN, [],
+               car_redirect_uris=["https://car.example"], dashboard_redirect_uris=["https://dash.example"])
+    assert _app(graph_mock, "voltrieve-car")["spa"]["redirectUris"] == ["http://localhost:5175", "https://car.example"]
+    assert _app(graph_mock, "voltrieve-dashboard")["spa"]["redirectUris"] == [
+        "http://localhost:5174", "https://dash.example"]
+
+
+@pytest.mark.parametrize("app,name", [("car", "voltrieve-car"), ("dashboard", "voltrieve-dashboard")])
+def test_set_spa_redirect_targets_the_named_app(graph_mock, graph, no_sleep, app, name):
+    apps.setup(graph, "tid", "deployer-oid", DOMAIN, [])
+    apps.ensure_spa_redirect(graph, "https://x.example", no_sleep, app=app)
+    apps.ensure_spa_redirect(graph, "https://x.example", no_sleep, app=app)
+    assert _app(graph_mock, name)["spa"]["redirectUris"].count("https://x.example") == 1
+    assert "https://x.example" not in _app(graph_mock, "voltrieve-web")["spa"]["redirectUris"]
+
+
+def test_set_spa_redirect_requires_the_named_app(graph_mock, graph, no_sleep):
+    with pytest.raises(RuntimeError, match="voltrieve-car"):
+        apps.ensure_spa_redirect(graph, "https://x.example", no_sleep, app="car")
+
+
+def test_set_spa_redirect_refuses_an_unknown_app(graph_mock, graph, no_sleep):
+    with pytest.raises(ValueError, match="unknown"):
+        apps.ensure_spa_redirect(graph, "https://x.example", no_sleep, app="cli")
+
+
+def test_the_command_line_accepts_only_known_apps(capsys):
+    from voltrieve_entra import cli
+
+    with pytest.raises(SystemExit) as err:
+        cli.main(["set-spa-redirect", "--uri", "https://x.example", "--app", "nope"])
+    assert err.value.code == 2
+    assert "invalid choice" in capsys.readouterr().err
+
+
+def test_the_command_line_defaults_to_the_web_app(monkeypatch):
+    from voltrieve_entra import cli
+
+    seen = {}
+    monkeypatch.setattr(cli, "_graph", lambda: (object(), "t"))
+    monkeypatch.setattr(cli, "ensure_spa_redirect", lambda g, uri, app: seen.update(uri=uri, app=app))
+    cli.main(["set-spa-redirect", "--uri", "https://x.example"])
+    assert seen == {"uri": "https://x.example", "app": "web"}
+    cli.main(["set-spa-redirect", "--uri", "https://y.example", "--app", "car"])
+    assert seen == {"uri": "https://y.example", "app": "car"}

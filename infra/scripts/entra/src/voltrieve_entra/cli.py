@@ -7,7 +7,7 @@ import time
 
 from azure.identity import AzureCliCredential
 
-from .apps import ensure_app_role_assignment, ensure_spa_redirect, setup
+from .apps import SPA_APPS, ensure_app_role_assignment, ensure_spa_redirect, setup
 from .graph import GraphClient
 
 GRAPH_SCOPE = "https://graph.microsoft.com/.default"
@@ -57,6 +57,8 @@ def _run_setup(args: argparse.Namespace) -> None:
         args.verified_domain,
         args.web_redirect_uri,
         on_password=_print_password,
+        car_redirect_uris=args.car_redirect_uri,
+        dashboard_redirect_uris=args.dashboard_redirect_uri,
     )
     for key, value in env.items():
         _azd_env_set(key, value)
@@ -71,7 +73,7 @@ def _run_assign(args: argparse.Namespace) -> None:
 
 def _run_spa_redirect(args: argparse.Namespace) -> None:
     g, _ = _graph()
-    ensure_spa_redirect(g, args.uri)
+    ensure_spa_redirect(g, args.uri, app=args.app)
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -81,6 +83,8 @@ def main(argv: list[str] | None = None) -> None:
     p_setup = sub.add_parser("setup", help="Create or update the Voltrieve app registrations")
     p_setup.add_argument("--verified-domain", required=True)
     p_setup.add_argument("--web-redirect-uri", action="append", default=[])
+    p_setup.add_argument("--car-redirect-uri", action="append", default=[])
+    p_setup.add_argument("--dashboard-redirect-uri", action="append", default=[])
     p_setup.set_defaults(func=_run_setup)
 
     p_assign = sub.add_parser("assign-app-role", help="Assign an app role to a principal")
@@ -89,8 +93,9 @@ def main(argv: list[str] | None = None) -> None:
     p_assign.add_argument("--app-role-id", required=True)
     p_assign.set_defaults(func=_run_assign)
 
-    p_spa = sub.add_parser("set-spa-redirect", help="Add a redirect URI to the web app registration")
+    p_spa = sub.add_parser("set-spa-redirect", help="Add a redirect URI to a browser app registration")
     p_spa.add_argument("--uri", required=True)
+    p_spa.add_argument("--app", choices=list(SPA_APPS), default="web")
     p_spa.set_defaults(func=_run_spa_redirect)
 
     args = parser.parse_args(argv)

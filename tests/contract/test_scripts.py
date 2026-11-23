@@ -349,3 +349,92 @@ def test_cached_token_is_refetched_before_it_expires():
     assert get() != first  # two minutes left is too little for a long run
     second = get()
     assert get() == second  # an hour left is kept
+
+
+# scripts/deploy-web.sh, run against fake az, azd and docker programs on PATH.
+
+import os  # noqa: E402
+import shutil  # noqa: E402
+import subprocess  # noqa: E402
+
+DEPLOY_WEB = SCRIPTS / "deploy-web.sh"
+SITES = "stapp-voltrieve-dev\tweb\nstapp-voltrieve-car-dev\tcar\nstapp-voltrieve-dashboard-dev\tdashboard\n"
+
+
+def _deploy(tmp_path, *args, sites=SITES, dists=("web", "car", "dashboard")):
+    root = tmp_path / "repo"
+    (root / "scripts").mkdir(parents=True)
+    shutil.copy(DEPLOY_WEB, root / "scripts" / "deploy-web.sh")
+    for service in dists:
+        (root / "clients" / service / "dist").mkdir(parents=True)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    log = tmp_path / "calls.log"
+    (tmp_path / "sites.tsv").write_text(sites)
+    fakes = {
+        "azd": 'echo "azd $*" >> "$FAKE_LOG"\necho AZURE_RESOURCE_GROUP=rg-test\n',
+        "az": (
+            'echo "az $*" >> "$FAKE_LOG"\n'
+            'case "$*" in\n'
+            '  "staticwebapp list"*) cat "$FAKE_SITES" ;;\n'
+            '  "staticwebapp secrets list"*) echo made-up-token ;;\n'
+            '  *) echo "unexpected az call" >&2; exit 9 ;;\n'
+            'esac\n'
+        ),
+        "docker": 'echo "docker $*" >> "$FAKE_LOG"\n',
+    }
+    for name, body in fakes.items():
+        path = bin_dir / name
+        path.write_text("#!/bin/sh\n" + body)
+        path.chmod(0o755)
+    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "FAKE_LOG": str(log),
+           "FAKE_SITES": str(tmp_path / "sites.tsv")}
+    result = subprocess.run(["sh", str(root / "scripts" / "deploy-web.sh"), *args],
+                            capture_output=True, text=True, env=env)
+    return result, (log.read_text() if log.exists() else "")
+
+
+def test_deploy_web_defaults_to_the_web_site(tmp_path):
+    result, calls = _deploy(tmp_path)
+    assert result.returncode == 0, result.stderr
+    assert "secrets list -n stapp-voltrieve-dev " in calls
+    assert "clients/web/dist:/app/dist:ro" in calls
+
+
+@pytest.mark.parametrize("service,site", [("car", "stapp-voltrieve-car-dev"), ("dashboard", "stapp-voltrieve-dashboard-dev")])
+def test_deploy_web_picks_the_site_by_its_tag_not_by_position(tmp_path, service, site):
+    # The wanted site is listed last and first in turn: position must not matter.
+    for n, sites in enumerate((SITES, "".join(reversed(SITES.splitlines(keepends=True))))):
+        result, calls = _deploy(tmp_path / str(n), service, sites=sites)
+        assert result.returncode == 0, result.stderr
+        assert f"secrets list -n {site} " in calls
+        assert f"clients/{service}/dist:/app/dist:ro" in calls
+        assert "made-up-token" not in calls
+
+
+def test_deploy_web_refuses_an_unknown_service(tmp_path):
+    result, calls = _deploy(tmp_path, "cli")
+    assert result.returncode == 1
+    assert "web, car or dashboard" in result.stderr
+    assert calls == ""
+
+
+def test_deploy_web_fails_when_no_site_has_the_tag(tmp_path):
+    result, calls = _deploy(tmp_path, "car", sites="stapp-voltrieve-dev\tweb\n")
+    assert result.returncode == 1
+    assert "azd-service-name" in result.stderr and "car" in result.stderr
+    assert "docker" not in calls and "secrets" not in calls
+
+
+def test_deploy_web_fails_when_two_sites_share_the_tag(tmp_path):
+    result, calls = _deploy(tmp_path, "car", sites=SITES + "stapp-other\tcar\n")
+    assert result.returncode == 1
+    assert "more than one" in result.stderr
+    assert "docker" not in calls
+
+
+def test_deploy_web_fails_when_the_build_is_missing(tmp_path):
+    result, calls = _deploy(tmp_path, "dashboard", dists=("web", "car"))
+    assert result.returncode == 1
+    assert "clients/dashboard/dist" in result.stderr
+    assert calls == ""

@@ -195,6 +195,27 @@ module web 'modules/static-web-app.bicep' = {
     name: 'stapp-voltrieve-${environmentName}'
     location: webLocation
     tags: tags
+    serviceName: 'web'
+  }
+}
+
+module car 'modules/static-web-app.bicep' = {
+  scope: rg
+  params: {
+    name: 'stapp-voltrieve-car-${environmentName}'
+    location: webLocation
+    tags: tags
+    serviceName: 'car'
+  }
+}
+
+module dashboard 'modules/static-web-app.bicep' = {
+  scope: rg
+  params: {
+    name: 'stapp-voltrieve-dashboard-${environmentName}'
+    location: webLocation
+    tags: tags
+    serviceName: 'dashboard'
   }
 }
 
@@ -217,8 +238,9 @@ module apiApp 'modules/api-app.bicep' = {
     searchEndpoint: search.outputs.endpoint
     promptAgentCli: 'voltrieve-prompt-cli'
     promptAgentWeb: 'voltrieve-prompt-web'
+    promptAgentCar: 'voltrieve-prompt-car'
     hostedAgentName: hostedAgentName
-    corsOrigins: '${web.outputs.url},http://localhost:5173'
+    corsOrigins: '${web.outputs.url},${car.outputs.url},${dashboard.outputs.url},http://localhost:5173,http://localhost:5174,http://localhost:5175'
     appInsightsConnectionString: monitoring.outputs.appInsightsConnectionString
     storageAccountName: storage.outputs.name
     // Only the documents container: the parts catalogs are internal and never linked.
@@ -463,3 +485,5 @@ output HOSTED_AGENT_NAME string = hostedAgentName
 output API_URL string = apiApp.outputs.url
 output API_PRINCIPAL_ID string = apiApp.outputs.principalId
 output WEB_URL string = web.outputs.url
+output CAR_URL string = car.outputs.url
+output DASHBOARD_URL string = dashboard.outputs.url
