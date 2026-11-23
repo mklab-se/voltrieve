@@ -1,12 +1,14 @@
 // App and Authed are copied from clients/web; keep the two alike.
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { bootAuth, type Auth, type AuthSession } from "./auth";
 import { Chat } from "./components/Chat";
 import { ConfigMissing, Loading, SignIn } from "./components/Notices";
 import { readConfig, type AppConfig } from "./config";
 import { carContext } from "./context";
+import { Drive } from "./drive";
+import { createHorn } from "./horn";
 import { fetchSourceUrl, openSource } from "./sources";
-import CAR_TOOLS from "./tools.json";
+import { CAR_TOOLS, runCarTool } from "./tools";
 import type { ClientToolCall, SourceItem } from "./types";
 import { useChat } from "./useChat";
 
@@ -47,13 +49,29 @@ function Authed({ config }: { config: AppConfig }) {
   return <Workspace config={config} auth={auth} session={session} />;
 }
 
-async function runTool(call: ClientToolCall) {
-  return { output: `Error: the car cannot run ${call.name} yet.` };
+/** The car, and one line about what it does. */
+function useDrive(): { drive: Drive; status: string } {
+  const [drive] = useState(() => new Drive(createHorn()));
+  const [status, setStatus] = useState("");
+  useEffect(() => {
+    let frame = 0;
+    let before = performance.now();
+    const onFrame = (now: number) => {
+      drive.tick((now - before) / 1000);
+      before = now;
+      setStatus(`${Math.round(drive.speedKmh())} km/h, ${drive.car.mode}, wipers ${drive.wipers}`);
+      frame = requestAnimationFrame(onFrame);
+    };
+    frame = requestAnimationFrame(onFrame);
+    return () => cancelAnimationFrame(frame);
+  }, [drive]);
+  return { drive, status };
 }
 
-const context = () => carContext({ distanceM: 0, speedKmh: 0 }, new Date());
-
 export function Workspace({ config, auth, session }: { config: AppConfig; auth: Auth; session: AuthSession }) {
+  const { drive, status } = useDrive();
+  const runTool = useCallback((call: ClientToolCall) => runCarTool(call, drive), [drive]);
+  const context = useCallback(() => carContext(drive.car, new Date()), [drive]);
   const { state, busy, send, reset } = useChat({ auth, config, backend: "loop", tools: CAR_TOOLS, runTool, context });
   const [sourceError, setSourceError] = useState<string>();
 
@@ -73,6 +91,7 @@ export function Workspace({ config, auth, session }: { config: AppConfig; auth: 
           <span className="brand-name">Voltrieve</span>
           <span className="brand-sub">Spark</span>
         </div>
+        <span className="muted">{status}</span>
         <div className="actions">
           <button className="ghost" onClick={reset}>
             New chat

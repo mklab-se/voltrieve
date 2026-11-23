@@ -413,7 +413,6 @@ def test_the_cli_and_the_prompt_agent_declare_the_same_client_tools():
 
 
 def test_the_car_tools_of_the_prompt_agent_are_the_names_the_api_expects():
-    """The car client's own copy is compared in plan B. Here: the agent script and the API agree."""
     from app.backends.prompt import CAR_AGENT_TOOL_NAMES
 
     car = load_module("create_agents", "agents/prompt/create_agents.py").CAR_TOOLS
@@ -425,3 +424,9 @@ def test_the_car_tools_of_the_prompt_agent_are_the_names_the_api_expects():
     assert by_name["set_wipers"]["properties"]["mode"]["enum"] == ["off", "slow", "fast"]
     assert by_name["honk"]["properties"]["times"]["maximum"] == 5
     assert "required" not in by_name["park"] and "required" not in by_name["get_sign_photo"]
+
+
+def test_the_car_and_the_prompt_agent_declare_the_same_client_tools():
+    """clients/car/src/tools.ts imports this list, so it is what the car sends with each request."""
+    car = json.loads((ROOT / "clients/car/src/tools.json").read_text())
+    assert car == load_module("create_agents", "agents/prompt/create_agents.py").CAR_TOOLS
