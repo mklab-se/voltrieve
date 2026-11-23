@@ -18,6 +18,8 @@ dependencies = [
     "opentelemetry-api",
     "voltrieve-agent-core",
     "voltrieve-search",
+    "pillow>=13.0.0",
+    "python-multipart>=0.0.34",
 ]
 
 [tool.uv.sources]
