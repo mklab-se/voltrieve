@@ -9,6 +9,7 @@ which gives every open function call an output.
 
 import asyncio
 import logging
+import sys
 import time
 import uuid
 from collections import OrderedDict
@@ -18,6 +19,7 @@ from dataclasses import dataclass, field
 from voltrieve_agent.events import KEEPALIVE, KEEPALIVE_SECONDS, REVIEWING, THINKING, AgentEvent, status, format_event, trace
 from voltrieve_agent.model import merge_usage
 from voltrieve_agent.tools import ClientTool, UserContext
+from voltrieve_agent.unstored import head_outputs
 
 from app.auth import Claims
 from app.backends import BackendRegistry
@@ -34,6 +36,15 @@ MAX_CONVERSATIONS = 1000
 GENERIC_ERROR = AgentEvent(
     "error", {"code": "internal_error", "message": "The request could not be completed."}
 )
+
+
+def log_failure(message: str, unstored: bool, *args: object) -> None:
+    """Log the exception being handled. For an unstored turn only its type: its text and traceback
+    may quote the request, and the request holds the attachment."""
+    if unstored:
+        logger.error(message + ": %s", *args, type(sys.exc_info()[1]).__name__)
+    else:
+        logger.exception(message, *args)
 
 
 @dataclass
@@ -54,11 +65,7 @@ class PausedTurn:
         """Outputs that close every open function_call of this turn. An unstored turn has stored
         only the calls whose outputs are in its head, so only those are closed."""
         if self.kept is not None:
-            return [
-                item
-                for item in self.kept.get("head") or []
-                if isinstance(item, dict) and item.get("type") == "function_call_output"
-            ]
+            return head_outputs(self.kept)
         return [
             *self.pending_outputs,
             *(
@@ -343,7 +350,7 @@ class TurnService:
                 try:
                     await backend.repair(conversation_id)
                 except Exception:
-                    logger.exception("Conversation repair failed")
+                    log_failure("Conversation repair failed", bool(job.parts or job.kept))
                     self.store.mark_dirty(conversation_id)
                     await run.emit(
                         AgentEvent(
@@ -367,7 +374,8 @@ class TurnService:
                 annotate_span(conversation_id=conversation_id)
                 await run.emit(trace("conversation_created", "api", conversation_id))
 
-            debug_payload(logger, "turn input", job.input)
+            if not (job.parts or job.kept):  # the input of an unstored turn may be about the attachment
+                debug_payload(logger, "turn input", job.input)
             ctx = TurnContext(
                 user=UserContext(oid, job.claims.username, frozenset(job.claims.roles)),
                 conversation_id=conversation_id,
@@ -427,7 +435,7 @@ class TurnService:
                 # conversation), so check it before its next use.
                 self.store.mark_dirty(conversation_id)
         except Exception:
-            logger.exception("Turn failed")
+            log_failure("Turn failed", bool(job.parts or job.kept))
             if conversation_id:
                 self.store.mark_dirty(conversation_id)
             if run.recorder is not None:
@@ -463,20 +471,20 @@ class TurnService:
 
     async def _close(self, paused: PausedTurn, run: _Run) -> None:
         """Give the open function calls of an abandoned or expired turn an output."""
+        outputs = paused.abandon_outputs()
         try:
             backend = self._registry.get_backend(paused.backend)
-            outputs = paused.abandon_outputs()
             if outputs:  # an unstored turn may have nothing in the conversation to close
                 await backend.abandon(paused.conversation_id, outputs)
         except Exception:
-            logger.exception("Could not close the abandoned turn %s", paused.turn_id)
+            log_failure("Could not close the abandoned turn %s", paused.kept is not None, paused.turn_id)
             self.store.mark_dirty(paused.conversation_id)
             return
         await run.emit(
             trace(
                 "turn_abandoned",
                 "api",
-                f"closed unfinished turn {paused.turn_id}",
+                f"{'closed' if outputs else 'dropped'} unfinished turn {paused.turn_id}",
                 turn_id=paused.turn_id,
             )
         )

@@ -53,7 +53,8 @@ def set_span_attributes(attributes: dict) -> None:
 @contextmanager
 def turn_span(**attributes: str | None) -> Iterator[trace.Span]:
     """A span around one chat turn, with conversation_id, turn_id, backend and correlation_id."""
-    with tracer.start_as_current_span("chat.turn") as span:
+    # An exception text may quote an attachment, so it is never recorded on the span.
+    with tracer.start_as_current_span("chat.turn", record_exception=False, set_status_on_exception=False) as span:
         annotate_span(**attributes)
         yield span
 

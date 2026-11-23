@@ -60,6 +60,23 @@ def _text_only(head: list[dict]) -> list[dict]:
     return items
 
 
+def head_outputs(kept: object) -> list[dict]:
+    """The function_call_output items of a kept head, as text only, for closing the calls of a
+    paused turn that was stored. `kept` may come from remote JSON, so this never raises and
+    anything that is not a plain output is left out."""
+    try:
+        head = kept.get("head") if isinstance(kept, dict) else None
+        if not isinstance(head, list):
+            return []
+        return [
+            item
+            for item in _text_only(head)
+            if _is_output(item) and isinstance(item.get("call_id"), str)
+        ]
+    except Exception:
+        return []
+
+
 @dataclass
 class Unstored:
     """`items` is sent on the next call, `head` is recorded before the answer, and `text` is the

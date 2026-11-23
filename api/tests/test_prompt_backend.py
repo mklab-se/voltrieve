@@ -256,6 +256,7 @@ def test_prompt_backend_is_listed_and_names_match_the_agent_script():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     assert {t["name"] for t in module.CLI_TOOLS} == CLI_AGENT_TOOL_NAMES
+
     def definition(tools):
         return module.agent_definition("m", "https://s", "conn", "parts-conn", tools)
 

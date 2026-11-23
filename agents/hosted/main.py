@@ -5,17 +5,17 @@ The Web API posts one JSON body per model-and-tools round:
     {conversation_id, turn_id, input, client_tools, pending_outputs,
      user: {oid, username, roles}, correlation_id, parts, kept}
 
-`parts` (attachment content parts, default []) and `kept` (what an unstored turn kept when it
-paused, default none) are optional, and unknown keys are ignored, so an old API and a new agent
-work together in both directions. Neither is ever logged.
-
 and this process answers with server-sent events. It runs `agent_core.run_turn` unchanged and
 relays every AgentEvent one to one (event name = type, data = one line of JSON). When the turn
 ends it sends one more event, `outcome` {status, pending_outputs, client_call_ids, usage, kept,
-unrecorded}, which
-the Web API consumes instead of forwarding. The agent holds no state between requests: a
-continuation resends client_tools and pending_outputs, and the conversation itself lives in
-Foundry.
+unrecorded}, which the Web API consumes instead of forwarding. The agent holds no state between
+requests: a continuation resends client_tools and pending_outputs, and the conversation itself
+lives in Foundry.
+
+`parts` (the content parts of an attachment, default []) and `kept` (what an unstored turn kept
+when it paused, default none) are optional, and a body without them is accepted. An old agent
+ignores them: a new API with an old hosted agent answers without the photo, so deploy this agent
+before the API that sends them. Neither is ever logged.
 
 The Web API's managed identity is the only caller allowed to invoke the agent (spec 6.5), so
 the `user` claims in the body are trusted. The Foundry gateway replaces `x-ms-original-subject`

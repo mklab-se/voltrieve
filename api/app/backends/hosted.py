@@ -60,9 +60,10 @@ class HostedAgentError(Exception):
 
     `stream_started` is True when the agent had accepted the turn (HTTP 200) before it broke."""
 
-    def __init__(self, message: str, stream_started: bool = False):
+    def __init__(self, message: str, stream_started: bool = False, status_code: int | None = None):
         super().__init__(message)
         self.stream_started = stream_started
+        self.status_code = status_code
 
 
 async def parse_sse(lines: AsyncIterator[str]) -> AsyncIterator[tuple[str, dict]]:
@@ -136,7 +137,15 @@ class HostedBackend(ConversationBackend):
         try:
             return await self._invoke(ctx, emit)
         except Exception as exc:
-            logger.exception("The hosted agent call failed")
+            if ctx.parts or ctx.kept:
+                # The request holds the attachment and an error may quote it: type and status only.
+                logger.error(
+                    "The hosted agent call failed: %s, HTTP status %s",
+                    type(exc).__name__,
+                    getattr(exc, "status_code", None),
+                )
+            else:
+                logger.exception("The hosted agent call failed")
             stream_broken = isinstance(exc, HostedAgentError) and exc.stream_started
         await emit(
             AgentEvent(
@@ -178,8 +187,10 @@ class HostedBackend(ConversationBackend):
         outcome: dict | None = None
         try:
             if response.status_code != 200:
+                if ctx.parts or ctx.kept:
+                    raise HostedAgentError(f"HTTP {response.status_code}", status_code=response.status_code)
                 body = (await response.aread())[:500].decode(errors="replace")
-                raise HostedAgentError(f"HTTP {response.status_code}: {body}")
+                raise HostedAgentError(f"HTTP {response.status_code}: {body}", status_code=response.status_code)
             new_session = response.headers.get(SESSION_HEADER)
             if new_session:
                 self._remember_session(ctx.conversation_id, new_session)

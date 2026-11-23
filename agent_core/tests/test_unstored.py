@@ -24,7 +24,7 @@ from voltrieve_agent.model import (
 )
 from voltrieve_agent.server_tools import CURATED_TOOL, build_server_tools
 from voltrieve_agent.tools import ClientTool, ServerTool
-from voltrieve_agent.unstored import Unstored
+from voltrieve_agent.unstored import Unstored, head_outputs
 
 IMG = {"type": "input_image", "detail": "high", "image_url": "data:image/jpeg;base64,AAAA"}
 ANY_OBJECT = {"type": "object", "properties": {}}
@@ -616,3 +616,18 @@ async def test_record_splits_into_requests_of_at_most_twenty_items(count, sizes)
     assert [len(sent) for _, sent in api.recorded] == sizes
     assert [i for _, sent in api.recorded for i in sent] == items
     assert {conversation for conversation, _ in api.recorded} == {"conv"}
+
+
+@pytest.mark.parametrize("content", [[IMG], [text_part("look"), IMG], None, 7, {"a": IMG}])
+def test_head_outputs_has_the_outputs_of_the_head_as_text_only(content):
+    kept = {"items": [], "head": [SENT, output("c1", content), output("c2", "ok")], "text": ""}
+    assert head_outputs(kept) == [output("c1", "(attachment sent)"), output("c2", "ok")]
+    assert "AAAA" not in json.dumps(head_outputs(kept))
+
+
+def test_head_outputs_drops_extra_keys_and_never_raises_on_a_malformed_kept():
+    extra = {**output("c1", "ok"), "extra": IMG}
+    kept = {"items": [], "head": [IMG, "AAAA", None, extra, {**output(7), "output": "x"}], "text": ""}
+    assert head_outputs(kept) == [output("c1", "ok")]
+    for bad in (None, {}, [], "AAAA", {"head": "AAAA"}, {"head": {"a": IMG}}, {"head": [[IMG]]}):
+        assert head_outputs(bad) == []
