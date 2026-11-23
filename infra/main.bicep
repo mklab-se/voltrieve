@@ -31,11 +31,17 @@ param hostedAgentPrincipalId string = ''
 param hostedAgentName string = 'voltrieve-hosted'
 param chatModelName string = 'gpt-6.1-terra'
 param chatModelVersion string = '2026-10-26'
-param planningModelName string = 'gpt-5.4-mini'
-param planningModelVersion string = '2026-03-17'
+@description('The model Search plans queries with (PLANNING_MODEL_NAME). A GPT-6 model needs every caller of Search to use 2026-11-01-preview or later, so deploy the code before choosing one.')
+@allowed(['gpt-6-luna', 'gpt-5.4-mini'])
+param planningModelName string = 'gpt-6-luna'
 param embeddingModelName string = 'text-embedding-3-large'
 param embeddingModelVersion string = '1'
 
+// Both stay deployed until gpt-6-luna is measured, so going back is planningModelName alone.
+var planningModels = [
+  { name: 'gpt-5.4-mini', version: '2026-03-17' }
+  { name: 'gpt-6-luna', version: '2026-09-22' }
+]
 var placeholderImage = 'mcr.microsoft.com/dotnet/samples:aspnetapp'
 var dealerName = 'ca-dealer-${environmentName}'
 var apiName = 'ca-api-${environmentName}'
@@ -92,8 +98,7 @@ module foundry 'modules/foundry.bicep' = {
     appInsightsName: monitoring.outputs.appInsightsName
     chatModelName: chatModelName
     chatModelVersion: chatModelVersion
-    planningModelName: planningModelName
-    planningModelVersion: planningModelVersion
+    planningModels: planningModels
     embeddingModelName: embeddingModelName
     embeddingModelVersion: embeddingModelVersion
   }
@@ -460,7 +465,7 @@ output FOUNDRY_PROJECT_ENDPOINT string = foundry.outputs.projectEndpoint
 output FOUNDRY_OPENAI_ENDPOINT string = foundry.outputs.openAiEndpoint
 output CHAT_DEPLOYMENT string = foundry.outputs.chatDeployment
 output CHAT_MODEL string = chatModelName
-output PLANNING_DEPLOYMENT string = foundry.outputs.planningDeployment
+output PLANNING_DEPLOYMENT string = planningModelName // a deployment is named after its model
 output PLANNING_MODEL string = planningModelName
 output FOUNDRY_PROJECT_NAME string = foundry.outputs.projectName
 output KB_CONNECTION_NAME string = kbConnection.outputs.name

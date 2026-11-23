@@ -29,4 +29,12 @@ grep -q "promptAgentCar: 'voltrieve-prompt-car'" main.bicep || { echo "main.bice
 for origin in "web.outputs.url" "car.outputs.url" "dashboard.outputs.url" "localhost:5173" "localhost:5174" "localhost:5175"; do
   grep "corsOrigins:" main.bicep | grep -q "$origin" || { echo "CORS lacks $origin"; exit 1; }
 done
+# search: one management version everywhere, and one value chooses the planning model
+if grep -rn "Microsoft.Search/searchServices@" modules/ | grep -v "@2026-11-01'"; then echo "another search management version"; exit 1; fi
+grep -q "^param planningModelName string = 'gpt-6-luna'$" main.bicep || { echo "planning model default changed"; exit 1; }
+grep -q '"planningModelName": { "value": "${PLANNING_MODEL_NAME=gpt-6-luna}" }' main.parameters.json || { echo "planning model is not one azd value"; exit 1; }
+if grep -q "planningModelVersion" main.bicep modules/foundry.bicep; then echo "going back must not need a version too"; exit 1; fi
+for model in "{ name: 'gpt-5.4-mini', version: '2026-03-17' }" "{ name: 'gpt-6-luna', version: '2026-09-22' }"; do
+  grep -qF "$model" main.bicep || { echo "main.bicep lacks planning deployment $model"; exit 1; }
+done
 echo "bicep ok"
