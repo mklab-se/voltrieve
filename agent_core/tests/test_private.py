@@ -112,6 +112,79 @@ def test_a_status_that_is_not_a_number_is_not_shown():
     assert text_of(odd).splitlines()[0] == "Odd"
 
 
+class Hostile(Exception):
+    """Both its statuses fail when they are read."""
+
+    @property
+    def status_code(self):
+        raise RuntimeError("SPARK status_code")
+
+    @property
+    def status(self):
+        raise ValueError("SPARK status")
+
+
+class HostileInt(int):
+    def __format__(self, spec):
+        raise RuntimeError("SPARK format")
+
+
+class HostileGroup(ExceptionGroup):
+    @property
+    def exceptions(self):
+        raise RuntimeError("SPARK exceptions")
+
+
+def test_one_broken_status_does_not_hide_the_other_or_the_frames():
+    class Half(Exception):
+        status = 503
+
+        @property
+        def status_code(self):
+            raise RuntimeError("SPARK")
+
+    def half():
+        raise Half
+
+    assert text_of(half).startswith("Half, HTTP status 503\n") and " in half" in text_of(half)
+
+
+def hostile():
+    raise Hostile
+
+
+def hostile_number():
+    error = ApiError()
+    error.status_code = HostileInt(400)
+    raise error
+
+
+def hostile_group():
+    raise HostileGroup("SPARK", [ValueError("SPARK")])
+
+
+@pytest.mark.parametrize("call", [hostile, hostile_number, hostile_group])
+def test_logging_a_private_failure_never_raises(caplog, call):
+    try:
+        call()
+    except Exception as exc:
+        name = type(exc).__name__
+        log_exception(logging.getLogger("x"), "It failed", private=True)
+    assert f"It failed: {name}" in caplog.text
+    assert "SPARK" not in caplog.text and not caplog.records[0].exc_info
+
+
+def test_logging_outside_an_error_does_not_raise(caplog):
+    log_exception(logging.getLogger("x"), "It failed", private=True)
+    assert "It failed" in caplog.text
+
+
+async def test_a_hostile_error_does_not_end_a_private_turn(user, events):
+    turn = TurnInput(user, "c", "t", "hi", private=True)
+    out = await run_turn(tool_rounds(), [failing_tool(Hostile())], turn, events)
+    assert out.status == "done"
+
+
 def test_log_exception_is_the_ordinary_one_outside_a_private_turn(caplog):
     for private in (False, True, None):
         try:

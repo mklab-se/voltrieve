@@ -9,10 +9,11 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError
 from voltrieve_agent.events import AgentEvent, format_event
+from voltrieve_agent.private import log_exception
 
 from app.attachments import Rejected
 from app.attachments.store import Stored, attachment_parts
-from app.attachments.upload import refuse
+from app.attachments.upload import INTERRUPTED, refuse
 from app.auth import AuthError, Claims
 from app.backends import BACKEND_NAMES
 from app.backends.base import BackendUnavailable
@@ -161,6 +162,8 @@ async def _store_upload(request: Request, oid: str) -> dict:
         except Rejected as exc:
             logger.info("Attachment rejected: kind %s, %d bytes, code %s", kind, len(upload.data), exc.code)
             return {"id": None, "kind": kind, "status": "rejected", "code": exc.code, "message": exc.message}
+        if await request.is_disconnected():
+            refuse(400, INTERRUPTED)  # nobody is there to get the id
         stored = state.attachments.put(oid, kind, parts)
     logger.info("Attachment ready: kind %s, %d bytes, %s", kind, stored.size, stored.detail)
     expires = dt.datetime.now(dt.UTC) + dt.timedelta(seconds=state.attachments.ttl)
@@ -249,15 +252,15 @@ def build_router() -> APIRouter:
     @router.post("/attachments")
     async def upload_attachment(request: Request, claims: Claims = Depends(authenticate)) -> JSONResponse:
         """An attachment for a later turn. One that is not good enough is an answer, not an error."""
-        failure = ""
+        failed = False
         try:
             answer = await _store_upload(request, claims.oid)
         except HTTPException:
             raise
-        except Exception as exc:
-            failure = type(exc).__name__  # its text may quote the attachment
-        if failure:  # outside the except block, so that nothing is chained to it
-            logger.error("Attachment failed: %s", failure)
+        except Exception:
+            failed = True
+            log_exception(logger, "Attachment failed", private=True)  # its text may quote the attachment
+        if failed:  # outside the except block, so that nothing is chained to it
             refuse(500, "The attachment could not be processed.")
         return JSONResponse(answer, 201)
 

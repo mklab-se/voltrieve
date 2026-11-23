@@ -390,7 +390,9 @@ class TurnService:
                 annotate_span(conversation_id=conversation_id)
                 await run.emit(trace("conversation_created", "api", conversation_id))
 
-            if not job.unstored:  # the input of an unstored turn may be about the attachment
+            # The input of an unstored turn may be about the attachment, and the tool results of a
+            # private one may say what the client told about itself.
+            if not job.unstored and not (job.private and isinstance(job.input, list)):
                 debug_payload(logger, "turn input", job.input)
             for used in job.attachments:
                 await run.emit(trace("attachment_used", "api", **used))

@@ -209,6 +209,19 @@ async def test_a_continuation_of_a_turn_with_context_is_as_quiet(client, auth, b
     assert "Turn failed: RuntimeError" in caplog.text
 
 
+@pytest.mark.parametrize("context", [CONTEXT, None])
+async def test_tool_results_are_in_the_debug_log_of_an_ordinary_turn_only(client, auth, backend, caplog, context):
+    backend.script = [pause(), answer()]
+    with caplog.at_level(logging.DEBUG):
+        r = await client.post("/chat", headers=auth, json={"message": "hello there", "context": context})
+        body = results_of(parse_sse(r.text)[-1][1], output="registration SPARK")
+        r = await client.post("/chat/tool-results", headers=auth, json=body)
+    assert parse_sse(r.text)[-1][0] == "done"
+    assert "registration SPARK" in str(backend.contexts[1].input)
+    assert "turn input: hello there" in caplog.text
+    assert ("SPARK" in logged(caplog)) is (context is None)
+
+
 async def test_a_turn_without_context_logs_as_before(client, auth, backend, caplog):
     backend.script = [leaky_failure]
     with caplog.at_level(logging.DEBUG):
@@ -270,11 +283,11 @@ async def test_the_in_process_loop_is_private_for_a_turn_with_context(app, clien
     assert "bad request: hi" in caplog.text
 
 
-def results_of(waiting):
+def results_of(waiting, output="x"):
     return {
         "conversation_id": waiting["conversation_id"],
         "turn_id": waiting["turn_id"],
-        "results": [{"call_id": "call_1", "output": "x"}],
+        "results": [{"call_id": "call_1", "output": output}],
     }
 
 

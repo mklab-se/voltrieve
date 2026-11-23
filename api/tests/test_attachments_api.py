@@ -375,7 +375,8 @@ async def test_a_handler_that_fails_gives_a_generic_500_logged_by_type(app, clie
     with caplog.at_level(logging.DEBUG):
         r = await upload(client, auth, b"NOTE secret", "front camera")
     assert r.status_code == 500 and r.json() == {"detail": "The attachment could not be processed."}
-    assert "RuntimeError" in caplog.text
+    assert "Attachment failed: RuntimeError" in caplog.text
+    assert "test_attachments_api.py" in caplog.text and "in fail" in caplog.text  # the frames
     text = logged(caplog) + r.text
     assert "secret" not in text and "front camera" not in text and "Traceback" not in text
     note.run = None
@@ -619,6 +620,24 @@ async def test_a_client_that_left_while_waiting_is_not_processed(app, client, us
     await gone
     assert processed == [] and len(app.state.attachments) == 1
     assert not [r for r in caplog.records if r.levelno >= logging.ERROR]
+
+
+async def test_a_client_that_left_during_the_processing_stores_nothing(app, user, note, caplog):
+    left = threading.Event()
+    note.run = lambda data, label: left.set()
+    messages = [{"type": "http.request", "body": form(("file", "n", b"NOTE"))["content"], "more_body": False}]
+
+    async def receive():
+        if messages:
+            return messages.pop(0)
+        if not left.is_set():
+            await asyncio.sleep(10)  # still there, with nothing more to say
+        return {"type": "http.disconnect"}
+
+    await app(asgi_scope(user("a")), receive, ignore)
+    assert left.is_set() and len(app.state.attachments) == 0
+    assert dict(app.state.uploads.places) == {}
+    assert not [r for r in caplog.records if r.levelno >= logging.ERROR or "ready" in r.getMessage()]
 
 
 async def test_every_answer_says_no_store(app, client, auth, jpeg, blurry, note, make_token):
