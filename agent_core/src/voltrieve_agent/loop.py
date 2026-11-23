@@ -4,6 +4,9 @@ The loop never emits `done`: hosts do, because only they know the backend. On st
 "failed" the loop has already emitted an `error` event. The turn's correlation id (the turn
 id when the host gives none) is sent to the dealer service as X-Correlation-Id, so it should
 match `^[A-Za-z0-9._-]{1,64}$`; the dealer replaces any other value.
+
+A turn with an attachment is unstored (see `unstored`): no model call of it leaves anything in the
+conversation, and only text is recorded when it is done. A turn that fails records nothing.
 """
 
 import asyncio
@@ -32,6 +35,7 @@ from voltrieve_agent.model import (
     McpCall,
     McpStarted,
     ModelClient,
+    OutputItem,
     Retrying,
     TextDelta,
     merge_usage,
@@ -44,6 +48,7 @@ from voltrieve_agent.tools import (
     UserContext,
     current_correlation_id,
 )
+from voltrieve_agent.unstored import Unstored, assistant_item
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +68,10 @@ class TurnInput:
     input: str | list[dict]
     client_tools: list[ClientTool] = field(default_factory=list)
     correlation_id: str | None = None
+    # The content parts of an attachment, and what an unstored turn kept when it paused. Neither
+    # may be logged or traced.
+    parts: list[dict] = field(default_factory=list, repr=False)
+    kept: dict | None = field(default=None, repr=False)
 
 
 @dataclass
@@ -71,23 +80,30 @@ class TurnOutcome:
     pending_outputs: list[dict] = field(default_factory=list)
     usage: dict = field(default_factory=dict)
     client_call_ids: list[str] = field(default_factory=list)
+    kept: dict | None = field(default=None, repr=False)  # for TurnInput.kept, when paused
+    unrecorded: bool = False  # the answer was given but could not be recorded
 
 
 def _output_item(call_id: str, output: str) -> dict:
     return {"type": "function_call_output", "call_id": call_id, "output": output}
 
 
-def _assistant_item(text: str) -> dict:
-    return {
-        "type": "message",
-        "role": "assistant",
-        "content": [{"type": "output_text", "text": text}],
-    }
-
-
 async def _fail(emit: Emit, code: str, usage: dict) -> TurnOutcome:
     await emit(AgentEvent("error", {"code": code, "message": FAILURE_MESSAGES[code]}))
     return TurnOutcome("failed", [], usage)
+
+
+async def _record(model, turn, unstored, usage, emit, approved="") -> TurnOutcome:
+    """End an unstored turn. The user has the answer by now, so a failure is not theirs to see."""
+    items = unstored.record_items(approved)
+    if items:
+        try:
+            await model.record(turn.conversation_id, items)
+        except Exception as exc:
+            logger.error("Could not record an unstored turn: %s", type(exc).__name__)
+            await emit(trace("record_failed", "model"))
+            return TurnOutcome("done", [], usage, unrecorded=True)
+    return TurnOutcome("done", [], usage)
 
 
 async def _run_server_tool(toolset, call, user, emit, iteration) -> tuple[str, int]:
@@ -167,6 +183,8 @@ async def _run(model, server_tools, turn, emit, max_iterations) -> TurnOutcome:
     toolset = ToolSet(server_tools, turn.client_tools)
     definitions = toolset.definitions()
     usage: dict = {}
+    unstored = Unstored.begin(turn.input, turn.parts, turn.kept)
+    storing = {} if unstored is None else {"store": False}
     next_input: str | list[dict] = turn.input
 
     for iteration in range(max_iterations):
@@ -174,6 +192,7 @@ async def _run(model, server_tools, turn, emit, max_iterations) -> TurnOutcome:
         if iteration > 0:
             await emit(status(REVIEWING))
         calls: list[FunctionCall] = []
+        output_items: list[dict] = []
         text_deltas = 0
         failed: Failed | None = None
         stream_error = False
@@ -182,8 +201,9 @@ async def _run(model, server_tools, turn, emit, max_iterations) -> TurnOutcome:
             model.stream(
                 instructions=AGENT_INSTRUCTIONS,
                 conversation=turn.conversation_id,
-                input=next_input,
+                input=next_input if unstored is None else list(unstored.items),
                 tools=definitions,
+                **storing,
             )
         ) as stream:
             items = aiter(stream)
@@ -192,15 +212,22 @@ async def _run(model, server_tools, turn, emit, max_iterations) -> TurnOutcome:
                     item = await anext(items)
                 except StopAsyncIteration:
                     break
-                except Exception:
-                    logger.exception("Model stream failed")
+                except Exception as exc:
+                    if unstored is None:
+                        logger.exception("Model stream failed")
+                    else:  # the error text may quote the input
+                        logger.error("Unstored model stream failed: %s", type(exc).__name__)
                     stream_error = True
                     break
                 if isinstance(item, TextDelta):
                     text_deltas += 1
+                    if unstored is not None:
+                        unstored.text += item.text
                     await emit(AgentEvent("delta", {"text": item.text}))
                 elif isinstance(item, FunctionCall):
                     calls.append(item)
+                elif isinstance(item, OutputItem):
+                    output_items.append(item.raw)
                 elif isinstance(item, McpStarted):
                     await emit(status(KB_STATUSES.get(item.server, WORKING)))
                 elif isinstance(item, Retrying):
@@ -227,7 +254,8 @@ async def _run(model, server_tools, turn, emit, max_iterations) -> TurnOutcome:
         if stream_error:
             return await _fail(emit, "model_error", usage)
         if failed is not None:
-            logger.warning("Model reported %s: %s", failed.code, failed.message)
+            message = failed.message if unstored is None else "(not logged)"
+            logger.warning("Model reported %s: %s", failed.code, message)
             code = failed.code if failed.code in FAILURE_MESSAGES else "model_error"
             return await _fail(emit, code, usage)
 
@@ -241,6 +269,8 @@ async def _run(model, server_tools, turn, emit, max_iterations) -> TurnOutcome:
             )
         )
         if not calls:
+            if unstored is not None:
+                return await _record(model, turn, unstored, usage, emit)
             return TurnOutcome("done", [], usage)
 
         outputs_by_call: dict[str, dict] = {}
@@ -269,21 +299,27 @@ async def _run(model, server_tools, turn, emit, max_iterations) -> TurnOutcome:
             # to the model like any output. The prompt agent has called it on the way to a job
             # question, and a repair question must not end with a phone number.
             answer = str(results[calls[0].call_id])
-            try:
-                await model.record(
-                    turn.conversation_id,
-                    [_output_item(calls[0].call_id, answer), _assistant_item(answer)],
-                )
-            except Exception:
-                logger.exception("Could not record the final answer")
-                return await _fail(emit, "model_error", usage)
+            if unstored is None:
+                try:
+                    await model.record(
+                        turn.conversation_id,
+                        [_output_item(calls[0].call_id, answer), assistant_item(answer)],
+                    )
+                except Exception:
+                    logger.exception("Could not record the final answer")
+                    return await _fail(emit, "model_error", usage)
             await emit(trace("final_answer_sent", "tools", calls[0].name, tool=calls[0].name))
             await emit(AgentEvent("delta", {"text": answer}))
+            if unstored is not None:
+                # The call was not stored, so there is no call to give an output to.
+                return await _record(model, turn, unstored, usage, emit, approved=answer)
             return TurnOutcome("done", [], usage)
         for call_id, output in results.items():
             outputs_by_call[call_id] = _output_item(call_id, output)
         # The model reads the outputs in the order it made the calls, whichever finished first.
         outputs = [outputs_by_call[c.call_id] for c in calls if c.call_id in outputs_by_call]
+        if unstored is not None:
+            unstored.items += [*output_items, *outputs]
 
         if client_calls:
             for c in client_calls:
@@ -303,9 +339,13 @@ async def _run(model, server_tools, turn, emit, max_iterations) -> TurnOutcome:
                     },
                 )
             )
-            return TurnOutcome("paused", outputs, usage, [c.call_id for c in client_calls])
+            call_ids = [c.call_id for c in client_calls]
+            if unstored is not None:
+                # The outputs are in the kept items. The conversation has no call they answer.
+                return TurnOutcome("paused", [], usage, call_ids, kept=unstored.to_dict())
+            return TurnOutcome("paused", outputs, usage, call_ids)
 
-        if iteration == max_iterations - 1:
+        if iteration == max_iterations - 1 and unstored is None:
             # Give every function_call in the conversation an output, without offering tools.
             try:
                 async with aclosing(

@@ -12,6 +12,7 @@ import openai
 REASONING_EFFORT = "medium"
 RATE_LIMIT_RETRIES = 3
 RATE_LIMIT_DELAY_SECONDS = 20.0
+RECORD_LIMIT = 20  # the most items a conversation takes in one request
 
 
 @dataclass
@@ -61,6 +62,13 @@ class Completed:
     usage: dict = field(default_factory=dict)
 
 
+@dataclass
+class OutputItem:
+    """A finished output item of an unstored call, as it is sent back on the next one."""
+
+    raw: dict = field(repr=False)
+
+
 def merge_usage(total: dict, more: dict) -> dict:
     """Sum two usage dicts, descending into nested ones (token detail breakdowns)."""
     merged = dict(total)
@@ -72,12 +80,20 @@ def merge_usage(total: dict, more: dict) -> dict:
     return merged
 
 
-StreamItem = TextDelta | FunctionCall | McpCall | McpStarted | Retrying | Completed | Failed
+StreamItem = (
+    TextDelta | FunctionCall | McpCall | McpStarted | OutputItem | Retrying | Completed | Failed
+)
 
 
 class ModelClient(Protocol):
     def stream(
-        self, *, instructions: str, conversation: str, input: str | list[dict], tools: list[dict]
+        self,
+        *,
+        instructions: str,
+        conversation: str,
+        input: str | list[dict],
+        tools: list[dict],
+        store: bool = True,
     ) -> AsyncIterator[StreamItem]: ...
 
     async def record(self, conversation: str, items: list[dict]) -> None: ...
@@ -106,13 +122,23 @@ class ResponsesModelClient:
         self._sleep = sleep
 
     async def stream(
-        self, *, instructions: str, conversation: str, input: str | list[dict], tools: list[dict]
+        self,
+        *,
+        instructions: str,
+        conversation: str,
+        input: str | list[dict],
+        tools: list[dict],
+        store: bool = True,
     ) -> AsyncIterator[StreamItem]:
-        """Retries a rate limited call, which Foundry reports mid-stream, until output has started."""
+        """Retries a rate limited call, which Foundry reports mid-stream, until output has started.
+
+        With `store` False the call reads the conversation and leaves nothing in it."""
         for attempt in range(RATE_LIMIT_RETRIES + 1):
             started = False
             try:
-                async for item in self._stream_once(instructions, conversation, input, tools):
+                async for item in self._stream_once(
+                    instructions, conversation, input, tools, store
+                ):
                     started = True
                     yield item
                 return
@@ -125,17 +151,28 @@ class ResponsesModelClient:
 
     async def record(self, conversation: str, items: list[dict]) -> None:
         """Add items to the conversation without calling the model, so it costs no tokens."""
-        await self._client.conversations.items.create(conversation, items=items)
+        for start in range(0, len(items), RECORD_LIMIT):
+            await self._client.conversations.items.create(
+                conversation, items=items[start : start + RECORD_LIMIT]
+            )
 
     async def _stream_once(
-        self, instructions: str, conversation: str, input: str | list[dict], tools: list[dict]
+        self,
+        instructions: str,
+        conversation: str,
+        input: str | list[dict],
+        tools: list[dict],
+        store: bool,
     ) -> AsyncIterator[StreamItem]:
+        # Reasoning can only be sent back on the next call when it comes with its content.
+        options = {} if store else {"store": False, "include": ["reasoning.encrypted_content"]}
         if self._agent_name is not None:
             events = await self._client.responses.create(
                 conversation=conversation,
                 input=input,
                 extra_body={"agent_reference": {"name": self._agent_name, "type": "agent_reference"}},
                 stream=True,
+                **options,
             )
         else:
             events = await self._client.responses.create(
@@ -147,9 +184,11 @@ class ResponsesModelClient:
                 parallel_tool_calls=True,  # one response may ask for several tools at once
                 reasoning={"effort": REASONING_EFFORT},
                 stream=True,
+                **options,
             )
         began = time.perf_counter()
         mcp_started: dict[str, int] = {}
+        finished: list[tuple[int, dict]] = []
 
         def elapsed_ms() -> int:
             return round((time.perf_counter() - began) * 1000)
@@ -166,6 +205,12 @@ class ResponsesModelClient:
                     item.finished_ms = elapsed_ms()
                 if item is not None:
                     yield item
+                if not store and event.type == "response.output_item.done":
+                    finished.append((event.output_index, event.item.model_dump(exclude_none=True)))
+        # Last, so they do not count as output that stops a retry, and in the model's own order:
+        # calls that run at the same time finish in any order.
+        for _, raw in sorted(finished, key=lambda item: item[0]):
+            yield OutputItem(raw)
 
 
 def _map_event(event) -> StreamItem | None:
