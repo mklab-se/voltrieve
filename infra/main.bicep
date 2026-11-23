@@ -11,6 +11,13 @@ param location string = 'swedencentral'
 @description('Region for Azure AI Search. Sweden Central and West Europe cannot create new search services.')
 param searchLocation string = 'francecentral'
 
+@description('A Serverless search service next to the Basic one (SEARCH_SERVERLESS). off: not deployed. standby: deployed, nothing uses it. active: SEARCH_ENDPOINT points at it. The Basic service stays in all three. A deployed service is not deleted by going back to off.')
+@allowed(['off', 'standby', 'active'])
+param serverlessSearch string = 'off'
+
+@description('Region for the Serverless search service.')
+param serverlessSearchLocation string = 'swedencentral'
+
 @description('Object id of the deployer (AZURE_PRINCIPAL_ID), granted data-plane roles.')
 param principalId string
 
@@ -42,6 +49,9 @@ var planningModels = [
   { name: 'gpt-5.4-mini', version: '2026-03-17' }
   { name: 'gpt-6-luna', version: '2026-09-22' }
 ]
+var deployServerless = serverlessSearch != 'off'
+var serverlessActive = serverlessSearch == 'active'
+var searchEndpoint = serverlessActive ? searchServerless!.outputs.endpoint : search.outputs.endpoint
 var placeholderImage = 'mcr.microsoft.com/dotnet/samples:aspnetapp'
 var dealerName = 'ca-dealer-${environmentName}'
 var apiName = 'ca-api-${environmentName}'
@@ -110,6 +120,32 @@ module search 'modules/search.bicep' = {
     name: 'srch-voltrieve-${token}'
     location: searchLocation
     tags: tags
+  }
+}
+
+module searchServerless 'modules/search-serverless.bicep' = if (deployServerless) {
+  name: 'search-serverless'
+  scope: rg
+  params: {
+    name: 'srch-voltrieve-sl-${token}'
+    location: serverlessSearchLocation
+    tags: tags
+  }
+}
+
+module searchServerlessRoles 'modules/search-serverless-roles.bicep' = if (deployServerless) {
+  name: 'search-serverless-roles'
+  scope: rg
+  params: {
+    searchName: searchServerless!.outputs.name
+    searchPrincipalId: searchServerless!.outputs.principalId
+    storageName: storage.outputs.name
+    foundryName: foundry.outputs.name
+    readerPrincipalIds: concat(
+      [apiApp.outputs.principalId, foundry.outputs.projectPrincipalId],
+      empty(hostedAgentPrincipalId) ? [] : [hostedAgentPrincipalId]
+    )
+    deployerPrincipalId: principalId
   }
 }
 
@@ -240,7 +276,7 @@ module apiApp 'modules/api-app.bicep' = {
     dealerClientId: dealerClientId
     foundryProjectEndpoint: foundry.outputs.projectEndpoint
     chatDeployment: foundry.outputs.chatDeployment
-    searchEndpoint: search.outputs.endpoint
+    searchEndpoint: searchEndpoint
     promptAgentCli: 'voltrieve-prompt-cli'
     promptAgentWeb: 'voltrieve-prompt-web'
     promptAgentCar: 'voltrieve-prompt-car'
@@ -389,7 +425,7 @@ module kbConnection 'modules/foundry-kb-connection.bicep' = {
   params: {
     accountName: foundry.outputs.name
     projectName: foundry.outputs.projectName
-    searchEndpoint: search.outputs.endpoint
+    searchEndpoint: searchEndpoint
     knowledgeBaseName: 'voltrieve-kb'
   }
 }
@@ -399,7 +435,7 @@ module partsKbConnection 'modules/foundry-kb-connection.bicep' = {
   params: {
     accountName: foundry.outputs.name
     projectName: foundry.outputs.projectName
-    searchEndpoint: search.outputs.endpoint
+    searchEndpoint: searchEndpoint
     knowledgeBaseName: 'voltrieve-parts-kb'
     connectionName: 'voltrieve-parts-kb-mcp'
   }
@@ -472,8 +508,10 @@ output KB_CONNECTION_NAME string = kbConnection.outputs.name
 output PARTS_KB_CONNECTION_NAME string = partsKbConnection.outputs.name
 output EMBEDDING_DEPLOYMENT string = foundry.outputs.embeddingDeployment
 output EMBEDDING_MODEL string = embeddingModelName
-output SEARCH_ENDPOINT string = search.outputs.endpoint
-output SEARCH_SERVICE_NAME string = search.outputs.name
+output SEARCH_ENDPOINT string = searchEndpoint
+output SEARCH_SERVICE_NAME string = serverlessActive ? searchServerless!.outputs.name : search.outputs.name
+output SEARCH_BASIC_ENDPOINT string = search.outputs.endpoint
+output SEARCH_SERVERLESS_ENDPOINT string = deployServerless ? searchServerless!.outputs.endpoint : ''
 output STORAGE_ACCOUNT_NAME string = storage.outputs.name
 output STORAGE_RESOURCE_ID string = storage.outputs.id
 output DOCS_CONTAINER string = storage.outputs.docsContainer

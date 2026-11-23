@@ -6,6 +6,7 @@
     "location": { "value": "${AZURE_LOCATION}" },
     "searchLocation": { "value": "${AZURE_SEARCH_LOCATION=francecentral}" },
     "planningModelName": { "value": "${PLANNING_MODEL_NAME=gpt-6-luna}" },
+    "serverlessSearch": { "value": "${SEARCH_SERVERLESS=off}" },
     "principalId": { "value": "${AZURE_PRINCIPAL_ID}" },
     "tenantId": { "value": "${TENANT_ID}" },
     "dealerExists": { "value": "${SERVICE_DEALER_RESOURCE_EXISTS=false}" },
