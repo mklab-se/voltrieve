@@ -1,3 +1,4 @@
+// Copied to clients/car, which has its own error texts; keep the rest alike.
 import { parseServerEvent } from "./events";
 import { createSseParser } from "./sse";
 import { CLIENT_TOOLS } from "./tools";
@@ -66,11 +67,11 @@ export function buildToolResultsRequest(input: ToolResultsInput): { url: string;
   });
 }
 
-/** An HTTP error as an event. It keeps the API's own code, when there is one. */
+/** An HTTP error as an event, with a text for the timeline. It keeps the API's own code, when there is one. */
 export function httpError(status: number, code?: string): ServerEvent {
   const message =
     code === "unknown_attachment"
-      ? "The photo is no longer available. Attach it again, or remove it and ask without it."
+      ? "The API no longer has the photo."
       : status === 401
         ? "The API rejected the access token (401). Try signing in again."
         : status === 403

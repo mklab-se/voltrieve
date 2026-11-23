@@ -11,12 +11,10 @@ import { UnderTheHood, readUnderTheHood, rememberUnderTheHood } from "./componen
 import { readConfig, type AppConfig } from "./config";
 import { webContext } from "./garage";
 import { runClientTool, type Theme } from "./tools";
+import { runTurn } from "./turn";
 import { chatReducer, initialChatState } from "./turns";
-import type { Backend, ClientToolCall, SourceItem } from "./types";
+import type { Backend, SourceItem } from "./types";
 import { usePhoto } from "./usePhoto";
-
-// A client tool result can lead to another tool call, but not forever.
-const MAX_TOOL_ROUNDS = 5;
 
 function initialTheme(): Theme {
   const set = document.documentElement.dataset.theme;
@@ -89,7 +87,7 @@ export function Workspace({ config, auth, session }: { config: AppConfig; auth: 
     }
   }, []);
 
-  const { upload } = photo;
+  const { upload, lost } = photo;
   const attached = photo.attached.photo;
   const send = useCallback(
     async (message: string) => {
@@ -109,37 +107,16 @@ export function Workspace({ config, auth, session }: { config: AppConfig; auth: 
           correlationId,
           context: webContext(new Date()),
         };
-        let events = withPhoto(attached, (attachments) => streamChat({ ...request, attachments }, ctrl.signal), upload);
-        for (let round = 0; round <= MAX_TOOL_ROUNDS; round += 1) {
-          let paused: { turnId: string; conversationId: string; calls: ClientToolCall[] } | undefined;
-          for await (const event of events) {
-            dispatch({ type: "event", event });
-            if (event.type === "client_tool_calls" && event.data.turn_id && event.data.conversation_id) {
-              paused = {
-                turnId: event.data.turn_id,
-                conversationId: event.data.conversation_id,
-                calls: event.data.calls,
-              };
-            }
-          }
-          if (!paused) break;
-          const results = paused.calls.map((call) => ({
-            call_id: call.call_id,
-            output: runClientTool(call, { setTheme: applyTheme }),
-          }));
-          events = streamToolResults(
-            {
-              apiUrl: config.apiUrl,
-              token: await auth.getToken(),
-              backend,
-              conversationId: paused.conversationId,
-              turnId: paused.turnId,
-              correlationId,
-              results,
-            },
-            ctrl.signal,
-          );
-        }
+        const ask = (attachments: string[]) => streamChat({ ...request, attachments }, ctrl.signal);
+        await runTurn(withPhoto(attached, ask, upload, lost), {
+          emit: (event) => dispatch({ type: "event", event }),
+          runTool: (call) => runClientTool(call, { setTheme: applyTheme }),
+          resume: async ({ conversationId, turnId }, results) =>
+            streamToolResults(
+              { apiUrl: config.apiUrl, token: await auth.getToken(), backend, conversationId, turnId, correlationId, results },
+              ctrl.signal,
+            ),
+        });
       } catch (e) {
         if (e instanceof PhotoNotSent) dispatch({ type: "withdraw" }); // the notice beside the field says why
         else
@@ -151,15 +128,16 @@ export function Workspace({ config, auth, session }: { config: AppConfig; auth: 
         setBusy(false);
       }
     },
-    [applyTheme, attached, auth, backend, config.apiUrl, upload],
+    [applyTheme, attached, auth, backend, config.apiUrl, lost, upload],
   );
 
   function openDocument(source: SourceItem) {
     if (!source.link) return;
     const link = source.link;
     setSourceError(undefined);
-    openSource(async () => fetchSourceUrl(config.apiUrl, await auth.getToken(), link)).catch((e: unknown) =>
-      setSourceError(e instanceof Error ? e.message : "The document could not be opened."),
+    const getToken = () => auth.getToken().catch(() => Promise.reject(new Error("You could not be signed in. Try again.")));
+    openSource(async () => fetchSourceUrl(config.apiUrl, await getToken(), link)).catch((e: unknown) =>
+      setSourceError(e instanceof Error ? e.message : "The document could not be opened. Try again."),
     );
   }
 
@@ -172,6 +150,7 @@ export function Workspace({ config, auth, session }: { config: AppConfig; auth: 
   function newChat() {
     dispatch({ type: "reset" });
     photo.reset();
+    setSourceError(undefined);
   }
 
   function toggleTheme() {

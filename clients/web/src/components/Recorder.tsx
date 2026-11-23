@@ -1,3 +1,4 @@
+// Copied to clients/car; keep the two alike.
 import { useEffect, useRef } from "react";
 import { componentFamily, formatElapsed } from "../format";
 import type { ChatState, Turn } from "../turns";

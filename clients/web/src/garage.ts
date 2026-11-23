@@ -3,7 +3,7 @@ import type { ClientContext } from "./types";
 /** The customer's car: made up, and the same one as in the car client. */
 export interface Car {
   model: "Voltrieve Spark";
-  trim: "Prime";
+  trim: "Plus";
   drive: "RWD";
   model_year: 2026;
   registration: "SPARK";
@@ -14,7 +14,7 @@ export interface Car {
 
 export const MY_CAR: Car = {
   model: "Voltrieve Spark",
-  trim: "Prime",
+  trim: "Plus",
   drive: "RWD",
   model_year: 2026,
   registration: "SPARK",

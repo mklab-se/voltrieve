@@ -1,3 +1,4 @@
+// Copied to clients/car; keep the two alike.
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { linkCitations, sourceFromHref } from "../sources";

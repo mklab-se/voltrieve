@@ -1,3 +1,5 @@
+// Copied to clients/car, without photos; keep the rest alike.
+import { customerText } from "./errors";
 import type { Backend, ServerEvent, SourceItem } from "./types";
 
 export type TimelineEntry =
@@ -18,6 +20,7 @@ export interface Turn {
   activity?: string;
   entries: TimelineEntry[];
   status: "streaming" | "done" | "error";
+  /** What the customer reads. What the API said is in the entries. */
   error?: string;
   /** Documents the answer used, and documents to read more. */
   sources?: SourceItem[];
@@ -50,7 +53,7 @@ function updateLast(state: ChatState, fn: (t: Turn) => Turn): ChatState {
 }
 
 function fail(t: Turn, code: string, message: string): Turn {
-  return { ...t, status: "error", error: message, entries: [...t.entries, { kind: "error", code, message }] };
+  return { ...t, status: "error", error: customerText(code), entries: [...t.entries, { kind: "error", code, message }] };
 }
 
 export function chatReducer(state: ChatState, action: ChatAction): ChatState {

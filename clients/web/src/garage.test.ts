@@ -21,7 +21,7 @@ describe("the context", () => {
     expect(JSON.parse(init.body as string).context).toEqual({
       car: {
         model: "Voltrieve Spark",
-        trim: "Prime",
+        trim: "Plus",
         drive: "RWD",
         model_year: 2026,
         registration: "SPARK",
@@ -62,6 +62,8 @@ describe("the car in the catalog", () => {
   it("has the trim, the drive and the color", () => {
     expect(spark).toMatch(new RegExp(`^ {6}- name: ${MY_CAR.trim}$`, "m"));
     expect(spark).toMatch(new RegExp(`^ {4}drive: \\[.*\\b${MY_CAR.drive}\\b.*\\]$`, "m"));
+    // The picture has white wheel covers.
+    expect(spark).toMatch(new RegExp(`^ {6}- name: ${MY_CAR.trim}$(?:\\n {8}.*)*?\\n {8}wheel: pebble_white$`, "m"));
     const color = spark.match(new RegExp(`^ {6}- \\{ key: \\w+, name: ${MY_CAR.color}, .*hex: "(#\\w+)"`, "m"));
     expect(color?.[1]).toBeDefined();
     expect(renderToStaticMarkup(createElement(MyCar, { owner: "Dev" }))).toContain(`background:${color![1]}`);
@@ -83,11 +85,12 @@ describe("the card", () => {
   it("shows the owner, the picture and the facts", () => {
     expect(html).toContain("Dev Tester");
     expect(html).toMatch(/<img[^>]*src="\/spark\.webp"/);
+    expect(html).toMatch(/<img[^>]*width="1200" height="800"/);
     expect(html).toContain("Voltrieve Spark");
     expect(facts).toEqual([
       ["Registration", "SPARK"],
       ["Model year", "2026"],
-      ["Trim", "Prime, RWD"],
+      ["Trim", "Plus, RWD"],
       ["Color", "Saffron"],
       ["Odometer", "12,400 km"],
       ["Next service", "March 2028 or 30,000 km"],

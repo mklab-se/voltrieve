@@ -1,3 +1,4 @@
+// Copied to clients/car; keep the two alike.
 import { describe, expect, it, vi } from "vitest";
 import { parseServerEvent } from "./events";
 import { fetchSourceUrl, linkCitations, openSource, sourceFromHref } from "./sources";
@@ -113,6 +114,15 @@ describe("opening a source", () => {
   it("says why when the API refuses", async () => {
     const fetchMock = vi.fn(async () => new Response("", { status: 403 }));
     await expect(fetchSourceUrl("https://api.example", "tok", BROCHURE.link!, fetchMock)).rejects.toThrow(/cannot be opened/);
+  });
+
+  it.each([
+    ["a lost connection", async () => Promise.reject(new TypeError("Failed to fetch"))],
+    ["a server error", async () => new Response("", { status: 500 })],
+    ["a link it does not know", async () => Response.json({ url: "https://evil.example/a.pdf" })],
+  ])("tells a customer about %s in plain words", async (_, answer) => {
+    const link = fetchSourceUrl("https://api.example", "tok", BROCHURE.link!, answer as typeof fetch);
+    await expect(link).rejects.toThrow("The document could not be opened. Try again.");
   });
 
   it("opens the window at once and points it at the document when the link arrives", async () => {

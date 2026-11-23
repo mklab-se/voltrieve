@@ -1,3 +1,4 @@
+// Copied to clients/car; keep the two alike.
 import { describe, expect, it } from "vitest";
 import { chatReducer, initialChatState, type ChatState } from "./turns";
 import type { ServerEvent } from "./types";
@@ -56,6 +57,6 @@ describe("chatReducer", () => {
 
   it("marks the turn failed on an error event", () => {
     const s = run([{ type: "error", data: { code: "boom", message: "bad" } }]);
-    expect(s.turns[0]).toMatchObject({ status: "error", error: "bad" });
+    expect(s.turns[0]).toMatchObject({ status: "error", entries: [{ kind: "error", code: "boom", message: "bad" }] });
   });
 });

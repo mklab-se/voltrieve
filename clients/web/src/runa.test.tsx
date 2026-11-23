@@ -1,3 +1,4 @@
+// Copied to clients/car; keep the two alike.
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { Chat } from "./components/Chat";
@@ -38,6 +39,17 @@ describe("Runa in the chat", () => {
     const state = chatReducer(initialChatState, { type: "start", message: "Hi", backend: "loop", correlationId: "c" });
     expect(render(state).match(/Ask Runa about your car<\/h2>/g)).toHaveLength(1);
     expect(render(initialChatState).match(/Ask Runa about your car<\/h2>/g)).toHaveLength(1);
+  });
+
+  it("is not called she or he", () => {
+    const html = render(initialChatState);
+    expect(html).toContain("Runa looks it up in the Voltrieve documents.");
+    expect(html).not.toMatch(/\b(she|he|her|his|him)\b/i);
+  });
+
+  it("is what works while there is no status yet", () => {
+    const state = chatReducer(initialChatState, { type: "start", message: "Hi", backend: "loop", correlationId: "c" });
+    expect(render(state)).toContain('aria-label="Runa is working"');
   });
 
   it("says that Runa is an AI", () => {

@@ -56,7 +56,7 @@ const REFUSED: Record<number, UploadResult> = {
   503: { status: "error", message: "The service is busy with other photos. Wait a moment and try again." },
 };
 
-const failed = (why = ""): UploadResult => ({ status: "error", message: `The photo could not be uploaded${why}. Try again.` });
+const FAILED: UploadResult = { status: "error", message: "The photo could not be uploaded. Try again." };
 
 /** POST /attachments. Never throws. */
 export async function uploadPhoto(input: UploadInput, fetchImpl: typeof fetch = fetch): Promise<UploadResult> {
@@ -73,7 +73,7 @@ export async function uploadPhoto(input: UploadInput, fetchImpl: typeof fetch = 
   } catch {
     return { status: "error", message: "The photo could not be uploaded. Check your connection and try again." };
   }
-  if (!res.ok) return REFUSED[res.status] ?? failed(` (${res.status})`);
+  if (!res.ok) return REFUSED[res.status] ?? FAILED;
   try {
     const body = (await res.json()) as { status?: unknown; id?: unknown; message?: unknown };
     if (body.status === "ready" && typeof body.id === "string" && body.id) return { status: "ready", id: body.id };
@@ -81,7 +81,7 @@ export async function uploadPhoto(input: UploadInput, fetchImpl: typeof fetch = 
   } catch {
     /* not JSON */
   }
-  return failed();
+  return FAILED;
 }
 
 /** The photo beside the text field. It stays until the customer removes it or it is refused. */
@@ -91,6 +91,8 @@ export interface AttachedPhoto {
   status: "preparing" | "uploading" | "ready" | "failed";
   blob?: Blob;
   id?: string;
+  /** What to know about how it was chosen. */
+  note?: string;
 }
 
 export interface Attached {
@@ -100,9 +102,11 @@ export interface Attached {
 }
 
 export type AttachedAction =
-  | { type: "chosen"; key: number }
+  | { type: "chosen"; key: number; note?: string }
   | { type: "uploading"; key: number; blob: Blob }
   | { type: "uploaded"; key: number; result: UploadResult }
+  /** The API has lost it, also after a new upload. */
+  | { type: "lost"; key: number }
   | { type: "remove" }
   | { type: "reset" };
 
@@ -112,15 +116,17 @@ export function attachedReducer(state: Attached, action: AttachedAction): Attach
     case "reset":
       return {};
     case "chosen":
-      return { photo: { key: action.key, status: "preparing" } };
+      return { photo: { key: action.key, status: "preparing", ...(action.note && { note: action.note }) } };
   }
   const { photo } = state;
   if (photo?.key !== action.key) return state;
-  if (action.type === "uploading") return { photo: { key: photo.key, status: "uploading", blob: action.blob } };
+  const { id: _, ...kept } = photo;
+  if (action.type === "uploading") return { photo: { ...kept, status: "uploading", blob: action.blob } };
+  if (action.type === "lost") return { photo: { ...kept, status: "failed" } };
   const { result } = action;
   if (result.status === "rejected") return { notice: result.message };
-  if (result.status === "error") return { photo: { key: photo.key, status: "failed", blob: photo.blob }, notice: result.message };
-  return { photo: { key: photo.key, status: "ready", blob: photo.blob, id: result.id } };
+  if (result.status === "error") return { photo: { ...kept, status: "failed" }, notice: result.message };
+  return { photo: { ...kept, status: "ready", id: result.id } };
 }
 
 /** A photo that has been made ready to upload. */
@@ -136,9 +142,26 @@ interface AttachIo {
   upload: (photo: Prepared) => Promise<unknown>;
 }
 
+export interface Chosen {
+  file: File;
+  note?: string;
+}
+
+/** The one file to take of those that were dropped: a picture, if there is one. */
+export function dropped(files: File[]): Chosen | undefined {
+  const file = files.find((f) => f.type.startsWith("image/")) ?? files[0];
+  if (!file) return undefined;
+  return files.length === 1 ? { file } : { file, note: "One photo was taken. You can attach one at a time." };
+}
+
 /** Shrink and upload a photo the customer chose. A file that cannot be read is never sent. */
-export async function attachPhoto(file: File, key: number, io: AttachIo, shrinkImpl: (file: File) => Promise<Blob> = shrink) {
-  io.dispatch({ type: "chosen", key });
+export async function attachPhoto(
+  { file, note }: Chosen,
+  key: number,
+  io: AttachIo,
+  shrinkImpl: (file: File) => Promise<Blob> = shrink,
+) {
+  io.dispatch({ type: "chosen", key, note });
   let blob: Blob;
   try {
     blob = await shrinkImpl(file);
@@ -154,12 +177,14 @@ export class PhotoNotSent extends Error {}
 
 /**
  * The events of a turn that names the photo, if there is one. When the API no longer has it (15
- * minutes, or a restart), the photo is uploaded once more and the turn is sent again.
+ * minutes, or a restart), the photo is uploaded once more and the turn is sent again. When it is
+ * lost then too, `lostAgain` is told and the error is shown.
  */
 export async function* withPhoto(
   photo: AttachedPhoto | undefined,
   send: (attachments: string[]) => AsyncGenerator<ServerEvent>,
   uploadAgain: (photo: Prepared) => Promise<UploadResult>,
+  lostAgain: (key: number) => void,
 ): AsyncGenerator<ServerEvent> {
   if (!photo?.id || !photo.blob) {
     yield* send([]);
@@ -167,12 +192,19 @@ export async function* withPhoto(
   }
   let lost = false;
   for await (const event of send([photo.id])) {
-    lost = event.type === "error" && event.data.code === "unknown_attachment";
+    lost = isLost(event);
     if (lost) break;
     yield event;
   }
   if (!lost) return;
   const result = await uploadAgain({ key: photo.key, blob: photo.blob });
   if (result.status !== "ready") throw new PhotoNotSent(result.message);
-  yield* send([result.id]);
+  for await (const event of send([result.id])) {
+    if (isLost(event)) lostAgain(photo.key);
+    yield event;
+  }
+}
+
+function isLost(event: ServerEvent): boolean {
+  return event.type === "error" && event.data.code === "unknown_attachment";
 }

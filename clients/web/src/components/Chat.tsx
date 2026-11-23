@@ -1,9 +1,11 @@
+// Copied to clients/car, without photos; keep the rest alike.
 import { useEffect, useRef, useState, type DragEvent, type FormEvent, type KeyboardEvent } from "react";
+import { dropped } from "../attachments";
 import type { ChatState } from "../turns";
 import type { SourceItem } from "../types";
 import type { PhotoControls } from "../usePhoto";
 import { Answer } from "./Answer";
-import { PhotoButton, PhotoPreview, PhotoThumb } from "./PhotoButton";
+import { NOT_STORED, PhotoButton, PhotoPreview, PhotoThumb } from "./PhotoButton";
 import { ASSISTANT_NAME, RunaAvatar } from "./Runa";
 import { SourceList } from "./SourceList";
 
@@ -72,7 +74,8 @@ export function Chat({ state, busy, underTheHood, photo, onDraft, onSend, onOpen
   function onDragOver(e: DragEvent) {
     if (!e.dataTransfer.types.includes("Files")) return;
     e.preventDefault();
-    setDropping(true);
+    e.dataTransfer.dropEffect = busy ? "none" : "copy";
+    setDropping(!busy);
   }
 
   function onDragLeave(e: DragEvent) {
@@ -80,11 +83,11 @@ export function Chat({ state, busy, underTheHood, photo, onDraft, onSend, onOpen
   }
 
   function onDrop(e: DragEvent) {
-    const file = e.dataTransfer.files[0];
-    if (!file) return;
+    const chosen = dropped([...e.dataTransfer.files]);
+    if (!chosen) return;
     e.preventDefault();
     setDropping(false);
-    photo.choose(file);
+    if (!busy) photo.choose(chosen); // the photo of a question stays while it is answered
   }
 
   /** The preview's buttons go away when they are pressed, so the focus moves on. */
@@ -110,7 +113,7 @@ export function Chat({ state, busy, underTheHood, photo, onDraft, onSend, onOpen
           <div className="empty">
             <RunaAvatar size="large" />
             <h2>{TITLE}</h2>
-            <p className="muted">Charging, service, tyres or warranty: she looks it up in the Voltrieve documents.</p>
+            <p className="muted">Charging, service, tyres or warranty: Runa looks it up in the Voltrieve documents.</p>
             <div className="starters">
               {STARTERS.map((s) => (
                 <button key={s} className="chip" onClick={() => ask(s)} disabled={blocked}>
@@ -134,7 +137,7 @@ export function Chat({ state, busy, underTheHood, photo, onDraft, onSend, onOpen
               {t.answer ? (
                 <Answer text={t.answer} sources={t.sources} onOpenSource={onOpenSource} />
               ) : t.status === "streaming" ? (
-                <p className="thinking" role="status" aria-label={t.activity ?? "Agent is working"}>
+                <p className="thinking" role="status" aria-label={t.activity ?? `${ASSISTANT_NAME} is working`}>
                   <i /><i /><i />
                   {t.activity && <span>{t.activity}</span>}
                 </p>
@@ -170,9 +173,9 @@ export function Chat({ state, busy, underTheHood, photo, onDraft, onSend, onOpen
           </p>
         )}
         {attached && (
-          <PhotoPreview photo={attached} onRetry={() => thenFocus(photo.retry)} onRemove={() => thenFocus(photo.remove)} />
+          <PhotoPreview photo={attached} disabled={busy} onRetry={() => thenFocus(photo.retry)} onRemove={() => thenFocus(photo.remove)} />
         )}
-        <PhotoButton ref={photoButton} onFile={photo.choose} />
+        <PhotoButton ref={photoButton} disabled={busy} onFile={(file) => photo.choose({ file })} />
         <textarea
           ref={field}
           value={state.draft}
@@ -188,7 +191,7 @@ export function Chat({ state, busy, underTheHood, photo, onDraft, onSend, onOpen
       </form>
       <p className="privacy-note">
         You are talking to {ASSISTANT_NAME}, an AI assistant. During demos, questions may be shown on a live screen, with contact
-        details masked. They are not stored. Photos are not stored in the conversation.
+        details masked. They are not stored.{attached ? "" : ` ${NOT_STORED}`}
       </p>
     </section>
   );

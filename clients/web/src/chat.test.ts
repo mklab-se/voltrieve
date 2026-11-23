@@ -1,3 +1,4 @@
+// Copied to clients/car; keep the two alike.
 import { describe, expect, it } from "vitest";
 import { buildChatRequest, streamChat } from "./chat";
 import type { ServerEvent } from "./types";
@@ -73,7 +74,7 @@ describe("streamChat", () => {
     const f403 = (async () => new Response("", { status: 403 })) as unknown as typeof fetch;
     const e1 = await collect(streamChat(base, undefined, f403));
     expect(e1).toMatchObject([{ type: "error", data: { code: "http_403" } }]);
-    // A 403 is not always a missing role: it is also a missing scope or someone else's conversation.
+    // For the timeline. A 403 is not always a missing role: it is also a missing scope or someone else's conversation.
     const message = (e1[0] as { data: { message: string } }).data.message;
     expect(message).toContain("Chat.User");
     expect(message).toContain("access_as_user");

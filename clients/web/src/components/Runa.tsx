@@ -1,3 +1,4 @@
+// Copied to clients/car; keep the two alike.
 /** Runa, the Voltrieve assistant (issue #15). The avatar is an emblem, never a face: Runa is an AI. */
 export const ASSISTANT_NAME = "Runa";
 

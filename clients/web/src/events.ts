@@ -1,3 +1,4 @@
+// Copied to clients/car; keep the two alike.
 import type { SseMessage } from "./sse";
 import type { ServerEvent, SourceItem } from "./types";
 
