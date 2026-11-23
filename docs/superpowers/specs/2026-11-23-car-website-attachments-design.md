@@ -123,7 +123,8 @@ POST /attachments            multipart: file, optional label
 ```
 
 - Same sign-in and role as `/chat`. Errors: 401 and 403 as today, 413 too large, 415 not a known
-  kind.
+  kind, 422 a malformed form, 408 an upload that is too slow, 503 `busy`. One user has at most 2 uploads at
+  a time, so nobody can block the others.
 - The kind is decided from the content, never from the file name or the media type the client sends.
 - `rejected` is an ordinary answer, not an error: the file is a photo but not good enough. Codes:
   `too_small`, `too_blurry`, `unreadable`. The client shows `message`.
