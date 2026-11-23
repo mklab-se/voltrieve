@@ -1,3 +1,7 @@
+Photo spike, 2026-11-23, deployed dev project, model gpt-6.1-terra. One run per case.
+Command: set -a; eval "$(azd env get-values)"; set +a; uv run --project api --with pillow python scripts/spikes/photo_paused_turn.py
+Turn: stored call that ends in a tool call, then store=False with the output and a drawn sign, then only text is recorded.
+
   loop step 4 answer: 'Tors 0-6'
   loop step 2 answer: 'Tors 0-6'
 loop: read ok, recorded ok, remembered ok
@@ -5,3 +9,10 @@ loop: read ok, recorded ok, remembered ok
   prompt step 2 answer: 'Tors 0-6'
 prompt: read ok, recorded ok, remembered ok
 conversations deleted: 2
+
+Hosted agent: a throwaway agent from the image of voltrieve-hosted (hosted:20261117221037-98b4bd6), deleted afterwards.
+One user message with text and a drawn 1600x1200 sign (426 KB, request 569 KB) through the Invocations endpoint.
+  HTTP 200, 6.8 s, answer: 'Tors 0-6' and '1 nov'
+hosted: read ok
+
+Not verified here: an unstored turn inside the hosted agent, real photos, variance over several runs.
