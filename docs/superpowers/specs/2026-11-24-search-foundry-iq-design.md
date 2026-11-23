@@ -10,7 +10,7 @@ Status: asked for by the product owner on 2026-11-24 ("please just implement the
    - *Three backends:* the own loop and the hosted agent use the REST client, the prompt agent uses the MCP endpoint. Both move.
    - *Secure by default:* no keys. The new service has its own identity with only the roles it needs. No new text in logs or telemetry: one model name is added to a trace step.
    - *Receipts:* section 9 says what is measured, section 10 what is not verified.
-   - *Cost:* no new idle cost until somebody turns Serverless on. Planning gets cheaper per token.
+   - *Cost:* no new idle cost until somebody turns Serverless on. Planning gets cheaper per token when `gpt-6-luna` is chosen.
    - *Latest versions:* this is the recorded rule in [Decisions](../../decisions.md).
 
 No rule is bent.
@@ -77,11 +77,11 @@ Every field was checked against the `2026-11-01-preview` reference. The stored o
 
 ## 5. Planning model
 
-The documentation lists `gpt-6-astra`, `gpt-6-sol`, `gpt-6-luna` and `gpt-6.1-sol` for `2026-11-01-preview`. **`gpt-6.1-terra`, our chat model, is not listed.** `gpt-6-luna` is, it is the cheapest, and it was already deployed for the model comparison. It is chosen, version `2026-09-22`.
+The documentation lists `gpt-6-astra`, `gpt-6-sol`, `gpt-6-luna` and `gpt-6.1-sol` for `2026-11-01-preview`. **`gpt-6.1-terra`, our chat model, is not listed.** `gpt-6-luna` is, it is the cheapest, and it was already deployed for the model comparison. It is the one to measure, version `2026-09-22`. `gpt-5.4-mini` stays the default until it is measured.
 
 - **API profile:** GPT-6 profiles use the Responses API. Search sends the deployment id as `model` to `/openai/v1/responses` on `resourceUri`, with `store: false`. There is no documented fallback to chat completions. Our `models` entry is already right: `kind: azureOpenAI`, the native endpoint, the deployment, and the exact model name.
 - **Role:** Cognitive Services OpenAI User on the Foundry account, for the search identity. The role contains `OpenAI/responses/*` (read from the role definition). The Basic service has it already, together with Cognitive Services User. One section of the same page asks for Cognitive Services User instead. Basic keeps both. The Serverless service gets only the first.
-- **Parameter:** `planningModelName`, default `gpt-6-luna`, from `PLANNING_MODEL_NAME` in the azd environment. The only other value is `gpt-5.4-mini`. The versions sit next to each other in Bicep, so going back is one value. Both deployments stay in Bicep until the change is measured.
+- **Parameter:** `planningModelName`, default `gpt-5.4-mini`, from `PLANNING_MODEL_NAME` in the azd environment. The only other value is `gpt-6-luna`, and it is opt-in: a plain `azd provision` never changes the planner. The versions sit next to each other in Bicep and both models are deployed, so going either way is one value. The default is changed in its own commit, after the measurement.
 
 `low` effort stays.
 
@@ -107,10 +107,12 @@ The documentation lists `gpt-6-astra`, `gpt-6-sol`, `gpt-6-luna` and `gpt-6.1-so
 | `standby` | deployed | deployed, filled by hand | Basic |
 | `active` | deployed | deployed, filled by `azd up` | Serverless |
 
+`hooks/preprovision.sh` refuses `active` until `standby` has been provisioned, because going straight from `off` would point the API and the agents at an empty service.
+
 ```mermaid
 flowchart LR
     Storage[("Blob storage<br/>Sweden Central")]
-    Foundry["Foundry<br/>gpt-6-luna plans"]
+    Foundry["Foundry<br/>the planning model"]
     Basic["Search Basic<br/>France Central"]
     Serverless["Search Serverless<br/>Sweden Central, off by default"]
     API["API and agents"]
@@ -128,36 +130,72 @@ Roles of the Serverless identity: Storage Blob Data Reader on storage, Cognitive
 
 ## 7. Order of deployment
 
-1. **The version, with the old planner.** Set `PLANNING_MODEL_NAME` to `gpt-5.4-mini`. Provision (which also writes the definitions with the new version), deploy the API, then run `scripts/deploy-agents.sh`. Check the prompt agent first. Measure.
+Each step is `azd provision`, then `scripts/deploy-agents.sh` directly after, then `azd deploy api`. A provision moves the MCP connections at once, and the prompt agents keep the old address until `deploy-agents.sh` has run, so nothing comes between the two.
+
+1. **The version, with the old planner.** Leave `PLANNING_MODEL_NAME` alone, or set it to `gpt-5.4-mini`. Provision (which also writes the definitions with the new version), deploy the agents, then the API. Check the prompt agent first. Measure.
 2. **The planner.** Set `PLANNING_MODEL_NAME` to `gpt-6-luna`, provision. The definitions are written again, and the next retrieve plans with it. No new images. Measure.
-3. **Serverless.** Set `standby`, provision, fill it, run the search smoke questions against it. Then `active`, provision, `deploy-agents.sh`. Measure, also after more than 10 idle minutes.
+3. **Serverless.** Set `standby`, provision, fill it, run the search smoke questions against it. Then `active`, provision, `deploy-agents.sh`. No new API image. Measure, also after more than 10 idle minutes.
 
 Never do steps 1 and 2 in one provision: between the new definitions and the new images, old clients would meet a GPT-6 base.
 
+`voltrieve-search smoke` fails when another model than `PLANNING_MODEL` planned, on a partial result, and on an error in the activity.
+
 ## 8. Rollback
 
-- **Serverless:** set `standby`, provision, `deploy-agents.sh`. If the documents changed while Serverless was active, the provision indexes Basic again.
-- **Planner:** set `gpt-5.4-mini`, provision. Minutes, no new images. Writing the two bases again with the old planner takes seconds.
-- **Version:** the planner first, then the code of the commit before, with a provision, a deployment of the API and `deploy-agents.sh`. The index and its content are the same in both versions, so nothing is rebuilt.
+Go back in this order: Serverless, planner, version.
+
+**Serverless**
+
+```sh
+azd env set SEARCH_SERVERLESS standby
+azd provision --no-prompt
+scripts/deploy-agents.sh
+```
+
+The provision indexes Basic again, so documents that changed while Serverless was active are there. The indexers never remove a deleted document, so `voltrieve-search upload --prune` removes its chunks from every service: `SEARCH_ENDPOINT`, `SEARCH_BASIC_ENDPOINT` and `SEARCH_SERVERLESS_ENDPOINT`. It checks that all of them answer before it deletes a blob, and refuses without the whole azd environment. With `off`, a Serverless service that still exists is not known to the command. Delete its two indexes before it is filled again.
+
+**Planner**
+
+```sh
+set -a; eval "$(azd env get-values)"; set +a
+PLANNING_DEPLOYMENT=gpt-5.4-mini PLANNING_MODEL=gpt-5.4-mini uv run --project search voltrieve-search apply
+azd env set PLANNING_MODEL_NAME gpt-5.4-mini
+azd provision --no-prompt
+```
+
+The second command takes seconds. The provision makes it last. No new images.
+
+**Version**, with the planner on `gpt-5.4-mini` and Serverless not active. The commits of the branch cannot be reverted one by one, because later ones change the same lines. Revert the merges of `search-apis`, the newest first:
+
+```sh
+git log --first-parent --merges --oneline   # find them
+git revert --no-edit -m 1 <newest merge of search-apis>
+git revert --no-edit -m 1 <the merge before it>
+azd provision --no-prompt
+scripts/deploy-agents.sh
+azd deploy api --no-prompt
+```
+
+The index and its content are the same in both versions, so nothing is rebuilt. The Serverless service, if there is one, stays. To bring the change back later, revert the reverts: merging the branch again does nothing.
 
 ## 9. How it is measured
 
-- `voltrieve-search smoke`, which now prints the planning model.
+- `voltrieve-search smoke`, which now prints the planning model and fails when it is not the expected one.
 - The routing suite, 3 repeats on three backends, against the 10 s limit to the first token, once per step.
 - The grounding suite, once per step.
 - `voltrieve-search retrieve` once per base, for `docs/evidence/search-activity.txt`.
 - Planning: tokens and milliseconds per retrieve, from the activity. GPT-6 may spend more output tokens, because it reasons.
 - Serverless: the same, plus the `AggregateComputeUnits` metric over a routing run and over an idle hour, and the first turn after 10 idle minutes.
 
-Stay on `gpt-6-luna` if routing and articles are not worse and no more turns pass 10 s. Otherwise go back.
+Make `gpt-6-luna` the default if routing and articles are not worse and no more turns pass 10 s. Otherwise go back to `gpt-5.4-mini`.
 
 ## 10. Cost
 
 | Item | Today | After |
 | --- | --- | --- |
 | Search Basic | USD 0.101 an hour, about 74 a month | The same |
-| Planning, per million tokens in and out | `gpt-5.4-mini`: USD 0.75 and 4.50 | `gpt-6-luna`: USD 0.10 and 0.50 (prices read 2026-11-05) |
-| Planning, one retrieve of 946 in and 49 out | USD 0.00093 | USD 0.00012, if the token counts stay |
+| Planning, per million tokens in and out | `gpt-5.4-mini`: USD 0.75 and 4.50 | The same by default. With `gpt-6-luna`: USD 0.10 and 0.50 (prices read 2026-11-05) |
+| Planning, one retrieve of 946 in and 49 out | USD 0.00093 | The same by default. With `gpt-6-luna` USD 0.00012, if the token counts stay |
 | Retrieval tokens | USD 0.022 per million after 50 million free a month | The same |
 | Two planning deployments | 0 | 0, pay per token |
 | Serverless, off | | 0 |

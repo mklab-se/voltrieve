@@ -85,6 +85,13 @@ def test_timeout_raises_with_timeout_status():
     assert e.value.run.status == "timeout"
 
 
+def test_null_counts_of_a_finished_run_are_zero():
+    last = status("success")
+    last["lastResult"] |= {"itemsProcessed": None, "itemsFailed": None, "errors": None}
+    run = run_and_wait(Client([{"lastResult": None}, last]), "x", timeout_s=5, poll_s=0)
+    assert run.items_processed == 0 and run.items_failed == 0
+
+
 def test_warnings_are_reported_on_success():
     last = status("success", start="2000-01-02T00:00:00Z")
     last["lastResult"]["warnings"] = [{"key": "a.md", "message": "truncated"}]

@@ -38,13 +38,13 @@ param hostedAgentPrincipalId string = ''
 param hostedAgentName string = 'voltrieve-hosted'
 param chatModelName string = 'gpt-6.1-terra'
 param chatModelVersion string = '2026-10-26'
-@description('The model Search plans queries with (PLANNING_MODEL_NAME). A GPT-6 model needs every caller of Search to use 2026-11-01-preview or later, so deploy the code before choosing one.')
-@allowed(['gpt-6-luna', 'gpt-5.4-mini'])
-param planningModelName string = 'gpt-6-luna'
+@description('The model Search plans queries with (PLANNING_MODEL_NAME). gpt-6-luna is opt-in: a GPT-6 model needs every caller of Search to use 2026-11-01-preview or later, so deploy the code before choosing it.')
+@allowed(['gpt-5.4-mini', 'gpt-6-luna'])
+param planningModelName string = 'gpt-5.4-mini'
 param embeddingModelName string = 'text-embedding-3-large'
 param embeddingModelVersion string = '1'
 
-// Both stay deployed until gpt-6-luna is measured, so going back is planningModelName alone.
+// Both are deployed, so changing the planner is planningModelName alone, in both directions.
 var planningModels = [
   { name: 'gpt-5.4-mini', version: '2026-03-17' }
   { name: 'gpt-6-luna', version: '2026-09-22' }

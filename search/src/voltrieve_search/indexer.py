@@ -31,8 +31,8 @@ def _to_run(last: dict) -> IndexerRun:
     warnings = [f"{w.get('key')}: {w.get('message')}" for w in last.get("warnings") or []]
     return IndexerRun(
         status=last["status"],
-        items_processed=last.get("itemsProcessed", 0),
-        items_failed=last.get("itemsFailed", 0),
+        items_processed=last.get("itemsProcessed") or 0,
+        items_failed=last.get("itemsFailed") or 0,
         errors=errors,
         warnings=warnings,
     )

@@ -1,6 +1,7 @@
 import json
 
 import voltrieve_search.upload as upload
+from voltrieve_search.client import SearchApiError
 
 
 class FakeContainer:
@@ -192,3 +193,95 @@ def test_the_config_links_customer_documents_and_never_the_parts_catalogs():
     linkable = upload.linkable_doc_types(Path(__file__).parents[2] / "data" / "voltrieve.yaml")
     assert {"brochure", "specifications", "buyers_guide", "service"} <= linkable
     assert "parts" not in linkable
+
+
+BASIC, SERVERLESS = "https://basic.search.windows.net", "https://sl.search.windows.net"
+
+
+class PruneSearch:
+    """Stands in for the search services of one run of the command, by endpoint."""
+
+    def __init__(self, missing=(), refused=()):
+        self.missing, self.refused, self.deleted, self.events = missing, refused, [], []
+
+    def client(self, endpoint):
+        outer = self
+
+        class Client:
+            def get(self, path):
+                outer.events.append(("get", endpoint))
+                if endpoint in outer.refused:
+                    raise SearchApiError(403, "forbidden")
+                if endpoint in outer.missing:
+                    raise SearchApiError(404, "no such index")
+                return {}
+
+            def post(self, path, body=None):
+                if path.endswith("/docs/search"):
+                    return 200, {"value": [{"chunk_id": "k"}]}
+                outer.deleted.append((endpoint, path.split("/")[2]))
+                return 200, {}
+
+        return Client()
+
+
+def prune(monkeypatch, search, deleted=("d/old.pdf",), args=("--prune",), **env):
+    import voltrieve_search.cli as cli
+
+    for name in ("SEARCH_ENDPOINT", "SEARCH_BASIC_ENDPOINT", "SEARCH_SERVERLESS_ENDPOINT"):
+        monkeypatch.delenv(name, raising=False)
+    for name, value in {"STORAGE_ACCOUNT_NAME": "s", "DOCS_CONTAINER": "d", "PARTS_CONTAINER": "p", **env}.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setattr(cli, "make_client", lambda endpoint=None: search.client(endpoint))
+
+    def fake_upload(*a, **k):
+        search.events.append(("upload", k["prune"]))
+        return upload.UploadResult(uploaded=1, stale=list(deleted), deleted=list(deleted))
+
+    monkeypatch.setattr(cli, "upload_documents", fake_upload)
+    return cli.main(["upload", *args])
+
+
+def test_prune_removes_the_chunks_from_every_search_service(monkeypatch):
+    for active in (BASIC, SERVERLESS + "/"):
+        search = PruneSearch()
+        assert prune(monkeypatch, search, SEARCH_ENDPOINT=active, SEARCH_BASIC_ENDPOINT=BASIC,
+                     SEARCH_SERVERLESS_ENDPOINT=SERVERLESS) == 0
+        assert sorted(search.deleted) == [(BASIC, "voltrieve-docs-index"), (SERVERLESS, "voltrieve-docs-index")]
+
+
+def test_prune_on_one_service_is_what_it_was(monkeypatch):
+    search = PruneSearch()
+    assert prune(monkeypatch, search, SEARCH_ENDPOINT=BASIC, SEARCH_BASIC_ENDPOINT=BASIC,
+                 SEARCH_SERVERLESS_ENDPOINT="") == 0
+    assert search.deleted == [(BASIC, "voltrieve-docs-index")]
+
+
+def test_prune_skips_a_service_that_is_not_filled_yet(monkeypatch):
+    search = PruneSearch(missing=[SERVERLESS])
+    assert prune(monkeypatch, search, SEARCH_ENDPOINT=BASIC, SEARCH_BASIC_ENDPOINT=BASIC,
+                 SEARCH_SERVERLESS_ENDPOINT=SERVERLESS) == 0
+    assert search.deleted == [(BASIC, "voltrieve-docs-index")]
+
+
+def test_prune_deletes_no_blob_when_a_service_cannot_be_reached(monkeypatch, capsys):
+    """Once the blob is gone nothing can find its chunks again, so the check comes first."""
+    search = PruneSearch(refused=[SERVERLESS])
+    assert prune(monkeypatch, search, SEARCH_ENDPOINT=BASIC, SEARCH_BASIC_ENDPOINT=BASIC,
+                 SEARCH_SERVERLESS_ENDPOINT=SERVERLESS) == 1
+    assert ("upload", True) not in search.events and search.deleted == []
+    assert "403" in capsys.readouterr().err
+
+
+def test_prune_needs_the_whole_environment(monkeypatch, capsys):
+    """With SEARCH_ENDPOINT alone the command cannot know about a second service."""
+    search = PruneSearch()
+    assert prune(monkeypatch, search, SEARCH_ENDPOINT=BASIC) == 1
+    assert search.events == [] and "SEARCH_BASIC_ENDPOINT" in capsys.readouterr().err
+
+
+def test_an_upload_or_a_dry_run_needs_no_search_service(monkeypatch):
+    for args in ((), ("--prune", "--dry-run")):
+        search = PruneSearch()
+        assert prune(monkeypatch, search, deleted=(), args=args) == 0
+        assert [e for e in search.events if e[0] == "get"] == []

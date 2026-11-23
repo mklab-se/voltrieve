@@ -65,14 +65,32 @@ def test_206_marks_partial_and_keeps_activity_errors():
     assert any("error" in a for a in r.activity)
 
 
-def test_the_request_has_only_fields_of_the_november_contract():
+# Every property the REST reference of Knowledge Retrieval - Retrieve lists for 2026-11-01-preview.
+# The service answers 400 to a property it does not know.
+NOVEMBER_REQUEST = {
+    "includeActivity", "intents", "knowledgeSourceParams", "maxOutputDocuments", "maxOutputSize",
+    "maxOutputSizeInTokens", "maxRuntimeInSeconds", "messages", "outputMode",
+    "retrievalReasoningEffort", "toolName",
+}
+NOVEMBER_SEARCH_INDEX_PARAMS = {
+    "alwaysQuerySource", "enableImageServing", "failOnError", "filterAddOn",
+    "includeReferenceSourceData", "includeReferences", "kind", "knowledgeSourceName",
+    "maxOutputDocuments", "neverQuerySource", "queryHintOverrides", "rerankerThreshold",
+    "resultsProcessing", "topicGraph",
+}
+
+
+def test_the_request_has_only_properties_the_november_reference_lists():
     c = Client(200, body())
     retrieve(c, "voltrieve-kb", "q")
     sent = c.sent[1]
-    assert set(sent) == {"messages", "knowledgeSourceParams", "maxOutputSize", "includeActivity"}
-    assert set(sent["knowledgeSourceParams"][0]) == {
-        "kind", "knowledgeSourceName", "includeReferences", "includeReferenceSourceData"
-    }
+    assert set(sent) <= NOVEMBER_REQUEST
+    (params,) = sent["knowledgeSourceParams"]
+    assert set(params) <= NOVEMBER_SEARCH_INDEX_PARAMS
+    # What the reference and the how-to say about the combination: messages or intents, not both,
+    # and source data needs references.
+    assert ("messages" in sent) != ("intents" in sent)
+    assert params["includeReferences"] or not params["includeReferenceSourceData"]
 
 
 def test_new_fields_of_the_response_are_ignored():
@@ -94,5 +112,6 @@ def test_the_planning_model_is_empty_when_the_activity_does_not_name_one():
     for activity in ([], [{"type": "searchIndex"}], [{"type": "modelQueryPlanning"}],
                      [{"type": "modelQueryPlanning", "model": None}],
                      [{"type": "modelQueryPlanning", "model": {"modelName": None}}],
+                     [{"type": "modelQueryPlanning", "model": "gpt-6-luna"}],
                      [{"type": "modelAnswerSynthesis", "model": {"modelName": "x"}}]):
         assert RetrieveResult(activity=activity).planning_model is None
