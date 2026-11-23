@@ -2,14 +2,14 @@
 # requires-python = ">=3.12"
 # dependencies = ["httpx"]
 # ///
-"""A client declares a tool the server has never seen, as a thermal camera would.
+"""A client declares a tool the server has never seen, as a car with a seat heater would.
 
     uv run scripts/new_client_tool_demo.py
 
-Nothing about `set_emissivity` exists in the API, the agents or Foundry: it is declared only here,
+Nothing about `set_seat_heating` exists in the API, the agents or Foundry: it is declared only here,
 in the request. Backends loop and hosted must relay the call to this script and finish the turn.
 Backend prompt must refuse it, since a prompt agent's tools are fixed in its definition.
-No camera is involved; the handler stands in for one. Writes docs/evidence/new-client-tool.txt.
+No car is involved; the handler stands in for one. Writes docs/evidence/new-client-tool.txt.
 """
 
 from __future__ import annotations
@@ -22,13 +22,13 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from voltrieve_client import Api, api_token, api_url, cached_token, write_evidence
 
-SET_EMISSIVITY = {
-    "name": "set_emissivity",
-    "description": "Set the emissivity used by the camera for temperature measurement.",
+SET_SEAT_HEATING = {
+    "name": "set_seat_heating",
+    "description": "Set the heating of the driver's seat: 0 is off, 3 is the warmest.",
     "parameters": {
         "type": "object",
-        "properties": {"value": {"type": "number", "minimum": 0.01, "maximum": 1.0}},
-        "required": ["value"],
+        "properties": {"level": {"type": "integer", "minimum": 0, "maximum": 3}},
+        "required": ["level"],
         "additionalProperties": False,
     },
 }
@@ -42,21 +42,21 @@ def main() -> int:
     passed = True
     for backend in ("loop", "hosted", "prompt"):
         api = Api(url, token, backend)
-        received: list[float] = []
+        received: list[int] = []
 
-        def camera(arguments: str) -> str:
-            received.append(json.loads(arguments)["value"])
-            return f"Emissivity is now {received[-1]}."
+        def car(arguments: str) -> str:
+            received.append(json.loads(arguments)["level"])
+            return f"Seat heating is now at level {received[-1]}."
 
-        turn = api.turn("Set the emissivity on my camera to 0.95.",
-                        client_tools=[SET_EMISSIVITY], handlers={"set_emissivity": camera})
+        turn = api.turn("Turn my seat heating to level 2.",
+                        client_tools=[SET_SEAT_HEATING], handlers={"set_seat_heating": car})
         api.close()
         if backend == "prompt":
             code = (turn.error or {}).get("code")
             ok = code == "unsupported_client_tool" and not received
             lines.append(f"{'PASS' if ok else 'FAIL'}  prompt  refused as expected, error: {code}")
         else:
-            ok = received == [0.95] and turn.done is not None
+            ok = received == [2] and turn.done is not None
             lines.append(f"{'PASS' if ok else 'FAIL'}  {backend}  tool received {received}, "
                          f"answer: {turn.text[:90]!r}")
         passed &= ok

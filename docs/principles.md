@@ -14,7 +14,7 @@ Every feature serves at least one of these. If it serves none, it does not belon
 | --- | --- | --- |
 | **Identity, authorization and security** | Data reaches only the people and systems that should have it, across every part of the solution. | Entra ID tokens, app roles, managed identities, signed source links |
 | **RAG and agentic RAG** | How a normal company makes its documents and catalogs answerable, and how the agent decides where to look. | Azure AI Search knowledge bases, [the journey of a prompt](prompt-journey.md) |
-| **Tool calls through the agent** | Tools on the server and tools on the client, in the same conversation. | Dealer tools, `set_theme`, `set_emissivity`, pause and resume |
+| **Tool calls through the agent** | Tools on the server and tools on the client, in the same conversation. | Dealer tools, `set_theme`, `set_seat_heating`, pause and resume |
 | **Clients and partner services** | Web, command line, devices close to hardware, and outside services. | The SPA, the CLI, the dealer service |
 | **Multimodal** | Images, photos, voice and other media in and out of the conversation. | Car and part images in the sales folders |
 | **Monitoring and operations** | Usage, response times, cost, errors and logs, live and after the fact. | Application Insights, the operations dashboard and workbook |

@@ -12,7 +12,7 @@ opinion:
 1. **How do client-side tools coexist with a Foundry-based agentic RAG
    solution?** A Foundry prompt agent owns its tool loop and rejects a
    per-request `tools` list, so the documented RAG pattern breaks as soon as
-   the caller has tools of its own (a camera that can set emissivity, a CLI
+   the caller has tools of its own (a car that can heat its seats, a CLI
    that can beep). This project shows the three ways around that, each as a
    separate runnable backend, so their strengths and weaknesses can be seen
    side by side.

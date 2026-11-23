@@ -43,7 +43,7 @@ Both scripts compare answers with `data/voltrieve.yaml` and exit 1 on a miss. Re
 - Grounding: 30 of 30 passed (`docs/evidence/grounding.txt`).
 - Routing: 45 of 45 runs used exactly the right sources on every backend, with no knowledge base call in vain. Overlapping calls on two source questions: 12 of 12 on `loop` and `hosted`, 0 of 12 on `prompt`. Article numbers: 117 of 117 on `prompt`, 115 of 117 on `loop` and `hosted`, none invented. The script exits 1 on a missing article, so the recorded run exits 1. Run it with `--workers 1`: more turns at once measure the rate limit, not the routing.
 
-`uv run scripts/new_client_tool_demo.py` shows a client bringing a tool the server has never seen, as a thermal camera would.
+`uv run scripts/new_client_tool_demo.py` shows a client bringing a tool the server has never seen, as a car with a seat heater would.
 
 Step 7 and `cheapest-awd-se` are the same question. At the default reasoning effort it varied between runs on every backend. At medium effort it passed 18 of 18 (`docs/evidence/cross-document-repeat.txt`).
 
