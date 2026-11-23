@@ -93,17 +93,28 @@ async def _fail(emit: Emit, code: str, usage: dict) -> TurnOutcome:
     return TurnOutcome("failed", [], usage)
 
 
-async def _record(model, turn, unstored, usage, emit, approved="") -> TurnOutcome:
+async def _record(
+    model: ModelClient,
+    turn: TurnInput,
+    unstored: Unstored,
+    usage: dict,
+    emit: Emit,
+    approved: str = "",
+) -> TurnOutcome:
     """End an unstored turn. The user has the answer by now, so a failure is not theirs to see."""
     items = unstored.record_items(approved)
+    failed = False
     if items:
         try:
             await model.record(turn.conversation_id, items)
         except Exception as exc:
             logger.error("Could not record an unstored turn: %s", type(exc).__name__)
-            await emit(trace("record_failed", "model"))
-            return TurnOutcome("done", [], usage, unrecorded=True)
-    return TurnOutcome("done", [], usage)
+            failed = True
+    # Outside the except block: an emit that raises must not be chained to an error that may
+    # quote the items, since hosts log what escapes.
+    if failed:
+        await emit(trace("record_failed", "model"))
+    return TurnOutcome("done", [], usage, unrecorded=failed)
 
 
 async def _run_server_tool(toolset, call, user, emit, iteration) -> tuple[str, int]:

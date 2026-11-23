@@ -7,7 +7,8 @@ Nothing here may be logged or traced. The fields are left out of the repr for th
 
 from dataclasses import dataclass, field
 
-ATTACHMENT_NOTE = "\n(attachment sent)"
+ATTACHMENT_TEXT = "(attachment sent)"
+ATTACHMENT_NOTE = "\n" + ATTACHMENT_TEXT
 
 
 def message_item(text: str, parts: list[dict]) -> dict:
@@ -23,8 +24,40 @@ def assistant_item(text: str) -> dict:
     }
 
 
-def _is_output(item: dict) -> bool:
-    return item.get("type") == "function_call_output"
+def _is_output(item: object) -> bool:
+    return isinstance(item, dict) and item.get("type") == "function_call_output"
+
+
+def _is_text(content: object) -> bool:
+    """Whether the content of a user message is text and nothing else."""
+    if isinstance(content, str):
+        return True
+    return isinstance(content, list) and all(
+        isinstance(part, dict)
+        and part.keys() == {"type", "text"}
+        and part["type"] == "input_text"
+        and isinstance(part["text"], str)
+        for part in content
+    )
+
+
+def _text_only(head: list[dict]) -> list[dict]:
+    """The items of `head` with their text alone. The conversation is stored, so anything else is
+    replaced, and an item of another kind is left out. Never raises: the user has the answer."""
+    items = []
+    for item in head:
+        if _is_output(item):
+            output = item.get("output")
+            text = output if isinstance(output, str) else ATTACHMENT_TEXT
+            call_id = item.get("call_id")
+            items.append({"type": "function_call_output", "call_id": call_id, "output": text})
+        elif isinstance(item, dict) and item.get("role") == "user":
+            content = item.get("content")
+            if _is_text(content):
+                items.append({"type": "message", "role": "user", "content": content})
+            else:
+                items.append(message_item(ATTACHMENT_TEXT, []))
+    return items
 
 
 @dataclass
@@ -45,6 +78,9 @@ class Unstored:
             return None
         if kept:
             unstored = cls.from_dict(kept)
+            if isinstance(input, str):
+                unstored.items.append(message_item(input, parts))
+                return unstored
             unstored.items += input
         elif isinstance(input, str):
             head = [message_item(input + ATTACHMENT_NOTE, [])]
@@ -67,6 +103,7 @@ class Unstored:
         """What the conversation gets at the end. An approved answer keeps its own message, word
         for word, after any text the user has already seen."""
         answers = [assistant_item(text) for text in (self.text, approved) if text.strip()]
-        if not answers and not any(_is_output(i) for i in self.head):
+        head = _text_only(self.head)
+        if not answers and not any(_is_output(i) for i in head):
             return []
-        return [*self.head, *answers]
+        return [*head, *answers]

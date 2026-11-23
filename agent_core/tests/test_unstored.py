@@ -3,10 +3,13 @@
 import asyncio
 import json
 import logging
+import traceback
+import warnings
 from types import SimpleNamespace
 
 import openai
 import pytest
+from openai.types.responses import ResponseFunctionToolCallItem
 
 from voltrieve_agent.curated import CURATED_ANSWERS
 from voltrieve_agent.loop import TurnInput, run_turn
@@ -312,6 +315,71 @@ async def test_failed_recording_of_a_curated_answer_still_sends_it(user, events)
     assert "record_failed" in steps(events) and "error" not in types(events)
 
 
+async def test_a_failing_emit_after_a_failed_recording_does_not_carry_the_items(user, caplog):
+    """Hosts log what escapes with its traceback, and a chained error prints its message too."""
+    caplog.set_level(logging.DEBUG)
+
+    class Echoing(FakeModel):
+        async def record(self, conversation, items):
+            raise RuntimeError(f"rejected: {json.dumps(items)}")
+
+    async def emit(event):
+        if event.data.get("step") == "record_failed":
+            raise ConnectionError("closed")
+
+    model = Echoing([[TextDelta("No parking")]])
+    with pytest.raises(ConnectionError) as raised:
+        await run_turn(model, [], photo_turn(user), emit)
+    shown = "".join(traceback.format_exception(raised.value))
+    logging.getLogger("test").error("Turn failed", exc_info=raised.value)
+    for text in (shown, caplog.text):
+        assert "ConnectionError" in text
+        assert "No parking" not in text and "Can I park?" not in text
+        assert "rejected: " not in text
+
+
+@pytest.mark.parametrize("content", [[IMG], [text_part("photo taken"), IMG], None, 7, {"a": IMG}])
+async def test_an_output_that_is_not_text_is_not_recorded(user, events, content):
+    """The last guard before the conversation, which is stored."""
+    result = output("call_1", content)
+    model = FakeModel([[TextDelta("No parking")]])
+    turn = TurnInput(user, "c", "t", [result, output("call_2", "ok")], parts=[IMG])
+    out = await run_turn(model, [], turn, events)
+    assert out.status == "done" and out.unrecorded is False
+    assert "AAAA" not in json.dumps(model.recorded)
+    assert model.recorded == [
+        [output("call_1", "(attachment sent)"), output("call_2", "ok"), assistant("No parking")]
+    ]
+    assert model.calls[0]["input"][0] == result
+
+
+@pytest.mark.parametrize("content", [[IMG], [text_part("look"), IMG], [text_part([IMG])], None, 7])
+def test_a_kept_head_is_checked_before_it_is_recorded(content):
+    kept = {"items": [], "head": [user_message()], "text": "Yes"}
+    kept["head"][0]["content"] = content
+    items = Unstored.from_dict(kept).record_items()
+    assert items == [user_message(text_part("(attachment sent)")), assistant("Yes")]
+
+
+def test_only_outputs_and_user_text_are_recorded_from_a_kept_head():
+    text = {"type": "message", "role": "user", "content": "plain"}
+    kept = {
+        "items": [],
+        "head": [IMG, "AAAA", None, text, SENT, {**output("c1"), "extra": IMG}],
+        "text": "Yes",
+    }
+    items = Unstored.from_dict(kept).record_items()
+    assert items == [text, SENT, output("c1"), assistant("Yes")]
+
+
+async def test_a_kept_turn_continued_by_text_sends_it_as_one_message(user, events):
+    kept = Unstored([user_message(IMG)], [SENT], "One. ").to_dict()
+    for parts, content in (([], [text_part("hello")]), ([IMG], [text_part("hello"), IMG])):
+        model = FakeModel([[TextDelta("Two.")]])
+        await run_turn(model, [], TurnInput(user, "c", "t", "hello", parts=parts, kept=kept), events)
+        assert model.calls[0]["input"] == [user_message(IMG), user_message(*content)]
+
+
 async def test_an_empty_answer_records_only_outputs(user, events):
     """Decision 8: an open call in the conversation gets its output, and no message is empty."""
     model = FakeModel([[Completed({})]])
@@ -478,9 +546,31 @@ async def test_output_items_are_yielded_only_when_unstored():
         {"type": "reasoning", "id": "r1", "encrypted_content": "xyz"},
         {"type": "function_call", "call_id": "c1", "name": "f", "arguments": "{}"},
     ]
-    assert first.events[0].item.dumped_with == {"exclude_none": True}
+    assert first.events[0].item.dumped_with == {"exclude_none": True, "warnings": False}
     assert FunctionCall("c1", "f", "{}") in items and Completed({}) in items
     assert await collect(client) == [FunctionCall("c1", "f", "{}"), Completed({})]
+
+
+async def test_output_items_give_no_pydantic_warning():
+    """Such a warning prints the value of the field."""
+    item = ResponseFunctionToolCallItem.construct(
+        type="function_call",
+        id="f1",
+        call_id="c1",
+        name="f",
+        arguments="{}",
+        created_by={"secret": "AAAA"},
+    )
+    event = SimpleNamespace(type="response.output_item.done", output_index=0, item=item)
+    with warnings.catch_warnings(record=True) as control:
+        warnings.simplefilter("always")
+        item.model_dump(exclude_none=True)
+    assert "AAAA" in str(control[0].message)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        items = await collect(ResponsesModelClient(FakeOpenAI(Stream([event])), "m"), store=False)
+    assert caught == []
+    assert items[-1].raw["call_id"] == "c1"
 
 
 async def test_output_items_come_in_the_order_of_the_response():

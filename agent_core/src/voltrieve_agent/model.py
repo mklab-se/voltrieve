@@ -206,7 +206,9 @@ class ResponsesModelClient:
                 if item is not None:
                     yield item
                 if not store and event.type == "response.output_item.done":
-                    finished.append((event.output_index, event.item.model_dump(exclude_none=True)))
+                    # A pydantic warning would print the value of the field it is about.
+                    raw = event.item.model_dump(exclude_none=True, warnings=False)
+                    finished.append((event.output_index, raw))
         # Last, so they do not count as output that stops a retry, and in the model's own order:
         # calls that run at the same time finish in any order.
         for _, raw in sorted(finished, key=lambda item: item[0]):
