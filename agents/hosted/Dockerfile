@@ -1,8 +1,8 @@
 # Build context is the repository root:
 #   az acr build -r <registry> -t voltrieve/hosted:<tag> --platform linux/amd64 -f agents/hosted/Dockerfile .
-FROM python:3.12.12-slim
+FROM python:3.12.16-slim
 
-COPY --from=ghcr.io/astral-sh/uv:0.9.18 /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.13.9 /uv /usr/local/bin/uv
 
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
