@@ -3,12 +3,10 @@ import { bootAuth, type Auth, type AuthSession } from "./auth";
 import { streamChat, streamToolResults } from "./chat";
 import { fetchSourceUrl, openSource } from "./sources";
 import { Chat } from "./components/Chat";
-import { Dashboard } from "./components/Dashboard";
 import { Header } from "./components/Header";
 import { ConfigMissing, Loading, SignIn } from "./components/Notices";
 import { Recorder } from "./components/Recorder";
 import { readConfig, type AppConfig } from "./config";
-import { canViewDashboard, pageFromUrl, urlForPage, type Page } from "./dashboard";
 import { runClientTool, toolsFor, type Theme } from "./tools";
 import { chatReducer, initialChatState } from "./turns";
 import type { Backend, ClientToolCall, SourceItem } from "./types";
@@ -67,7 +65,7 @@ function Authed({ config }: { config: AppConfig }) {
   return <Workspace config={config} auth={auth} session={session} />;
 }
 
-function Workspace({ config, auth, session }: { config: AppConfig; auth: Auth; session: AuthSession }) {
+export function Workspace({ config, auth, session }: { config: AppConfig; auth: Auth; session: AuthSession }) {
   const [state, dispatch] = useReducer(chatReducer, initialChatState);
   const [backend, setBackend] = useState<Backend>("loop");
   const [busy, setBusy] = useState(false);
@@ -75,8 +73,6 @@ function Workspace({ config, auth, session }: { config: AppConfig; auth: Auth; s
   const [gauge, setGauge] = useState(0);
   const [gaugeOn, setGaugeOn] = useState(initialGaugeOn);
   const [view, setView] = useState<"chat" | "recorder">("chat");
-  const [page, setPage] = useState<Page>(() => pageFromUrl(location.search));
-  const [dashboardAllowed, setDashboardAllowed] = useState(false);
   const [sourceError, setSourceError] = useState<string>();
   const abort = useRef<AbortController | null>(null);
   const conversationId = useRef<string | undefined>(undefined);
@@ -87,18 +83,6 @@ function Workspace({ config, auth, session }: { config: AppConfig; auth: Auth; s
   }, [theme]);
 
   useEffect(() => () => abort.current?.abort(), []);
-
-  // The dashboard button appears for holders of Dashboard.View; the API checks the role again.
-  useEffect(() => {
-    let cancelled = false;
-    auth
-      .getToken()
-      .then((token) => !cancelled && setDashboardAllowed(canViewDashboard(token)))
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [auth]);
 
   const applyTheme = useCallback((next: Theme) => {
     setTheme(next);
@@ -191,20 +175,12 @@ function Workspace({ config, auth, session }: { config: AppConfig; auth: Auth; s
     }
   }
 
-  // The dashboard shows only once the token says the role is there; the API checks it again.
-  const showDashboard = page === "dashboard" && dashboardAllowed;
-
-  function openPage(next: Page) {
-    setPage(next);
-    history.replaceState(null, "", urlForPage(location.href, next));
-  }
-
   function toggleTheme() {
     applyTheme(theme === "dark" ? "light" : "dark");
   }
 
   return (
-    <div className="app" data-view={view} data-page={showDashboard ? "dashboard" : "chat"}>
+    <div className="app" data-view={view}>
       <Header
         backend={backend}
         onBackend={setBackend}
@@ -216,37 +192,29 @@ function Workspace({ config, auth, session }: { config: AppConfig; auth: Auth; s
         onToggleGauge={toggleGauge}
         onNewChat={() => dispatch({ type: "reset" })}
         busy={busy}
-        onToggleDashboard={dashboardAllowed ? () => openPage(page === "chat" ? "dashboard" : "chat") : undefined}
-        dashboardOn={showDashboard}
       />
-      {showDashboard ? (
-        <Dashboard apiUrl={config.apiUrl} auth={auth} liveMetricsUrl={config.liveMetricsUrl} workbookUrl={config.workbookUrl} />
-      ) : (
-        <>
-          <nav className="tabs" aria-label="View">
-            <button className={view === "chat" ? "on" : ""} onClick={() => setView("chat")}>
-              Chat
-            </button>
-            <button className={view === "recorder" ? "on" : ""} onClick={() => setView("recorder")}>
-              Timeline
-            </button>
-          </nav>
-          <main className="panes">
-            <Chat
-              state={state}
-              busy={busy}
-              gauge={gaugeOn ? gauge : undefined}
-              onSend={(t) => {
-                setSourceError(undefined);
-                void send(t);
-              }}
-              onOpenSource={openDocument}
-              sourceError={sourceError}
-            />
-            <Recorder state={state} />
-          </main>
-        </>
-      )}
+      <nav className="tabs" aria-label="View">
+        <button className={view === "chat" ? "on" : ""} onClick={() => setView("chat")}>
+          Chat
+        </button>
+        <button className={view === "recorder" ? "on" : ""} onClick={() => setView("recorder")}>
+          Timeline
+        </button>
+      </nav>
+      <main className="panes">
+        <Chat
+          state={state}
+          busy={busy}
+          gauge={gaugeOn ? gauge : undefined}
+          onSend={(t) => {
+            setSourceError(undefined);
+            void send(t);
+          }}
+          onOpenSource={openDocument}
+          sourceError={sourceError}
+        />
+        <Recorder state={state} />
+      </main>
     </div>
   );
 }

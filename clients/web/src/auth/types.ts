@@ -1,3 +1,4 @@
+// Copied to another client; keep the two alike.
 export interface AuthSession {
   name: string;
   username: string;

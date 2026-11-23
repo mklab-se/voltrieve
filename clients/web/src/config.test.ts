@@ -1,3 +1,4 @@
+// Copied to another client; keep the two alike.
 import { describe, expect, it } from "vitest";
 import { readConfig } from "./config";
 

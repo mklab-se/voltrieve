@@ -1,3 +1,4 @@
+// Copied to another client; keep the two alike.
 /** Pure incremental parser for text/event-stream. No I/O, no DOM. */
 
 export interface SseMessage {

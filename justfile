@@ -19,6 +19,14 @@ ask question backend="loop":
 web:
     cd clients/web && npm ci --silent && npm run dev -- --mode production
 
+# Run the operations dashboard locally against the deployed API, on http://localhost:5174
+dashboard:
+    cd clients/dashboard && npm ci --silent && npm run dev -- --mode production
+
+# Open the deployed operations dashboard in your browser
+open-dashboard:
+    open "$(azd env get-value DASHBOARD_URL)"
+
 # Open the deployed web client in your browser
 open:
     open "$(azd env get-value WEB_URL)"

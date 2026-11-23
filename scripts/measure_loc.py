@@ -63,6 +63,7 @@ AGENT_GROUPS = (
 # Shared by all three, or not part of any agent: shown for scale, left out of the backend totals.
 CONTEXT_GROUPS = (
     Group("CLI client", "", ("clients/cli/src",)),
+    Group("Dashboard", "", ("clients/dashboard/src",)),
     Group("Dealer service", "", ("services/dealer/app",)),
     Group("Search setup (rest of search/)", "", ("search/src",)),
     Group("Entra setup", "", ("infra/scripts/entra/src",)),

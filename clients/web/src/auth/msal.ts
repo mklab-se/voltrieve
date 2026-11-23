@@ -1,3 +1,4 @@
+// Copied to another client; keep the two alike.
 import {
   InteractionRequiredAuthError,
   PublicClientApplication,

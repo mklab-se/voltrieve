@@ -1,3 +1,4 @@
+// ConfigMissing and Loading are copied to another client; keep the two alike.
 import type { Auth } from "../auth";
 
 export function ConfigMissing({ missing }: { missing: string[] }) {

@@ -1,3 +1,4 @@
+// Copied to another client; keep the two alike.
 import type { Auth, AuthSession } from "./types";
 
 /** Dev-only stand-in so the UI can run against the mock SSE server. Never imported in production. */
@@ -22,8 +23,8 @@ export function createFakeAuth(): Auth {
       location.reload();
     },
     async getToken() {
-      // Unsigned and dev only: shaped like a JWT so the dashboard role can be shown locally.
-      const payload = btoa(JSON.stringify({ roles: ["Chat.User", "Dashboard.View"] })).replace(/=+$/, "");
+      // Unsigned and dev only: shaped like a JWT, with the chat role.
+      const payload = btoa(JSON.stringify({ roles: ["Chat.User"] })).replace(/=+$/, "");
       return `dev.${payload}.fake`;
     },
   };

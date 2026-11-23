@@ -49,6 +49,15 @@ export function canViewDashboard(accessToken: string): boolean {
   }
 }
 
+/** Whether the signed-in user may open the feed. The API checks the role again on every request. */
+export async function checkAccess(auth: { getToken(): Promise<string> }): Promise<boolean> {
+  try {
+    return canViewDashboard(await auth.getToken());
+  } catch {
+    return false;
+  }
+}
+
 /** A turn is published when it starts and again when it ends: merge by id, newest first. */
 export function feedReducer(state: FeedState, msg: FeedMessage): FeedState {
   if (msg.event === "reset") return { ...state, turns: [] };
@@ -120,18 +129,4 @@ export async function* streamLive(apiUrl: string, token: string, prompts: boolea
     }
     if (done) return;
   }
-}
-
-export type Page = "chat" | "dashboard";
-
-/** ?view=dashboard opens the dashboard, so a big screen can be reloaded or bookmarked. */
-export function pageFromUrl(search: string): Page {
-  return new URLSearchParams(search).get("view") === "dashboard" ? "dashboard" : "chat";
-}
-
-export function urlForPage(href: string, page: Page): string {
-  const url = new URL(href);
-  if (page === "dashboard") url.searchParams.set("view", "dashboard");
-  else url.searchParams.delete("view");
-  return url.toString();
 }

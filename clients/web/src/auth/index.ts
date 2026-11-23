@@ -1,3 +1,4 @@
+// Copied to another client; keep the two alike.
 import type { AppConfig } from "../config";
 import type { Auth, AuthSession } from "./types";
 
