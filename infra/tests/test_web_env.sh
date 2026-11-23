@@ -19,3 +19,4 @@ check() {
 }
 check web hooks/web-prepackage.sh
 check dashboard hooks/dashboard-prepackage.sh
+check car hooks/car-prepackage.sh

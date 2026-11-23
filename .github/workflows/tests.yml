@@ -79,6 +79,23 @@ jobs:
       - run: npm test
       - run: npm run build
 
+  car:
+    name: clients/car
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: clients/car
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: clients/car/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+
   infra:
     name: infra
     runs-on: ubuntu-latest

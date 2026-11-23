@@ -8,6 +8,7 @@ node_modules/
 .DS_Store
 clients/web/.env.production
 clients/dashboard/.env.production
+clients/car/.env.production
 
 # Documentation site
 site/
