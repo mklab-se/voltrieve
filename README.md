@@ -27,7 +27,7 @@ Most agent samples stop at "it answers". This one answers the questions you meet
 | **Can a client send a photo, and where does it go?** | Straight into the model call, as an unstored turn. The conversation keeps the text only. A new kind of attachment is one handler. | [Photos and attachments](docs/attachments.md) |
 | **How does the agent decide to use RAG?** | No classifier exists. The model decides in its first call, from words you control. | [The journey of a prompt](docs/prompt-journey.md) |
 | **Can it use several knowledge bases without calling them in vain?** | Yes: all three reached the right bases in every run. Two of them run the searches at the same time. | [Two knowledge bases](docs/why-foundry.md#6-two-knowledge-bases-who-chooses-and-who-runs-them-together) |
-| **Which model should I use?** | Newer isn't always better. `gpt-6.1-terra` runs all three backends, with 1 of 48 turns over 10 s to first token on the own loop. `gpt-6-luna` costs about a third of `gpt-5.4-mini`, and Search planning still needs a GPT-5 model. | [Choosing a model](docs/model-comparison.md) |
+| **Which model should I use?** | Newer isn't always better. `gpt-6.1-terra` runs all three backends, with 1 of 48 turns over 10 s to first token on the own loop. `gpt-6-luna` costs about a third of `gpt-5.4-mini`. It plans the Search queries (`PLANNING_MODEL_NAME`), and `gpt-5.4-mini` is the way back. | [Choosing a model](docs/model-comparison.md) |
 | **I need curated answers without slowing everything down.** | Pick the answer in the model call you already make, then skip the second one. Curated questions took under 2 s on two of the three, and other questions showed no measurable delay. | [Curated answers](docs/prompt-journey.md#curated-answers) |
 
 ## Who it is for: one client for each audience
@@ -39,7 +39,7 @@ Most agent samples stop at "it answers". This one answers the questions you meet
 | [The operations dashboard](docs/clients.md#the-operations-dashboard) | Voltrieve employees | What happens in the service: users, times, cost, errors |
 | [The CLI](docs/clients.md#the-cli) | Developers | A test tool for the API, on every backend, with the whole trace |
 
-The car and the new website are being built. [The clients](docs/clients.md) says what is built and what the design says.
+All four clients are built. [The clients](docs/clients.md) says what each one does, and what has not been run live is marked there.
 
 ## See it: the journey of a prompt
 
@@ -130,7 +130,7 @@ uv run --project clients/cli voltrieve ask "Which Voltrieve charges fastest?" --
 uv run --project clients/cli voltrieve chat --backend hosted --az-token
 ```
 
-With [`just`](https://github.com/casey/just) installed, `just chat` does the same on the own loop, and `just chat hosted` picks a backend. `just open` opens the deployed web client, and `just web` runs it locally. `just open-dashboard` and `just dashboard` do the same for the operations dashboard. Before a demo, `just warm-up` wakes everything that scales to zero, and `just keep-warm` keeps it awake. Add a gauge with `just chat loop --gauge` or `/gauge` in the chat, and with the Gauge button on the web.
+With [`just`](https://github.com/casey/just) installed, `just chat` does the same on the own loop, and `just chat hosted` picks a backend. `just open` opens the deployed web client, and `just web` runs it locally. `just open-dashboard` and `just dashboard` do the same for the operations dashboard. Before a demo, `just warm-up` wakes everything that scales to zero, and `just keep-warm` keeps it awake. Add a gauge in the CLI with `just chat loop --gauge` or `/gauge` in the chat.
 
 The chat shows message bubbles with rendered Markdown and one live status line. Add `--trace` to watch every step, or type `/trace` to see the last turn.
 
@@ -147,7 +147,7 @@ Tear down with `azd down --purge`. App registrations and the tester are not remo
 | `agents/prompt/` | Prompt agent definitions and the rejection demo (backend A) |
 | `agents/hosted/` | Hosted agent container and deployment (backend C) |
 | `api/app/attachments/` | One handler for each kind of attachment, and the store |
-| `clients/car/` | The car, for the driver (being built) |
+| `clients/car/` | The car, for the driver |
 | `clients/web/` | The website, for customers |
 | `clients/dashboard/` | The operations dashboard, for employees |
 | `clients/cli/` | The CLI, a developer tool |
@@ -185,7 +185,7 @@ Offline tests pass: `agent_core` 81, `api` 118, `agents/hosted` 18, `tests/contr
 
 Not verified:
 
-- Interactive sign-in to the SPA, and a real browser sign-in with `voltrieve login` (its MSAL calls are tested against a fake).
+- Interactive sign-in to the website, and a real browser sign-in with `voltrieve login` (its MSAL calls are tested against a fake).
 - A real sign-in as the tester.
 - Publishing to Teams and Microsoft 365.
 - Latency and cold-start figures.

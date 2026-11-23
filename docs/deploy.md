@@ -8,7 +8,7 @@ Tools:
 
 - Azure CLI (`az`) and Azure Developer CLI (`azd`)
 - `uv` (Python 3.12 is resolved per project)
-- Node.js and npm, for the SPA build
+- Node.js and npm, for the website build
 - Docker, where the Static Web Apps CLI cannot run (see below)
 
 Rights, for one user account. A service principal does not work, because the deployer role assignments use `principalType: 'User'`:
@@ -33,7 +33,7 @@ azd auth login
 
 Search reaches Foundry and storage over public endpoints with Entra tokens.
 
-All three backends run `gpt-6.1-terra` version `2026-10-26`, set with `chatModelName`. Search plans its queries with `gpt-5.4-mini` version `2026-03-17`, set with `planningModelName`, because it refuses GPT-6 models. Do not move a model without checking availability: `gpt-5.4-mini` is deployed as GlobalStandard with capacity 50. Capacity 10 caused rate limit failures in multi-question runs. On pay-per-token, capacity is a cap, not a cost.
+All three backends run `gpt-6.1-terra` version `2026-10-26`, set with `chatModelName`. `gpt-6-luna` plans the Search queries, set with `PLANNING_MODEL_NAME` (`planningModelName` in Bicep), and `gpt-5.4-mini` is the way back. Do not move a model without checking availability: `gpt-5.4-mini` is deployed as GlobalStandard with capacity 50. Capacity 10 caused rate limit failures in multi-question runs. On pay-per-token, capacity is a cap, not a cost.
 
 ## Environment
 
@@ -47,7 +47,11 @@ The name is limited to 22 characters and appears in resource names. Optional val
 | Name | Default | Purpose |
 | --- | --- | --- |
 | `AZURE_SEARCH_LOCATION` | `francecentral` | Search region |
+| `PLANNING_MODEL_NAME` | `gpt-6-luna` | The model that plans Search queries. The only other value is `gpt-5.4-mini` |
+| `SEARCH_SERVERLESS` | `off` | A Serverless search service next to the Basic one. `off`: not deployed. `standby`: deployed, nothing uses it. `active`: the API and agents use it. Basic stays in all three, and going back to `off` does not delete a deployed service |
 | `VOLTRIEVE_VERIFIED_DOMAIN` | the tenant's default domain | Domain for the tester account |
+
+The Basic service is in `AZURE_SEARCH_LOCATION`. A Serverless service is in `serverlessSearchLocation`, which defaults to Sweden Central.
 
 The hooks and scripts fill in the rest, such as `TENANT_ID`, `API_CLIENT_ID`, `WEB_URL`, `CAR_URL`, `DASHBOARD_URL`, `CAR_CLIENT_ID`, `DASHBOARD_CLIENT_ID`, `TEST_USER_UPN` and `HOSTED_AGENT_PRINCIPAL_ID`. All of them are identifiers. The Application Insights connection string is an ingestion identifier, not a secret.
 
@@ -121,7 +125,7 @@ See [runbook.md](runbook.md).
 When an environment already runs an older version, deploy the hosted agent before the API. With a new API and an old agent, a photo turn answers without the photo and the protection of the logs is missing.
 
 1. Preview, then `azd provision`: the three registrations and sites, the CORS origins, and `PROMPT_AGENT_CAR`. Not `azd up`, which would deploy the API before the agents.
-2. `scripts/deploy-agents.sh`: the three prompt agents, then the hosted agent. Its final check is `scripts/smoke.py --basic`, because the API is still older.
+2. `scripts/deploy-agents.sh`: the three prompt agents, then the hosted agent, then `azd provision` again (the agent identity did not exist before, so Bicep gives it its roles then) and the `Dealer.Access` role. Its final check is `scripts/smoke.py --basic`, because the API is still older.
 3. `azd deploy api`. The new revision drops the sessions that are bound to the old hosted version.
 4. `uv run scripts/smoke.py`, the full check. It adds one turn with the car's tools on the prompt agent and one upload on each backend.
 5. `web` and `dashboard` together, then `car`.
@@ -199,3 +203,14 @@ azd env set HOSTED_AGENT_PRINCIPAL_ID ""
 ```
 
 The tester password is printed again only if the account was deleted and is recreated.
+
+## Order for an update with the new search values
+
+A GPT-6 planning model needs every caller of Search to use `2026-11-01-preview` or later, so the code goes first. Planning on `gpt-6-luna` and Serverless are described in [Decisions](decisions.md#search-moved-to-the-foundry-iq-versions).
+
+1. Set `PLANNING_MODEL_NAME` to `gpt-5.4-mini` and run `azd provision`. This writes the search definitions with the new API version and still plans with the old model.
+2. Run `scripts/deploy-agents.sh`, then `azd deploy api`, and check with `uv run scripts/smoke.py`.
+3. Set `PLANNING_MODEL_NAME` to `gpt-6-luna` and run `azd provision`. The definitions are written again, and the next retrieve plans with the new model. To go back, set `gpt-5.4-mini` and provision.
+4. Serverless last, and only if wanted: `SEARCH_SERVERLESS=standby`, provision, fill it and run the search smoke questions against it. Then `active`, provision and `scripts/deploy-agents.sh`.
+
+<!-- MEASURE: time to first token and cost with gpt-6-luna as the planner, and with Serverless, also after more than 10 idle minutes -->

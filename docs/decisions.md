@@ -25,7 +25,12 @@ The user decided to use the latest API versions, preview included. This replaced
 
 ### Search management stepped back from the newest listed version
 
-`2026-11-01` is listed in the docs but was not live in France Central, so Bicep uses `2026-09-01-preview`, the newest the service accepted.
+`2026-11-01` is listed in the docs but was not live in France Central, so Bicep used `2026-09-01-preview`, the newest the service accepted. It is live now, and the next section says what moved.
+
+
+### Search moved to the Foundry IQ versions
+
+The data plane and the knowledge base MCP endpoint move to `2026-11-01-preview`, and Bicep to the stable `2026-11-01`. `gpt-6-luna` plans the Search queries, set with `PLANNING_MODEL_NAME`, and `gpt-5.4-mini` is the way back. A Serverless search service is built and off (`SEARCH_SERVERLESS`). This is not measured yet. The reasons, the order and the way back are in [the design](https://github.com/mklab-se/voltrieve/blob/main/docs/superpowers/specs/2026-11-24-search-foundry-iq-design.md) and in [Deployment](deploy.md#order-for-an-update-with-the-new-search-values).
 
 ### Bicep BCP081 warnings are expected
 
@@ -103,9 +108,9 @@ A second message while a turn is running gets 409 `turn_in_progress`. It is the 
 
 ## Backends
 
-### A: two agents
+### A: three agents
 
-Tools are fixed in the definition, so there are two agents, `voltrieve-prompt-cli` and `voltrieve-prompt-web`. The API picks by whether the request has `client_tools`, and refers to the agent by name, which gives the latest version.
+Tools are fixed in the definition, so there are three agents: `voltrieve-prompt-cli`, `voltrieve-prompt-web` and `voltrieve-prompt-car`. The API picks the first, in the order web, CLI, car, whose tools include every declared one, and refers to it by name, which gives the latest version.
 
 ### C: Invocations protocol
 
@@ -139,7 +144,7 @@ A client declares the schema of its tools, and the model is not bound to it. `To
 
 ### One correlation id per turn
 
-The CLI and the SPA generate an id for each turn and send it as `X-Correlation-Id` on every request of the turn, and show it. A client tool turn is two requests under one id. Every hop of a turn is a log line and a span event, with arguments and result previews at debug level only.
+The CLI and the website generate an id for each turn and send it as `X-Correlation-Id` on every request of the turn, and show it. A client tool turn is two requests under one id. Every hop of a turn is a log line and a span event, with arguments and result previews at debug level only.
 
 ### The CLI reads the azd environment
 
@@ -166,7 +171,7 @@ It is an ingestion identifier, not a secret: it only allows sending telemetry. I
 ## Deployment
 
 - Provision runs before package, because the web build needs provision outputs.
-- The SPA upload runs in Docker on Apple Silicon. The SWA CLI's client is x86, and installing Rosetta is a system change.
+- The website upload runs in Docker on Apple Silicon. The SWA CLI's client is x86, and installing Rosetta is a system change.
 - The root `.dockerignore` is an allow-list, because `azd` tar failed on files changing during the archive.
 - The search smoke test runs in `postup`, so a miss cannot block a deployment. `scripts/smoke.py` runs at the end of `scripts/deploy-agents.sh` and covers the API, the dealer, the indexer and one turn per backend.
 - The dealer client timeout is 45 seconds, because the dealer scales to zero. The earlier 15 seconds caused one grounding miss.
@@ -299,7 +304,7 @@ up in the indexes, so an invented title gets no link. Other choices:
 
 ## Not recorded or not verified
 
-- Interactive SPA sign-in, and a real browser sign-in with `voltrieve login` (tested against a fake MSAL application).
+- Interactive website sign-in, and a real browser sign-in with `voltrieve login` (tested against a fake MSAL application).
 - A real sign-in as the tester. The denied case ran with a fake validator.
 - Publishing to Teams and Microsoft 365.
 - Cold-start figures. Whole turn times are in `docs/why-foundry.md` section 6, measured from one laptop.

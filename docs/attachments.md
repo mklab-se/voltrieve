@@ -53,7 +53,7 @@ It is kept out of logs, spans and the live feed. It is part of the user message 
 
 The photo goes into the model call. The two other approaches that were tried read it first and hand the model a description.
 
-Tested on 2026-11-23 against the deployed project with `gpt-6.1-terra`, on the Responses API as the own loop calls it and on the deployed prompt agent. This was a spike, run once, with made-up photos, and a set of real sign photos that are not in the repository. The repository holds only signs drawn by code, so these numbers cannot be rerun from here. The plan is to run the comparison again with drawn signs (see [Still to be measured](#still-to-be-measured)).
+Tested on 2026-11-23 against the deployed project with `gpt-6.1-terra`, on the Responses API as the own loop calls it and on the deployed prompt agent. This was a spike, run once, with made-up photos, and a set of real sign photos that are not in the repository. The repository holds only signs drawn by code, so these numbers cannot be rerun from here. The record in `docs/evidence/photo-spike.txt` covers only the paused turn spike below (one run each). The tables of approaches, the parking run and the broken part runs are from the same day, but their raw output is not kept in the repository, so treat them as reported, not verified. The plan is to run the comparison again with drawn signs (see [Still to be measured](#still-to-be-measured)).
 
 | Approach | Trade-off | Measured |
 | --- | --- | --- |
@@ -148,7 +148,9 @@ class AttachmentHandler(Protocol):
     def process(self, data: bytes, label: str) -> list[Part]: ...   # or raises Rejected(code, message)
 ```
 
-`process` returns a list because one upload may become several parts. The store, the routes and the backends only know about parts, which is why a new kind does not change the contract.
+`accepts` gets only the start of the file, 512 bytes (`HEAD_BYTES` in `upload.py`), so a kind must be recognizable from its first bytes. `process` returns a list because one upload may become several parts. The store, the routes and the backends only know about parts, which is why a new kind does not change the contract.
+
+The kind reaches the model too. Each part is sent after a line `Attachment N (kind): label`, where N counts the attachments of the request. So a handler needs a clear `kind` and a useful label, because the model reads both.
 
 Two cautions, both in the code's own notes. A kind above 8 MB also needs the body limit raised in `main.py`. And text that a handler produces must be cleaned by the handler, since it goes to the model as data. The photo handler drops hidden data by encoding a new JPEG, so a later handler that needs something hidden in a file must take it out before that step.
 
@@ -182,7 +184,7 @@ What would change this:
 - A need to tweak what Runa does without deploying code, for example by another team, per customer or per market.
 - A wish to share the same instructions with outside AI tools through MCP (issue #16).
 
-Then follow the open format and load skills through server tools, so all three backends get them. Two things to know first. Foundry's own skills are in preview, and the documentation only describes them on a prompt agent with the Copilot harness, which does not accept `store: false`, so they do not fit photo turns today. And the owner answers for a skill as for any code: who may publish one matters, since that replaces the code review and tests, and so does what a script is given, since arguments come from the model and files from users.
+Then follow the open format and load skills through server tools, so all three backends get them. Two things to know first. Foundry's own skills are in preview, and the documentation describes them on a prompt agent that uses the Copilot harness ([Use skills in Foundry](https://learn.microsoft.com/azure/foundry/agents/how-to/tools/skills)). Whether that harness accepts `store: false` is not verified, so whether skills fit photo turns today is not known. And the owner answers for a skill as for any code: who may publish one matters, since that replaces the code review and tests, and so does what a script is given, since arguments come from the model and files from users.
 
 The measure of what to expect: in the photo spike, a tool that returned rules was chosen correctly in 27 of 27 turns among Runa's real tools, at about 1.5 s extra.
 

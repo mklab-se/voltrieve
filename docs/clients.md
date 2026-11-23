@@ -30,7 +30,9 @@ flowchart LR
 
 ## Status
 
-The CLI and the dashboard are built and deployed from this repository. The car and the new website are being built on separate branches. Where this page describes them, it says what the design says, and it will be checked against the running clients.
+All four clients are built in this repository: the car, the website, the operations dashboard and the CLI. This page was checked against the design. What has run live is listed below as it is measured.
+
+<!-- MEASURE: what has run live for each client (sign-in, a photo turn, the car's five tools on three backends), and what is not verified -->
 
 ## What the clients share
 
@@ -53,7 +55,7 @@ The car is the Spark, the city car in saffron yellow. The driver sees a picture 
 
 The street is made of blocks. One parking rule holds for a block, and its sign stands at the start. When the car passes a sign, a second camera takes a close-up, so the smallest row of text is large enough to read. Above 70 km/h the photo is blurred, the server rejects it as `too_blurry`, and Runa asks the driver to slow down. The button "Park here?" sends the last photo with the question.
 
-The answer to a question floats above the dashboard in large type, then moves back into the center screen after 12 quiet seconds.
+The answer to a question floats above the dashboard in large type, then sinks back into the center screen after 12 quiet seconds or when the driver presses Escape. It stays while the pointer or keyboard focus is in it. The layout keeps its proportions from 1280 to 2560 pixels wide, and a smaller screen gets a message that asks for a larger one. The clock on the screen can be set to any day and time, and it is sent as the local time in the context.
 
 **`set_speed` does what it is told.** It is a simulation. A real car must decide for itself what it accepts, whatever the model asks for. See [Decisions](decisions.md#set_speed-does-what-it-is-told).
 
@@ -61,9 +63,9 @@ The answer to a question floats above the dashboard in large type, then moves ba
 
 ## The website
 
-"My Voltrieve" is a customer's page: name, their car with picture, registration, trim, color, odometer and next service, and the chat as "Ask Runa about your car". The car data is made up and lives in the client. It is sent with each message as `context`, so Runa knows which car is meant. Suggested questions are about that car. A button attaches a photo, with a preview and a remove button.
+"My Voltrieve" is a customer's page: name, their car with picture, registration, trim, color, odometer and next service, and the chat as "Ask Runa about your car". The car data is made up and lives in the client. It is sent with each message as `context`, so Runa knows which car is meant. Suggested questions are about that car. The customer's Spark is in the Plus trim. A button attaches a photo, with a preview, a remove button and drag and drop.
 
-The gauge, `set_gauge` on the web, the name "Flight Recorder" and the dashboard are removed. "Under the hood" works as in the car: timeline, backend picker and correlation id, off by default.
+The gauge, `set_gauge`, the name "Flight Recorder" and the dashboard are not in the website. The website declares only `set_theme`. "Under the hood" works as in the car: timeline, backend picker and correlation id, off by default.
 
 ## The operations dashboard
 

@@ -108,18 +108,18 @@ The same core runs in the Foundry container. The trace sequence matches backend 
 | 7 | `voltrieve ask "What is the cheapest AWD Voltrieve in Sweden?" --backend hosted --az-token` | `token_validated`, `backend_selected`, `conversation_created`, `model_called`, `model_returned`, `server_tool_called`, `knowledge_base_retrieved`, `server_tool_returned`, `server_tool_called`, `server_tool_returned`, `model_called`, deltas, `model_returned`, `done`. The recorded run called two tools. | PASS |
 | 8 | `voltrieve ask "Is the Atlas in stock in Göteborg?" --backend hosted --az-token` | `token_validated`, `backend_selected`, `conversation_created`, `model_called`, `model_returned`, `server_tool_called`, `server_tool_returned`, `model_called`, deltas, `model_returned`, `done`. The tool is `check_stock`. | PASS |
 | 9a | `voltrieve ask "Book me a test drive of the Atlas in Göteborg on Saturday (YYYY-MM-DD)." --backend hosted --az-token`, using the coming Saturday | `token_validated`, `backend_selected`, `conversation_created`, `model_called`, `model_returned`, `server_tool_called`, `server_tool_returned`, `model_called`, deltas, `model_returned`, `done`. The tool is `book_test_drive`. | PASS |
-| 9b | No in-process demo for this backend. Sign in as the tester in the SPA or with `voltrieve login`, choose hosted, and ask the same question. | Should match backend B: `server_tool_called`, `authorization_denied`, `server_tool_returned`, polite refusal. Role gating here is covered by offline tests. | Not tested live |
+| 9b | No in-process demo for this backend. Sign in as the tester in the website or with `voltrieve login`, choose hosted, and ask the same question. | Should match backend B: `server_tool_called`, `authorization_denied`, `server_tool_returned`, polite refusal. Role gating here is covered by offline tests. | Not tested live |
 | 10 | In `voltrieve chat --backend hosted --az-token`, ask: `What is the towing capacity of the Voltrieve Fjord? When you have the answer, beep three times.` | `token_validated`, `backend_selected`, `model_called`, `model_returned`, `client_tool_requested`, `client_tool_calls`. The CLI rings the bell and posts the result. Then `token_validated`, `backend_selected`, `model_called`, deltas, `model_returned`, `done`. There is no `conversation_created`: the conversation already exists. | PASS (`make_noise`, times=3) |
 | 11 | Skip | Backend A only. | SKIP |
 | 12 | See [Follow a correlation id](#follow-a-correlation-id), with `runbook-hosted-2` or `runbook-hosted-8` | One `chat.turn` span and the calls around it | MANUAL, not recorded |
 
 ## Step 9 as the tester, for real
 
-`scripts/denied_demo.py` runs the real API in process with a fake token validator that returns only `Chat.User`, against the real Foundry backend. It does not sign in as the tester, and it never reaches the dealer service. To use the real account, sign in to the SPA as below, or run `voltrieve login` as the tester, and ask for the booking. This real-account path was not tested.
+`scripts/denied_demo.py` runs the real API in process with a fake token validator that returns only `Chat.User`, against the real Foundry backend. It does not sign in as the tester, and it never reaches the dealer service. To use the real account, sign in to the website as below, or run `voltrieve login` as the tester, and ask for the booking. This real-account path was not tested.
 
-## Step 10 in the SPA
+## Step 10 in the website
 
-The SPA declares `set_theme` and `set_gauge`. The CLI declares `honk` and `set_gauge` among its tools. The gauge is off by default. Turn it on with the Gauge button in the SPA, with `--gauge` or with `/gauge` in the CLI. `set_gauge` is deliberately missing from the prompt agents, so while it is on, every request to `prompt` is refused with `unsupported_client_tool`, which shows that limit. On the other two backends, "Switch to the dark theme." changes the theme. It has no beep tool, so the same question should get an explanation that it cannot beep, with no `client_tool_calls` event. On `prompt` the API picks the web agent, which has no client tools. This was not tested in the browser.
+The website declares `set_theme`. The CLI declares `make_noise`, `honk`, `get_local_time` and `show_banner`, and, when asked, `set_gauge`. The gauge exists only in the CLI: turn it on with `--gauge` or with `/gauge`. `set_gauge` is deliberately missing from the prompt agents, so while it is on, every request to `prompt` is refused with `unsupported_client_tool`, which shows that limit. On the other two backends, "Switch to the dark theme." changes the theme in the website. The website has no beep tool, so the same question should get an explanation that it cannot beep, with no `client_tool_calls` event. On `prompt` the API picks the web agent, which has only `set_theme`. This was not tested in the browser.
 
 ## The car demo
 
@@ -156,9 +156,9 @@ Without Azure, the car client has a mock server (design section 8.7).
 
 The client sees the failure as an `error` event as usual.
 
-## Sign in to the SPA
+## Sign in to the website
 
-The URL is `azd env get-value WEB_URL`. Sign-in is an Entra redirect with PKCE. Interactive sign-in was not verified: the SPA was tested with a mock server and fake auth, and the deployed site has not had a recorded browser sign-in.
+The URL is `azd env get-value WEB_URL`. Sign-in is an Entra redirect with PKCE. Interactive sign-in was not verified: the website was tested with a mock server and fake auth, and the deployed site has not had a recorded browser sign-in.
 
 | Account | User | Holds |
 | --- | --- | --- |
@@ -169,13 +169,13 @@ The tester's password is generated by `azd up` and printed once by the preprovis
 
 The header has a backend selector, which sets `X-Agent-Backend`. The side panel shows the same trace events as the CLI.
 
-To try the SPA without Azure:
+To try the website without Azure:
 
 ```sh
 cd clients/web
 npm ci
 npm run mock          # scripted API on port 8787
-npm run dev:mock      # in a second terminal, SPA with fake auth
+npm run dev:mock      # in a second terminal, website with fake auth
 ```
 
 ## Follow a correlation id
@@ -210,7 +210,7 @@ Expect `cloud_RoleName` `voltrieve-api`, with `voltrieve-dealer` for the dealer 
 
 A client tool turn is two HTTP requests, so it spans two `operation_Id` values under one correlation id. The query handles that when the client sends the same id on both, as `scripts/runbook.py` and the CLI do.
 
-`voltrieve` and the SPA generate one id per turn, send it on every request of the turn and show it (the CLI on stderr, with `--trace` and with `/trace` in the chat, in the trace panel, the SPA in the event timeline). Copy it into `cid` above. Without an id, take `turn_id` from `voltrieve ask --json` and filter on it instead:
+`voltrieve` and the website generate one id per turn, send it on every request of the turn and show it (the CLI on stderr, with `--trace` and with `/trace` in the chat, in the trace panel, the website in the event timeline). Copy it into `cid` above. Without an id, take `turn_id` from `voltrieve ask --json` and filter on it instead:
 
 ```kusto
 dependencies
@@ -232,7 +232,7 @@ export CORS_ORIGINS=http://localhost:5173 VOLTRIEVE_API_URL=http://localhost:800
 
 Foundry and Search work through your roles. Dealer tools fail against the deployed dealer, because it requires the `Dealer.Access` application role, which a user token does not have.
 
-For the SPA against that API or the deployed one:
+For the website against that API or the deployed one:
 
 ```sh
 cd clients/web
