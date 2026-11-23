@@ -309,27 +309,27 @@ Start with B if unsure. The core moves to C unchanged, for about 465 lines.
 
 ## A device that brings its own tools
 
-This was run against the deployed API with `scripts/new_client_tool_demo.py`. A script declares `set_emissivity` in the request, and nothing about that tool exists in the API, the agents or Foundry. Backends B and C relayed the call to the client with the value 0.95 and finished the turn, with no server change. Backend A refused it with `unsupported_client_tool` (`docs/evidence/new-client-tool.txt`). The script stands in for a camera: no Android code or device was involved.
+This was run against the deployed API with `scripts/new_client_tool_demo.py`. A script declares `set_seat_heating(level)`, from 0 to 3, in the request, and nothing about that tool exists in the API, the agents or Foundry. Backends B and C relayed the call to the client with the level 2 and finished the turn, with no server change. Backend A refused it with `unsupported_client_tool` (`docs/evidence/new-client-tool.txt`). The script stands in for a car with a function the server has never seen: no car software or vehicle was involved.
 
-The problem: an Android camera client exposes `set_emissivity` to the agent, alongside knowledge bases. This repository did not test an Android client or a real `set_emissivity`. Two knowledge bases are tested in section 6. The advice below follows from what was measured.
+The problem: the software in a car exposes `set_seat_heating` to the agent, alongside knowledge bases. This repository did not test a real in-car system or a real seat heater. Two knowledge bases are tested in section 6. The advice below follows from what was measured.
 
-**Pick option B, the own loop in a web API.** The camera declares a device capability, which is what per-request tools exist for. The model must ask the camera to act, and the camera answers. Backend B does this with no workaround, and the Android app talks to a contract you own.
+**Pick option B, the own loop in a web API.** The car declares a vehicle capability, which is what per-request tools exist for. The model must ask the car to act, and the car answers. Backend B does this with no workaround, and the in-car software talks to a contract you own.
 
 What it would take:
 
-1. **Declare the tool on every turn.** Send `set_emissivity` in `client_tools`, with a schema that states the range the camera accepts. The API validates the shape of the schema and enforces limits (16 tools, 16 KiB).
+1. **Declare the tool on every turn.** Send `set_seat_heating` in `client_tools`, with a schema that states the range the car accepts. The API validates the shape of the schema and enforces limits (16 tools, 16 KiB).
 2. **Speak the stream.** Read SSE, handle `trace`, `delta`, `client_tool_calls`, `done` and `error`. On `client_tool_calls`, apply the setting and post one result per `call_id` to `/chat/tool-results` within 15 minutes. `clients/cli/src/voltrieve_cli/api.py` is the reference, 40 lines for the turn loop.
-3. **Validate on the device.** The API never runs client tools. It does check the model's arguments against the schema you declared and answers a call that fails the check with the error instead of forwarding it (`ToolSet.validate_client`), but the schema is only as strict as you wrote it. The app must still check the value, and decide whether the user confirms a change that affects measurements. A schema may not use `$ref`: the API rejects it with 422.
-4. **Add a client registration.** Register a public client like `voltrieve-cli`, with the Android redirect, requesting `access_as_user`. Users need the `Chat.User` role. MSAL for Android was not tested.
+3. **Validate in the car.** The API never runs client tools. It does check the model's arguments against the schema you declared and answers a call that fails the check with the error instead of forwarding it (`ToolSet.validate_client`), but the schema is only as strict as you wrote it. The car must still check the value, and decide whether the driver confirms a change that affects comfort or safety. A schema may not use `$ref`: the API rejects it with 422.
+4. **Add a client registration.** Register a public client like `voltrieve-cli`, with the redirect the car software uses, requesting `access_as_user`. Users need the `Chat.User` role. A native sign-in in a real car was not tested.
 5. **Add the knowledge bases.** Add one server tool per knowledge base, as `search_voltrieve_docs` and `search_spare_parts` do, and say in each description what it does not hold. The loop runs them together when the model asks for both.
-6. **Plan for a mobile network.** A turn survives a dropped connection, but there is no way to resume a stream. If `client_tool_calls` is lost, the turn waits until the next message closes it with "the client did not return a result". A real app needs a resume or poll endpoint, which does not exist here.
+6. **Plan for a mobile network.** A turn survives a dropped connection, but there is no way to resume a stream. If `client_tool_calls` is lost, the turn waits until the next message closes it with "the client did not return a result". A car in a tunnel needs a resume or poll endpoint, which does not exist here.
 7. **Move turn state out of the process before scaling.** `TurnStore` is a dict, so this API runs with `maxReplicas` 1 and a restart loses paused turns. More than one replica needs a shared store.
 
 Alternatives for the same client:
 
-- **If the camera's tools are fixed and rarely change,** a prompt agent also works: add `set_emissivity` to the definition, as `CLI_TOOLS` does in `agents/prompt/create_agents.py`, and keep the relay in the API. Every tool change then needs a new agent version before the app ships it, and tools cannot vary by device or firmware.
-- **If agent identity or Foundry-run hosting is a hard requirement,** use C. The app does not change, because the API hides the difference. Items 1 to 7 still apply.
-- **If Teams or Microsoft 365 is also wanted,** treat it as a second client. `set_emissivity` means nothing in Teams, since there is no camera there. A published prompt agent over the same knowledge bases can sit beside the camera's backend. This was not tested.
+- **If the car's tools are fixed and rarely change,** a prompt agent also works: add `set_seat_heating` to the definition, as `CLI_TOOLS` does in `agents/prompt/create_agents.py`, and keep the relay in the API. Every tool change then needs a new agent version before the car ships it, and tools cannot vary by model year or trim.
+- **If agent identity or Foundry-run hosting is a hard requirement,** use C. The car does not change, because the API hides the difference. Items 1 to 7 still apply.
+- **If Teams or Microsoft 365 is also wanted,** treat it as a second client. `set_seat_heating` means nothing in Teams, since there is no seat there. A published prompt agent over the same knowledge bases can sit beside the car's backend. This was not tested.
 
 ## Appendix: backend sheets
 

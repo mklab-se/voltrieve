@@ -181,6 +181,50 @@ It is an ingestion identifier, not a secret: it only allows sending telemetry. I
 - The search smoke test runs in `postup`, so a miss cannot block a deployment. `scripts/smoke.py` runs at the end of `scripts/deploy-agents.sh` and covers the API, the dealer, the indexer and one turn per backend.
 - The dealer client timeout is 45 seconds, because the dealer scales to zero. The earlier 15 seconds caused one grounding miss.
 
+## Photos, the car and the website
+
+Dated facts in this section are from the spike of 2026-11-23. The numbers are in [attachments.md](attachments.md).
+
+### The photo goes straight to the model
+
+Three ways to read a photo were tried: straight into the model call, through a photo reading tool, and through a fixed reading form. The first was right 54 of 54 times at a median of 1.6 s. The tool took 5.2 s and the form got 53 of 54. Straight into the call is faster and loses no detail. The price is that the photo must be kept out of the stored conversation, which the next entry deals with.
+
+### Photo turns are unstored, and the text is recorded by us
+
+A model call with an attachment is made with `store=False`, for every kind of attachment, so a new kind never touches a backend. The loop keeps the turn's items in memory and records only the text and the answer at the end. The alternatives kept the photo: a stored conversation item still showed in the stored response after it was deleted, and a model still answered about a deleted file. The cost is that later turns do not see that turn's search results. `store=False` is not a promise of zero retention, and the documentation says so (links in [attachments.md](attachments.md#what-storefalse-does-not-promise)).
+
+### No built-in parking rules
+
+Public parking rules went four ways in 96 questions each: the model's own knowledge, the rules in the prompt, a tool that returns them, and a specialist tool that gets the photo. All four were right 96 of 96. The cheapest and fastest part is to build nothing, so nothing is built. What is not public cannot be known by a model, and for that [the extension table](attachments.md#how-it-extends) says where it goes.
+
+### Reading a road sign is the one exception to answering only from documents
+
+Runa answers only from retrieved documents and tool results. Reading a public road sign in the user's photo needs the traffic rules, which are in no document of ours. The instructions allow general knowledge for that, and for nothing else. The three new bullets sit outside the routing list, because text inside that list has moved the routing before. The order of a parking answer is in the instructions, for parking only. How to read a sign's panels is not, since the model knows it and the tests check it.
+
+### No skills, for now
+
+Agent Skills would let someone change what Runa does without deploying code. Whoever runs this architecture owns the backend, and a rule or a routine can be a server tool with a schema, a role and tests. A skill needs its own harness on the server and gives nothing more while every change is a deployment. Foundry's own skills are in preview and are described only with the Copilot harness, which does not accept `store: false`. This is issue #17, and [attachments.md](attachments.md#why-no-skills) says what would change it.
+
+### The car is a browser app, not a native one
+
+A browser cockpit can be opened by anyone who watches a demo, signs in the same way as the website, and costs nothing more than a Static Web App on the Free tier. A native app would need a build and a device for each audience, and the car has no hardware to show. The street is a 3D scene (three.js) behind a rendered cockpit, which costs one more dependency and stylized buildings. Sprites would have made the sign photo fake, and a looped video could not vary the signs or let the car park.
+
+### One client for each audience
+
+The web client had become a customer chat, an event viewer, a backend picker and an operations dashboard in one, and the CLI did not look like a car. Now the car is for the driver, the website for a signed-in customer, the dashboard for employees and the CLI for developers. Each has its own app registration and Static Web App, so a role or a redirect is changed for one audience at a time. The cost is two more registrations and two more sites on the Free tier. See [clients.md](clients.md).
+
+### The car has its own prompt agent
+
+A prompt agent's tools are fixed in its definition, so the car needs its own, `voltrieve-prompt-car`. The API now picks the first agent, in the order web, CLI, car, whose tools include every declared one. No match still gives `unsupported_client_tool`. The old rule picked the CLI agent whenever any declared tool was a CLI tool, which breaks when the car also has `honk`.
+
+### `set_speed` does what it is told
+
+The car is a simulation, so `set_speed` accepts any speed from 0 to 150 whenever the model asks. A real car must decide for itself what it accepts, whatever an assistant requests, and must never leave a safety decision to a model. The documentation says so, so nobody takes the demo for a design to copy.
+
+### The hosted agent is deployed before the API
+
+With a new API and an old hosted agent, photo turns answer without the photo and the protection of the logs is missing. So the order is the provision, then `scripts/deploy-agents.sh`, then the API, and a rollback goes the other way round. See [deploy.md](deploy.md#order-for-an-update-with-attachments).
+
 ## Live findings
 
 - Prompt agent with `agent_reference` plus `tools`: `400 Not allowed when agent is specified.`
@@ -272,4 +316,6 @@ up in the indexes, so an invented title gets no link. Other choices:
 - Whether `alwaysQuerySource` would make one knowledge base cover both sources.
 - The 10 minute run expiry from older documentation.
 - Whether an MCP tool with a project connection works outside an agent definition.
+- Whether Foundry keeps a photo that was sent in an unstored turn, for abuse monitoring or anything else.
+- A browser sign-in to the car and the new website, and an unstored turn inside the hosted agent, until the evidence runs say otherwise.
 - Indexer duration, final item counts, how long role propagation retries waited, and smoke test scores. The first deployment did not keep these.

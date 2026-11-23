@@ -31,6 +31,8 @@ nav:
   - The journey of a prompt: prompt-journey.md
   - Choosing a model: model-comparison.md
   - Why Foundry: why-foundry.md
+  - The clients: clients.md
+  - Photos and attachments: attachments.md
   - Demo runbook: runbook.md
   - Deployment: deploy.md
   - Decisions: decisions.md

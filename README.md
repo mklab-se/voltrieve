@@ -24,10 +24,22 @@ Most agent samples stop at "it answers". This one answers the questions you meet
 | --- | --- | --- |
 | **Why host an agent in Foundry at all?** | For a managed identity, versions and a publishing path. Not for the loop, which is 252 lines of Python. | [Comparison](docs/why-foundry.md) |
 | **My client has its own tools. Now what?** | A prompt agent refuses per-request tools with a 400. An own loop or a hosted agent runs them, even one the server has never seen. | [Client tools](docs/why-foundry.md#1-what-happened-with-client-tools) |
+| **Can a client send a photo, and where does it go?** | Straight into the model call, as an unstored turn. The conversation keeps the text only. A new kind of attachment is one handler. | [Photos and attachments](docs/attachments.md) |
 | **How does the agent decide to use RAG?** | No classifier exists. The model decides in its first call, from words you control. | [The journey of a prompt](docs/prompt-journey.md) |
 | **Can it use several knowledge bases without calling them in vain?** | Yes: all three reached the right bases in every run. Two of them run the searches at the same time. | [Two knowledge bases](docs/why-foundry.md#6-two-knowledge-bases-who-chooses-and-who-runs-them-together) |
 | **Which model should I use?** | Newer isn't always better. `gpt-6.1-terra` runs all three backends, with 1 of 48 turns over 10 s to first token on the own loop. `gpt-6-luna` costs about a third of `gpt-5.4-mini`, and Search planning still needs a GPT-5 model. | [Choosing a model](docs/model-comparison.md) |
 | **I need curated answers without slowing everything down.** | Pick the answer in the model call you already make, then skip the second one. Curated questions took under 2 s on two of the three, and other questions showed no measurable delay. | [Curated answers](docs/prompt-journey.md#curated-answers) |
+
+## Who it is for: one client for each audience
+
+| Client | Audience | Shows |
+| --- | --- | --- |
+| [The car](docs/clients.md#the-car) | The driver | The assistant inside the car, with functions you see and hear, and a photo of a road sign |
+| [The website](docs/clients.md#the-website) | A signed-in customer | Asking Runa about your own car, with a photo if you have one |
+| [The operations dashboard](docs/clients.md#the-operations-dashboard) | Voltrieve employees | What happens in the service: users, times, cost, errors |
+| [The CLI](docs/clients.md#the-cli) | Developers | A test tool for the API, on every backend, with the whole trace |
+
+The car and the new website are being built. [The clients](docs/clients.md) says what is built and what the design says.
 
 ## See it: the journey of a prompt
 
@@ -60,10 +72,14 @@ The diagram below is the whole system. The only thing that changes between backe
 
 ```mermaid
 flowchart LR
-    CLI["CLI<br/>declares client tools"] --> API
-    SPA["SPA<br/>declares set_theme, set_gauge"] --> API
+    CLI["CLI, for developers<br/>declares client tools"] --> API
+    Car["Car, for the driver<br/>set_speed, set_wipers, honk, park"] --> API
+    Web["Website, for customers<br/>set_theme, photos"] --> API
+    Dash["Dashboard, for employees"] --> API
     Entra["Entra ID"] -. tokens .-> CLI
-    Entra -. tokens .-> SPA
+    Entra -. tokens .-> Car
+    Entra -. tokens .-> Web
+    Entra -. tokens .-> Dash
     API["Web API<br/>contract, auth, turn state"]
     API -->|"A: agent_reference"| Prompt["Prompt agents<br/>tools in the definition"]
     API -->|"B: own loop, per-request tools"| Model["Model deployment<br/>and Conversations"]
@@ -86,6 +102,7 @@ Choose per request with `X-Agent-Backend: prompt|loop|hosted`. Clients can't oth
 
 - **A shared agent loop** ([`agent_core/`](agent_core/)): parallel tool calls, roles on tools, schema checks, pause and resume for client tools.
 - **Client tools end to end**: a turn that pauses, runs on the user's machine and picks up again, with repair when a client disappears.
+- **Photos and attachments** ([`api/app/attachments/`](api/app/attachments/)): a handler for each kind, unstored turns that keep the photo out of the conversation, and an upload that answers `rejected` instead of failing.
 - **Curated answers** ([`curated.py`](agent_core/src/voltrieve_agent/curated.py)): approved text, word for word, with no search on every turn.
 - **Status events**: tell users what's happening while they wait, on the stream they already have.
 - **Agentic retrieval as code** ([`search/definitions/`](search/definitions/)): knowledge bases, sources, indexes and skillsets, on the latest API version.
@@ -101,7 +118,7 @@ az login && azd auth login
 azd env new voltrieve-dev
 azd env set AZURE_LOCATION swedencentral
 azd up                     # watch for the tester password, printed once
-scripts/deploy-web.sh      # only where the SWA CLI cannot run
+scripts/deploy-web.sh      # only where the SWA CLI cannot run, also `dashboard` and `car`
 scripts/deploy-agents.sh
 ```
 
@@ -113,7 +130,7 @@ uv run --project clients/cli voltrieve ask "Which Voltrieve charges fastest?" --
 uv run --project clients/cli voltrieve chat --backend hosted --az-token
 ```
 
-With [`just`](https://github.com/casey/just) installed, `just chat` does the same on the own loop, and `just chat hosted` picks a backend. `just open` opens the deployed web client, and `just web` runs it locally. Before a demo, `just warm-up` wakes everything that scales to zero, and `just keep-warm` keeps it awake. Add a gauge with `just chat loop --gauge` or `/gauge` in the chat, and with the Gauge button on the web.
+With [`just`](https://github.com/casey/just) installed, `just chat` does the same on the own loop, and `just chat hosted` picks a backend. `just open` opens the deployed web client, and `just web` runs it locally. `just open-dashboard` and `just dashboard` do the same for the operations dashboard. Before a demo, `just warm-up` wakes everything that scales to zero, and `just keep-warm` keeps it awake. Add a gauge with `just chat loop --gauge` or `/gauge` in the chat, and with the Gauge button on the web.
 
 The chat shows message bubbles with rendered Markdown and one live status line. Add `--trace` to watch every step, or type `/trace` to see the last turn.
 
@@ -129,22 +146,27 @@ Tear down with `azd down --purge`. App registrations and the tester are not remo
 | `api/` | The Web API and its three backends |
 | `agents/prompt/` | Prompt agent definitions and the rejection demo (backend A) |
 | `agents/hosted/` | Hosted agent container and deployment (backend C) |
-| `clients/cli/` | The CLI client |
-| `clients/web/` | The SPA client |
+| `api/app/attachments/` | One handler for each kind of attachment, and the store |
+| `clients/car/` | The car, for the driver (being built) |
+| `clients/web/` | The website, for customers |
+| `clients/dashboard/` | The operations dashboard, for employees |
+| `clients/cli/` | The CLI, a developer tool |
 | `services/dealer/` | The dealer web service |
 | `search/` | Definitions and tooling for the Search objects |
 | `data/` | The source data file, document generator and generated documents |
 | `infra/` | Bicep modules and the Entra setup script |
 | `hooks/` | azd hooks |
 | `scripts/` | Agent and web deployment, runbook, denied demo, line count |
-| `tests/` | Contract tests and the grounding check |
+| `tests/` | Contract tests, the grounding check and the routing suite |
 | `docs/` | Principles, comparison, journey of a prompt, runbook, deployment, decisions, evidence, design |
 
 ## Costs
 
-Idle, about 80 USD a month plus a small amount for Log Analytics: Search Basic is about 75 USD and Container Registry Basic about 5 USD. Container Apps scale to zero, the Static Web App is on the Free tier, models bill per token, and the hosted agent bills per active session.
+Idle, about 80 USD a month plus a small amount for Log Analytics: Search Basic is about 75 USD and Container Registry Basic about 5 USD. Container Apps scale to zero, the three Static Web Apps (website, car and dashboard) are on the Free tier, models bill per token, and the hosted agent bills per active session.
 
 ## Status
+
+<!-- MEASURE: status of the car, the website and attachments: what was run live, test counts including the new suites, and what is not verified -->
 
 Deployed and run live on 2026-11-04 and 2026-11-05.
 
@@ -153,7 +175,7 @@ Verified live:
 - All three backends through the deployed API: every runbook step passes on the final build, including the automated trace check in step 12.
 - Grounding: 30 of 30 answers passed.
 - The cross-document question "cheapest AWD in Sweden" repeated 6 times per backend: 18 of 18 right. At the default reasoning effort it was 11 to 15 of 18, so the sample uses medium effort.
-- A tool the server has never seen (`set_emissivity`, declared only in the request): relayed on loop and hosted, refused on prompt (`docs/evidence/new-client-tool.txt`).
+- A tool the server has never seen (`set_seat_heating`, declared only in the request): relayed on loop and hosted, refused on prompt (`docs/evidence/new-client-tool.txt`).
 - Recovery on all three backends: a paused turn nobody answers, and a conversation resumed after the API scaled to zero (`docs/evidence/repair.txt`).
 - One trace per turn across API, Foundry, hosted agent and dealer (`docs/evidence/application-insights.txt`).
 - The prompt agent's 400.
@@ -172,6 +194,8 @@ Not verified:
 
 - [Principles: what Voltrieve is for](docs/principles.md)
 - [The journey of a prompt](docs/prompt-journey.md)
+- [The clients](docs/clients.md)
+- [Photos and attachments](docs/attachments.md)
 - [Why Foundry: the comparison](docs/why-foundry.md)
 - [Demo runbook](docs/runbook.md)
 - [Deployment](docs/deploy.md)
