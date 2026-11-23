@@ -118,7 +118,19 @@ class Turn:
         return [t for t, _ in self.events]
 
 
-ToolHandler = Callable[[str], str]
+# A tool handler gives back text, or a dict with `output` and `attachments` (ids of uploads).
+ToolHandler = Callable[[str], "str | dict"]
+
+
+@dataclass
+class PhotoTurn:
+    """A turn with a photo: the upload and, when the photo was accepted, the turn."""
+
+    upload: dict
+    turn: Turn | None = None
+    upload_seconds: float = 0.0
+    turn_seconds: float = 0.0  # the turn alone, the upload not included
+    reuploaded: bool = False
 
 
 class Api:
@@ -140,6 +152,26 @@ class Api:
         if response.status_code >= 400:
             raise ApiError(response.status_code, response.text[:300])
         return response.json()
+
+    def turn_with_photo(self, message: str, data: bytes, label: str = "photo", **turn_args) -> PhotoTurn:
+        """Upload a photo and ask about it. A photo the server has lost (it scaled to zero between
+        the upload and the turn) is uploaded again, once: that is not a wrong answer. A rejected
+        photo gives no turn."""
+        began = time.perf_counter()
+        upload = self.upload(data, label)
+        result = PhotoTurn(upload, upload_seconds=round(time.perf_counter() - began, 2))
+        while upload.get("status") == "ready":
+            began = time.perf_counter()
+            try:
+                result.turn = self.turn(message, attachments=[upload["id"]], **turn_args)
+                result.turn_seconds = round(time.perf_counter() - began, 2)
+                return result
+            except ApiError as exc:
+                if result.reuploaded or "unknown_attachment" not in exc.detail:
+                    raise
+            upload = result.upload = self.upload(data, label)
+            result.reuploaded = True
+        return result
 
     def _stream(self, path: str, body: dict, correlation_id: str | None) -> Iterator[Event]:
         headers = {"Authorization": f"Bearer {self._token()}", "X-Agent-Backend": self._backend}
@@ -163,6 +195,7 @@ class Api:
         correlation_id: str | None = None,
         max_rounds: int = 6,
         attachments: list[str] | None = None,
+        context: dict | None = None,
     ) -> Turn:
         """Send a message and follow the turn to its end, answering client tool calls."""
         result = Turn(conversation_id=conversation_id)
@@ -172,6 +205,8 @@ class Api:
             body["conversation_id"] = conversation_id
         if attachments:
             body["attachments"] = attachments
+        if context:
+            body["context"] = context
         stream = self._stream("/chat", body, correlation_id)
         for _ in range(max_rounds):
             pending = None
@@ -191,8 +226,12 @@ class Api:
                 handler = (handlers or {}).get(call.get("name", ""))
                 arguments = call.get("arguments") or "{}"
                 output = handler(arguments) if handler else "error: no such client tool"
-                result.tool_runs.append((call.get("name", ""), arguments, output))
-                outputs.append({"call_id": call.get("call_id", ""), "output": output})
+                text = output["output"] if isinstance(output, dict) else output
+                result.tool_runs.append((call.get("name", ""), arguments, text))
+                answer = {"call_id": call.get("call_id", ""), "output": text}
+                if isinstance(output, dict) and output.get("attachments"):
+                    answer["attachments"] = output["attachments"]
+                outputs.append(answer)
             stream = self._stream(
                 "/chat/tool-results",
                 {"conversation_id": result.conversation_id, "turn_id": pending.get("turn_id"),
