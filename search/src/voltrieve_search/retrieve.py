@@ -30,6 +30,16 @@ class RetrieveResult:
     activity: list[dict] = field(default_factory=list)
     partial: bool = False
 
+    @property
+    def planning_model(self) -> str | None:
+        """The model that planned the queries, when the activity names one. Every part is optional."""
+        for item in self.activity:
+            if item.get("type") == "modelQueryPlanning":
+                name = (item.get("model") or {}).get("modelName")
+                if name:
+                    return name
+        return None
+
 
 def retrieve(
     client,

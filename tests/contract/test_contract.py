@@ -430,3 +430,19 @@ def test_the_car_and_the_prompt_agent_declare_the_same_client_tools():
     """clients/car/src/tools.ts imports this list, so it is what the car sends with each request."""
     car = json.loads((ROOT / "clients/car/src/tools.json").read_text())
     assert car == load_module("create_agents", "agents/prompt/create_agents.py").CAR_TOOLS
+
+
+def test_every_caller_of_search_uses_the_same_api_version():
+    """GPT-6 planning needs the newest version, and a caller left behind would meet a base it
+    cannot query. Bicep and the smoke script cannot import the constant."""
+    from voltrieve_search.client import DEFAULT_API_VERSION
+
+    agents = load_module("create_agents", "agents/prompt/create_agents.py")
+    assert agents.KB_API_VERSION == DEFAULT_API_VERSION == "2026-11-01-preview"
+    tool = agents.kb_mcp_tool("https://s.search.windows.net/", "voltrieve-kb", "d", "c")
+    assert tool.server_url == (
+        f"https://s.search.windows.net/knowledgebases/voltrieve-kb/mcp?api-version={DEFAULT_API_VERSION}"
+    )
+    connection = (ROOT / "infra/modules/foundry-kb-connection.bicep").read_text()
+    assert f"/mcp?api-version={DEFAULT_API_VERSION}'" in connection
+    assert f'SEARCH_API_VERSION = "{DEFAULT_API_VERSION}"' in (ROOT / "scripts/smoke.py").read_text()

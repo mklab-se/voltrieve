@@ -43,6 +43,17 @@ def test_smoke_prints_activity_errors_when_partial(monkeypatch, capsys):
     assert "timeout" in capsys.readouterr().out
 
 
+def test_smoke_names_the_model_that_planned(monkeypatch, capsys):
+    activity = [{"type": "modelQueryPlanning", "model": {"modelName": "gpt-6-luna"}}]
+    monkeypatch.setattr(
+        smoke,
+        "retrieve",
+        lambda c, kb, q, knowledge_source: RetrieveResult([], [ref("a-spec", "spec")], activity, False),
+    )
+    assert run_smoke(None, [SmokeQuestion("q", "a-spec", "spec")])[0].planning_model == "gpt-6-luna"
+    assert "planned by gpt-6-luna" in capsys.readouterr().out
+
+
 def test_smoke_questions_name_document_types_that_exist():
     import json
     from pathlib import Path

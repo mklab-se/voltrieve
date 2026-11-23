@@ -1,6 +1,6 @@
 import json
 
-from voltrieve_search.retrieve import retrieve
+from voltrieve_search.retrieve import RetrieveResult, retrieve
 
 
 def body(partial=False):
@@ -63,3 +63,36 @@ def test_206_marks_partial_and_keeps_activity_errors():
     r = retrieve(Client(206, body(partial=True)), "voltrieve-kb", "q")
     assert r.partial is True
     assert any("error" in a for a in r.activity)
+
+
+def test_the_request_has_only_fields_of_the_november_contract():
+    c = Client(200, body())
+    retrieve(c, "voltrieve-kb", "q")
+    sent = c.sent[1]
+    assert set(sent) == {"messages", "knowledgeSourceParams", "maxOutputSize", "includeActivity"}
+    assert set(sent["knowledgeSourceParams"][0]) == {
+        "kind", "knowledgeSourceName", "includeReferences", "includeReferenceSourceData"
+    }
+
+
+def test_new_fields_of_the_response_are_ignored():
+    payload = body()
+    payload["references"][0] |= {"activitySource": 1, "citationUrl": "https://s.search.windows.net/x"}
+    payload["activity"][0] |= {"warning": "documents dropped", "startedAt": "2026-11-24T00:00:00Z"}
+    payload["responseSensitivityLabelInfo"] = None
+    r = retrieve(Client(200, payload), "voltrieve-kb", "q")
+    assert r.references[0].doc_key == "k1" and r.chunks[0].ref_id == "0" and r.partial is False
+
+
+def test_the_planning_model_is_read_from_the_nested_model_object():
+    planned = {"type": "modelQueryPlanning", "model": {"modelName": "gpt-6-luna", "deploymentId": "d"}}
+    assert RetrieveResult(activity=[{"type": "searchIndex"}, planned]).planning_model == "gpt-6-luna"
+
+
+def test_the_planning_model_is_empty_when_the_activity_does_not_name_one():
+    # The nested object and its properties are optional, and can be null.
+    for activity in ([], [{"type": "searchIndex"}], [{"type": "modelQueryPlanning"}],
+                     [{"type": "modelQueryPlanning", "model": None}],
+                     [{"type": "modelQueryPlanning", "model": {"modelName": None}}],
+                     [{"type": "modelAnswerSynthesis", "model": {"modelName": "x"}}]):
+        assert RetrieveResult(activity=activity).planning_model is None

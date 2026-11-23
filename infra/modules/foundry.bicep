@@ -5,9 +5,8 @@ param projectName string
 param appInsightsName string
 param chatModelName string
 param chatModelVersion string
-@description('The model Search plans queries with. Search refuses GPT-6 models, so it is not the chat model.')
-param planningModelName string
-param planningModelVersion string
+@description('The models Search can plan queries with, as name and version. Search accepts some GPT-6 models, and gpt-6.1-terra is not one of them, so none is the chat model.')
+param planningModels array
 param embeddingModelName string
 param embeddingModelVersion string
 
@@ -76,22 +75,25 @@ resource embeddingDeployment 'Microsoft.CognitiveServices/accounts/deployments@2
   }
 }
 
-resource planningDeployment 'Microsoft.CognitiveServices/accounts/deployments@2026-11-15-preview' = {
-  parent: account
-  name: planningModelName
-  dependsOn: [embeddingDeployment]
-  sku: {
-    name: 'GlobalStandard'
-    capacity: 150
-  }
-  properties: {
-    model: {
-      format: 'OpenAI'
-      name: planningModelName
-      version: planningModelVersion
+@batchSize(1)
+resource planningDeployments 'Microsoft.CognitiveServices/accounts/deployments@2026-11-15-preview' = [
+  for model in planningModels: {
+    parent: account
+    name: model.name
+    dependsOn: [embeddingDeployment]
+    sku: {
+      name: 'GlobalStandard'
+      capacity: 150
+    }
+    properties: {
+      model: {
+        format: 'OpenAI'
+        name: model.name
+        version: model.version
+      }
     }
   }
-}
+]
 
 // The App Insights connection string is an ingestion endpoint identifier, not a secret.
 resource appInsightsConnection 'Microsoft.CognitiveServices/accounts/projects/connections@2026-11-15-preview' = {
@@ -121,5 +123,4 @@ output projectEndpoint string = 'https://${account.name}.services.ai.azure.com/a
 output projectName string = project.name
 output projectPrincipalId string = project.identity.principalId
 output chatDeployment string = chatDeployment.name
-output planningDeployment string = planningDeployment.name
 output embeddingDeployment string = embeddingDeployment.name

@@ -25,13 +25,13 @@ from voltrieve_agent.server_tools import (
     PARTS_DESCRIPTION,
     build_server_tools,
 )
+from voltrieve_search.client import DEFAULT_API_VERSION as KB_API_VERSION
 
 CLI_AGENT_NAME = "voltrieve-prompt-cli"
 WEB_AGENT_NAME = "voltrieve-prompt-web"
 CAR_AGENT_NAME = "voltrieve-prompt-car"
 KB_NAME = "voltrieve-kb"
 PARTS_KB_NAME = "voltrieve-parts-kb"
-KB_API_VERSION = "2026-08-01-preview"
 
 MAX_NOISE = 10
 MAX_HONKS = 5

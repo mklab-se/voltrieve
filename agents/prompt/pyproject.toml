@@ -7,6 +7,7 @@ dependencies = [
     "azure-ai-projects",
     "azure-identity",
     "voltrieve-agent-core",
+    "voltrieve-search",
 ]
 
 [tool.uv]

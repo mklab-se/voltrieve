@@ -2,7 +2,7 @@ param name string
 param location string
 param tags object = {}
 
-resource search 'Microsoft.Search/searchServices@2026-09-01-preview' = {
+resource search 'Microsoft.Search/searchServices@2026-11-01' = {
   name: name
   location: location
   tags: tags
@@ -16,7 +16,7 @@ resource search 'Microsoft.Search/searchServices@2026-09-01-preview' = {
     // The free plan refuses every retrieve with 402 once its monthly allowance is used.
     knowledgeRetrieval: 'standard'
     disableLocalAuth: true
-    publicNetworkAccess: 'enabled'
+    publicNetworkAccess: 'Enabled'
   }
 }
 

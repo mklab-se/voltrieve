@@ -726,6 +726,7 @@ dependencies = [
     { name = "azure-ai-projects" },
     { name = "azure-identity" },
     { name = "voltrieve-agent-core" },
+    { name = "voltrieve-search" },
 ]
 
 [package.metadata]
@@ -733,6 +734,7 @@ requires-dist = [
     { name = "azure-ai-projects" },
     { name = "azure-identity" },
     { name = "voltrieve-agent-core", directory = "../../agent_core" },
+    { name = "voltrieve-search", directory = "../../search" },
 ]
 
 [[package]]

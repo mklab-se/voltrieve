@@ -69,6 +69,7 @@ class KnowledgeBase:
                     sub_queries=_sub_queries(result),
                     references=titles,
                     partial=result.partial,
+                    planning_model=result.planning_model,
                     **_token_use(result),
                 )
             )
@@ -112,13 +113,14 @@ def _sub_queries(result: RetrieveResult) -> list[str]:
 
 
 def _token_use(result: RetrieveResult) -> dict:
-    """What this retrieve cost: planning bills as model tokens, reasoning tokens through Search."""
+    """What this retrieve cost: planning bills as model tokens, reasoning tokens through Search.
+    A count is optional in the activity, and can be null."""
     planning = [a for a in result.activity if a.get("type") == "modelQueryPlanning"]
     return {
-        "planning_input_tokens": sum(a.get("inputTokens", 0) for a in planning),
-        "planning_output_tokens": sum(a.get("outputTokens", 0) for a in planning),
+        "planning_input_tokens": sum(a.get("inputTokens") or 0 for a in planning),
+        "planning_output_tokens": sum(a.get("outputTokens") or 0 for a in planning),
         "search_reasoning_tokens": sum(
-            a.get("reasoningTokens", 0)
+            a.get("reasoningTokens") or 0
             for a in result.activity
             if a.get("type") == "agenticReasoning"
         ),

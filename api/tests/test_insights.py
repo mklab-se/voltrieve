@@ -63,6 +63,21 @@ def test_recorder_summarises_a_loop_turn():
     assert s.search_reasoning_tokens == 40 and s.cost_sek is not None and s.cost_sek > 0
 
 
+@pytest.mark.parametrize(("planner", "usd"), [
+    ("gpt-6-luna", 0.10 + 0.50),
+    ("gpt-5.4-mini", 0.75 + 4.50),
+    (None, 0.75 + 4.50),  # an agent from before the name was sent, or an activity without it
+    ("a-new-model", 0.75 + 4.50),
+])
+def test_planning_is_priced_by_the_model_that_planned(planner, usd):
+    from app.insights import USD_TO_SEK
+
+    rec = TurnRecorder("loop", "gpt-6.1-terra", "u1")
+    rec.observe(_trace("knowledge_base_retrieved", knowledge_base="voltrieve-kb", planning_model=planner,
+                       planning_input_tokens=1_000_000, planning_output_tokens=1_000_000))
+    assert rec.finish().cost_sek == pytest.approx(usd * USD_TO_SEK)
+
+
 def test_recorder_reads_mcp_searches_curated_answers_client_rounds_and_errors():
     rec = TurnRecorder("prompt", "gpt-6.1-terra", "u1")
     rec.observe(_trace("mcp_tool_called", server="voltrieve-parts-kb"))

@@ -14,8 +14,8 @@ VALUES = {
     "EMBEDDING_DEPLOYMENT": "emb",
     "EMBEDDING_MODEL": "text-embedding-3-large",
     "FOUNDRY_OPENAI_ENDPOINT": "https://f.openai.azure.com",
-    "PLANNING_DEPLOYMENT": "chat",
-    "PLANNING_MODEL": "gpt-5.4-mini",
+    "PLANNING_DEPLOYMENT": "planner",
+    "PLANNING_MODEL": "gpt-6-luna",
 }
 
 
@@ -80,15 +80,23 @@ def test_parts_definitions_never_touch_the_docs_resources():
     }
 
 
-def test_knowledge_base_plans_queries_with_the_chat_model():
-    kb = render((DEFS / "06-knowledge-base.json").read_text(), VALUES)
-    params = kb["models"][0]["azureOpenAIParameters"]
-    assert params == {
-        "resourceUri": "https://f.openai.azure.com",
-        "deploymentId": "chat",
-        "modelName": "gpt-5.4-mini",
-    }
-    assert kb["retrievalReasoningEffort"]["kind"] == "low"
+@pytest.mark.parametrize("name", ["06-knowledge-base.json", "12-parts-knowledge-base.json"])
+def test_both_knowledge_bases_plan_with_the_planning_model(name):
+    kb = render((DEFS / name).read_text(), VALUES)
+    assert kb["models"] == [
+        {
+            "kind": "azureOpenAI",
+            "azureOpenAIParameters": {
+                "resourceUri": "https://f.openai.azure.com",
+                "deploymentId": "planner",
+                "modelName": "gpt-6-luna",
+            },
+        }
+    ]
+    assert kb["retrievalReasoningEffort"] == {"kind": "low"}
+    # The MCP endpoint writes an answer itself unless the base asks for the chunks.
+    assert kb["outputMode"] == "extractiveData"
+    assert all(set(source) == {"name"} for source in kb["knowledgeSources"])
 
 
 def test_documents_descriptions_name_the_sales_folders():
