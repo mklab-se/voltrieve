@@ -43,7 +43,7 @@ Both scripts compare answers with `data/voltrieve.yaml` and exit 1 on a miss. Re
 - Grounding: 30 of 30 passed (`docs/evidence/grounding.txt`).
 - Routing: 45 of 45 runs used exactly the right sources on every backend, with no knowledge base call in vain. Overlapping calls on two source questions: 12 of 12 on `loop` and `hosted`, 0 of 12 on `prompt`. Article numbers: 117 of 117 on `prompt`, 115 of 117 on `loop` and `hosted`, none invented. The script exits 1 on a missing article, so the recorded run exits 1. Run it with `--workers 1`: more turns at once measure the rate limit, not the routing.
 
-`uv run scripts/new_client_tool_demo.py` shows a client bringing a tool the server has never seen, as a car with a seat heater would.
+`uv run scripts/new_client_tool_demo.py` shows a client bringing a tool the server has never seen, as a car with a seat heater would (`set_seat_heating`, level 0 to 3).
 
 Step 7 and `cheapest-awd-se` are the same question. At the default reasoning effort it varied between runs on every backend. At medium effort it passed 18 of 18 (`docs/evidence/cross-document-repeat.txt`).
 
@@ -120,6 +120,41 @@ The same core runs in the Foundry container. The trace sequence matches backend 
 ## Step 10 in the SPA
 
 The SPA declares `set_theme` and `set_gauge`. The CLI declares `honk` and `set_gauge` among its tools. The gauge is off by default. Turn it on with the Gauge button in the SPA, with `--gauge` or with `/gauge` in the CLI. `set_gauge` is deliberately missing from the prompt agents, so while it is on, every request to `prompt` is refused with `unsupported_client_tool`, which shows that limit. On the other two backends, "Switch to the dark theme." changes the theme. It has no beep tool, so the same question should get an explanation that it cannot beep, with no `client_tool_calls` event. On `prompt` the API picks the web agent, which has no client tools. This was not tested in the browser.
+
+## The car demo
+
+This follows the design, section 8. The car client is built on its own branch, so this walkthrough says what you should see and has not been recorded. Evidence for it goes in `docs/evidence/car-tools.txt`.
+
+```sh
+azd env get-value CAR_URL     # sign in with an account that holds Chat.User
+```
+
+| Step | Type, or press | Expect |
+| --- | --- | --- |
+| 1 | `Turn the wipers on` | `client_tool_calls` for `set_wipers`, the wipers move, light rain starts, and Runa confirms |
+| 2 | `Honk twice` | `honk(times=2)`, and the horn is heard twice |
+| 3 | `Drive 50` | `set_speed(kmh=50)`. The speed shown and the street follow the same value |
+| 4 | Press **Park here?** after a sign has passed | The photo goes with the question. Runa answers yes or no first, then until when, then the fee, then what to check |
+| 5 | `Can I park here until 12?`, with no photo attached | The model calls `get_sign_photo`, the car uploads the last photo, and the answer comes after the second turn |
+| 6 | `Park the car` after the car has entered a new block | `park()` returns that the bay is in another block, and Runa says that another sign applies |
+| 7 | Drive above 70 km/h and press **Park here?** | The photo is rejected as `too_blurry` and Runa asks the driver to slow down |
+| 8 | Switch **Under the hood** on | The event timeline and the backend picker appear. With the switch off, nothing on the screen mentions backends |
+
+Run steps 1 to 8 on each backend. After "honk" or "wipers on" that follows a sign question, the turn is stored as usual, which the conversation shows. On the prompt agent, the API picks `voltrieve-prompt-car` because the car declares its five tools.
+
+Without Azure, the car client has a mock server (design section 8.7).
+
+## Under the hood and private turns
+
+**Under the hood** is a switch in the car and on the website, off by default. On, it shows the event timeline of the turn, the backend picker and the correlation id, the same things the CLI shows with `--trace`. Off, a visitor sees a customer's page or a car, not a test rig.
+
+**A private turn** is a turn that carries an attachment or something the client told about itself. What such a turn says stays out of logs, spans and the live feed. So when one fails:
+
+- The failure is logged as a **trace** (the `traces` table in Application Insights), with the type of each error, the HTTP status and the stack as frames. It is not logged as an **exception** with a message and source lines, because an error text may quote the attachment or the client's line.
+- A query for `exceptions` finds nothing for these turns. Query `traces` with the `operation_Id` of the request, as in [Follow a correlation id](#follow-a-correlation-id), and look for the message that names what failed.
+- The model's tool results of a private turn are not in the debug log either.
+
+The client sees the failure as an `error` event as usual.
 
 ## Sign in to the SPA
 
@@ -233,7 +268,7 @@ Three views, from now to history. All of them are built on Application Insights.
 
 | View | Where | Shows |
 |---|---|---|
-| Live dashboard | Web client, **Dashboard** button (only for the `Dashboard.View` role, given to the deployer) | Users active in the last 5 minutes, messages today, first text per backend, each turn as it happens with its tools, knowledge bases, timings and estimated cost, and the prompt when **Show prompts** is on |
+| Live dashboard | The dashboard app (`just open-dashboard`, or `just dashboard` to run it locally), for the `Dashboard.View` role, given to the deployer | Users active in the last 5 minutes, messages today, first text per backend, each turn as it happens with its tools, knowledge bases, timings and estimated cost, and the prompt when **Show prompts** is on |
 | Live Metrics | Application Insights, or the dashboard's **Live Metrics** link | Requests, response times and failures this second |
 | Workbook | Azure portal, **Voltrieve operations** in the resource group, or the dashboard's **History** link | Users per day, a map of where they connect from, first text median and p95 per backend, share over 10 s, tools, knowledge bases, outcomes, estimated cost per day and month against the 990 SEK budget, errors, cold starts, and a privacy check |
 
@@ -255,7 +290,7 @@ shown to an audience unless the people asking know.
 2. Deploy `infra/modules/dashboard-workbook.bicep` with your Application Insights resource id.
 3. Switch on Live Metrics (`enable_live_metrics=True` in `configure_azure_monitor`).
 4. The live prompt feed is the one custom part: `api/app/insights.py` (`LiveFeed`),
-   `GET /admin/live` in `api/app/routes.py` and `clients/web/src/components/Dashboard.tsx`.
+   `GET /admin/live` in `api/app/routes.py` and `clients/dashboard/src/components/Dashboard.tsx`.
    Leave it out if you do not want prompts on screen.
 
 **When a number looks wrong.**

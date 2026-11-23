@@ -14,9 +14,9 @@ Every feature serves at least one of these. If it serves none, it does not belon
 | --- | --- | --- |
 | **Identity, authorization and security** | Data reaches only the people and systems that should have it, across every part of the solution. | Entra ID tokens, app roles, managed identities, signed source links |
 | **RAG and agentic RAG** | How a normal company makes its documents and catalogs answerable, and how the agent decides where to look. | Azure AI Search knowledge bases, [the journey of a prompt](prompt-journey.md) |
-| **Tool calls through the agent** | Tools on the server and tools on the client, in the same conversation. | Dealer tools, `set_theme`, `set_seat_heating`, pause and resume |
-| **Clients and partner services** | Web, command line, devices close to hardware, and outside services. | The SPA, the CLI, the dealer service |
-| **Multimodal** | Images, photos, voice and other media in and out of the conversation. | Car and part images in the sales folders |
+| **Tool calls through the agent** | Tools on the server and tools on the client, in the same conversation. | Dealer tools, the car's `set_speed`, `set_wipers`, `honk`, `park` and `get_sign_photo`, `set_theme`, pause and resume, [the clients](clients.md) |
+| **Clients and partner services** | Web, command line, devices close to hardware, and outside services. | [The car, the website, the operations dashboard and the CLI](clients.md), the dealer service |
+| **Multimodal** | Images, photos, voice and other media in and out of the conversation. | Car and part images in the sales folders, [a photo sent from the car or the website](attachments.md) |
 | **Monitoring and operations** | Usage, response times, cost, errors and logs, live and after the fact. | Application Insights, the operations dashboard and workbook |
 | **Evaluation and quality** | Proof that the AI does the right thing, and a gate that catches when it stops. | Routing tests, grounding check, [evidence](evidence/README.md) |
 | **Ready for AI agents** | The solution can be used by AI agents and harnesses, not only use AI itself. | `AGENTS.md`, and MCP access for outside harnesses ([#16](https://github.com/mklab-se/voltrieve/issues/16)) |

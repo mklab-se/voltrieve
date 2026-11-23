@@ -328,10 +328,10 @@ Every iteration is one Responses API call (`agent_core/src/voltrieve_agent/model
 ```python
 client.responses.create(
     model="gpt-6.1-terra",
-    instructions=AGENT_INSTRUCTIONS,   # about 2300 characters
+    instructions=AGENT_INSTRUCTIONS,   # about 5000 characters
     conversation="conv_...",           # Foundry adds the history
     input="What is the cheapest car that you can sell me?",   # unchanged
-    tools=[...],                       # 7 server tools, plus client tools from the CLI
+    tools=[...],                       # 7 server tools, plus the client's own tools
     parallel_tool_calls=True,
     reasoning={"effort": "medium"},
     stream=True,
@@ -348,6 +348,8 @@ client.responses.create(
 For a simple "Good morning!", the input was 920 tokens. Nearly all of that is instructions and tool definitions, so every turn pays for them.
 
 The seven server tools are `get_curated_answer`, `search_voltrieve_docs`, `search_spare_parts`, `check_stock`, `get_prices`, `get_current_date` and `book_test_drive`. The model sees each name, description and JSON schema. Those descriptions and the instructions are the entire routing logic.
+
+The client's tools come in the request: the CLI offers `make_noise`, `honk` and the like, the website `set_theme`, the car `set_speed`, `set_wipers`, `honk`, `park` and `get_sign_photo`. The instructions have grown since the first runs, from about 2300 characters to about 5000, mostly for sources, curated answers and attachments. A turn with a photo adds parts to the user's message and is made unstored: see [Photos and attachments](attachments.md).
 
 ### 5. The decision: answer, tool, RAG or agentic RAG
 

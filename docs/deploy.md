@@ -29,7 +29,7 @@ azd auth login
 | --- | --- | --- |
 | Foundry, storage, Container Apps, registry, monitoring | Sweden Central (`AZURE_LOCATION`) | The primary region |
 | Azure AI Search | France Central (`AZURE_SEARCH_LOCATION`, the default) | Sweden Central and West Europe were flagged as not accepting new Search services. France Central is the nearest EU region that does. |
-| Static Web App | East US 2 (`webLocation` in Bicep) | West Europe rejected new Static Web Apps. This region holds the metadata; the content is global. |
+| Three Static Web Apps: web, car and dashboard | East US 2 (`webLocation` in Bicep) | West Europe rejected new Static Web Apps. This region holds the metadata; the content is global. |
 
 Search reaches Foundry and storage over public endpoints with Entra tokens.
 
@@ -49,7 +49,7 @@ The name is limited to 22 characters and appears in resource names. Optional val
 | `AZURE_SEARCH_LOCATION` | `francecentral` | Search region |
 | `VOLTRIEVE_VERIFIED_DOMAIN` | the tenant's default domain | Domain for the tester account |
 
-The hooks and scripts fill in the rest, such as `TENANT_ID`, `API_CLIENT_ID`, `WEB_URL`, `TEST_USER_UPN` and `HOSTED_AGENT_PRINCIPAL_ID`. All of them are identifiers. The Application Insights connection string is an ingestion identifier, not a secret.
+The hooks and scripts fill in the rest, such as `TENANT_ID`, `API_CLIENT_ID`, `WEB_URL`, `CAR_URL`, `DASHBOARD_URL`, `CAR_CLIENT_ID`, `DASHBOARD_CLIENT_ID`, `TEST_USER_UPN` and `HOSTED_AGENT_PRINCIPAL_ID`. All of them are identifiers. The Application Insights connection string is an ingestion identifier, not a secret.
 
 ## Order
 
@@ -67,23 +67,26 @@ What each hook does:
 
 | Hook | When | What |
 | --- | --- | --- |
-| `hooks/preprovision.sh` | Before each provision | Creates or updates the app registrations (`voltrieve-api`, `voltrieve-cli`, `voltrieve-web`, `voltrieve-dealer`), the tester, roles and consent, and stores the ids in the azd environment. Idempotent. Runs interactively so the password is visible. |
-| `hooks/postprovision.sh` | After each provision | Checks that `az` and `azd` are the same user. Uploads the documents to their two containers, applies the search objects of both knowledge bases, runs both indexers, gives the API identity `Dealer.Access`, and adds the SPA redirect URI. Each step retries up to 10 times, 60 seconds apart, for role propagation. |
+| `hooks/preprovision.sh` | Before each provision | Creates or updates the app registrations (`voltrieve-api`, `voltrieve-cli`, `voltrieve-web`, `voltrieve-car`, `voltrieve-dashboard`, `voltrieve-dealer`), the tester, roles and consent, and stores the ids in the azd environment. Idempotent. Runs interactively so the password is visible. |
+| `hooks/postprovision.sh` | After each provision | Checks that `az` and `azd` are the same user. Uploads the documents to their two containers, applies the search objects of both knowledge bases, runs both indexers, gives the API identity `Dealer.Access`, and adds the redirect URI of each of the three sites (`set-spa-redirect --app web|car|dashboard`). Each step retries up to 10 times, 60 seconds apart, for role propagation. |
 | `hooks/web-prepackage.sh` | Before the web package | Writes `clients/web/.env.production` with public values only. |
+| `hooks/dashboard-prepackage.sh` | Before the dashboard package | Writes `clients/dashboard/.env.production` with public values only. The car gets the same kind of hook with its client. |
 | `hooks/postup.sh` | After `azd up` | Runs the search smoke test. It runs last so that a retrieval miss cannot block a deployment. |
 
 Provision keeps deployed images: azd sets `SERVICE_API_RESOURCE_EXISTS` and `SERVICE_DEALER_RESOURCE_EXISTS`, so Bicep reuses the current image instead of the placeholder.
 
 ### 2. Apple Silicon without Rosetta: `scripts/deploy-web.sh`
 
-`azd` deploys the SPA with the Static Web Apps CLI, whose upload client is an x86 binary. On Apple Silicon without Rosetta that step fails. `dealer` and `api` deploy first, so only `web` is missing. Installing Rosetta is a system change, so this repository uses a container instead:
+`azd` deploys each Static Web App with the Static Web Apps CLI, whose upload client is an x86 binary. On Apple Silicon without Rosetta that step fails. `dealer` and `api` deploy first, so only the Static Web Apps are missing. Installing Rosetta is a system change, so this repository uses a container instead:
 
 ```sh
 azd package web        # only if clients/web/dist is missing or stale
-scripts/deploy-web.sh
+scripts/deploy-web.sh              # web, the default
+scripts/deploy-web.sh dashboard
+scripts/deploy-web.sh car
 ```
 
-It runs the Linux `StaticSitesClient` in Docker against `clients/web/dist`, and keeps the deployment token in memory. If `azd up` stopped at this step, run the smoke test by hand, since the `postup` hook may not have run:
+It runs the Linux `StaticSitesClient` in Docker against `clients/<service>/dist`, and keeps the deployment token in memory. It finds the site by its `azd-service-name` tag, never by its position in a list, and stops if none or more than one matches. If `azd up` stopped at this step, run the smoke test by hand, since the `postup` hook may not have run:
 
 ```sh
 SEARCH_ENDPOINT="$(azd env get-value SEARCH_ENDPOINT)" uv run --project search voltrieve-search smoke
@@ -97,7 +100,7 @@ Run this after `azd up`, from the repository root, as the deployer:
 scripts/deploy-agents.sh
 ```
 
-1. `agents/prompt/create_agents.py` creates a new version of `voltrieve-prompt-cli` and `voltrieve-prompt-web`.
+1. `agents/prompt/create_agents.py` creates a new version of each of three prompt agents: `voltrieve-prompt-cli`, `voltrieve-prompt-web` and `voltrieve-prompt-car`. The third has the car's tools (`set_speed`, `set_wipers`, `honk`, `park`, `get_sign_photo`). The API picks the first agent whose tools include every tool the client declared.
 2. `agents/hosted/deploy.py` builds the `linux/amd64` image with `az acr build`, creates a hosted agent version, waits until it is active, and stores `HOSTED_AGENT_PRINCIPAL_ID`.
 3. `azd provision --no-prompt` runs again, because the agent identity did not exist before step 2. Bicep then gives it its Foundry and Search roles. All provision hooks run again too.
 4. `voltrieve-entra assign-app-role` gives the agent identity `Dealer.Access`, with the same retry.
@@ -113,12 +116,27 @@ uv run tests/grounding/check.py
 
 See [runbook.md](runbook.md).
 
+## Order for an update with attachments
+
+When an environment already runs an older version, deploy the hosted agent before the API. With a new API and an old agent, a photo turn answers without the photo and the protection of the logs is missing.
+
+1. Preview, then `azd provision`: the three registrations and sites, the CORS origins, and `PROMPT_AGENT_CAR`. Not `azd up`, which would deploy the API before the agents.
+2. `scripts/deploy-agents.sh`: the three prompt agents, then the hosted agent. Its final check is `scripts/smoke.py --basic`, because the API is still older.
+3. `azd deploy api`. The new revision drops the sessions that are bound to the old hosted version.
+4. `uv run scripts/smoke.py`, the full check. It adds one turn with the car's tools on the prompt agent and one upload on each backend.
+5. `web` and `dashboard` together, then `car`.
+
+**Rollback** goes in reverse, the API first, then the agents, so a new API never meets an older agent.
+
+**An empty environment** starts with `azd up`, then `scripts/deploy-agents.sh`, then an API restart. Photos count as unavailable until then.
+
 ## Redeploying
 
 | Change | Command |
 | --- | --- |
 | API or dealer code, `agent_core` | `azd deploy api`, `azd deploy dealer` |
-| SPA | `azd deploy web`, or `azd package web && scripts/deploy-web.sh` |
+| Website, dashboard | `azd deploy web`, `azd deploy dashboard`, or `azd package <service> && scripts/deploy-web.sh <service>` |
+| Car | `azd deploy car` once `azure.yaml` lists it, or `scripts/deploy-web.sh car` |
 | Agents, including `agent_core` as used by the hosted agent | `scripts/deploy-agents.sh` |
 | Infrastructure | `azd provision` |
 | Documents | `azd provision` (the post-provision hook uploads and indexes) |
@@ -133,11 +151,17 @@ Approximate:
 | Container Registry Basic | About 5 USD a month |
 | Log Analytics | Small, by ingestion |
 | Container Apps | None when scaled to zero |
-| Static Web App Free | None |
+| Three Static Web Apps, Free tier | None |
 | Models | None: per token |
 | Hosted agent | None: per active session |
 
 Search is the cost that matters. Tear down when you are done.
+
+The car and the dashboard add no idle cost: two more Static Web Apps on the Free tier, one more prompt agent, and two more registrations. What they add is use:
+
+- A photo adds about 950 input tokens to each turn while it lives.
+- The pictures for the car cost about 2.50 USD once: one cockpit picture in up to four variants, and up to six facade textures, at the 0.25 USD an image estimated earlier. Image generation stops at 5 USD and the first image is measured before the rest are made.
+- <!-- MEASURE: cost of the first 20 photo turns, and of the whole photo run -->
 
 ## Before a demo
 
@@ -161,7 +185,7 @@ azd down --purge
 UPN="$(azd env get-value TEST_USER_UPN)"
 az ad user delete --id "$UPN"
 
-for name in voltrieve-api voltrieve-cli voltrieve-web voltrieve-dealer; do
+for name in voltrieve-api voltrieve-cli voltrieve-web voltrieve-car voltrieve-dashboard voltrieve-dealer; do
   az ad app delete --id "$(az ad app list --display-name "$name" --query '[0].id' -o tsv)"
 done
 ```
