@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { bootAuth, type Auth, type AuthSession } from "./auth";
-import { Dashboard } from "./components/Dashboard";
+import { Gate, type Access } from "./components/Gate";
 import { Header } from "./components/Header";
-import { ConfigMissing, Loading, NoRole, SignIn } from "./components/Notices";
+import { ConfigMissing, Loading, SignIn } from "./components/Notices";
 import { readConfig, type AppConfig } from "./config";
 import { checkAccess } from "./dashboard";
 
@@ -53,8 +53,8 @@ function Authed({ config }: { config: AppConfig }) {
 
 function Workspace({ config, auth, session }: { config: AppConfig; auth: Auth; session: AuthSession }) {
   const [theme, setTheme] = useState<Theme>(initialTheme);
-  // null while the token is checked. The feed is not asked for until the role is there.
-  const [allowed, setAllowed] = useState<boolean | null>(null);
+  // The feed is not asked for until the role is there.
+  const [access, setAccess] = useState<Access>("checking");
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -62,7 +62,7 @@ function Workspace({ config, auth, session }: { config: AppConfig; auth: Auth; s
 
   useEffect(() => {
     let cancelled = false;
-    void checkAccess(auth).then((ok) => !cancelled && setAllowed(ok));
+    void checkAccess(auth).then((ok) => !cancelled && setAccess(ok ? "allowed" : "denied"));
     return () => {
       cancelled = true;
     };
@@ -81,11 +81,7 @@ function Workspace({ config, auth, session }: { config: AppConfig; auth: Auth; s
   return (
     <div className="app">
       <Header session={session} onSignOut={() => void auth.signOut()} theme={theme} onToggleTheme={toggleTheme} />
-      {allowed === null && <Loading />}
-      {allowed === false && <NoRole />}
-      {allowed === true && (
-        <Dashboard apiUrl={config.apiUrl} auth={auth} liveMetricsUrl={config.liveMetricsUrl} workbookUrl={config.workbookUrl} />
-      )}
+      <Gate access={access} apiUrl={config.apiUrl} auth={auth} liveMetricsUrl={config.liveMetricsUrl} workbookUrl={config.workbookUrl} />
     </div>
   );
 }

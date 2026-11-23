@@ -1,8 +1,8 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { Auth } from "./auth";
 import { checkAccess } from "./dashboard";
-import { NoRole } from "./components/Notices";
+import { Gate } from "./components/Gate";
 
 function token(payload: object): string {
   const b64 = (o: object) => btoa(JSON.stringify(o)).replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_");
@@ -13,19 +13,34 @@ function authWith(accessToken: string): Auth {
   return { kind: "fake", init: async () => null, signIn: async () => {}, signOut: async () => {}, getToken: async () => accessToken };
 }
 
-afterEach(() => vi.unstubAllGlobals());
-
 describe("a user without the Dashboard.View role", () => {
-  it("is denied, and no request goes to the API", async () => {
-    const fetchSpy = vi.fn();
-    vi.stubGlobal("fetch", fetchSpy);
+  it("is denied by the token check", async () => {
     expect(await checkAccess(authWith(token({ roles: ["Chat.User"] })))).toBe(false);
     expect(await checkAccess(authWith("not-a-token"))).toBe(false);
-    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+// The dashboard is what asks the API for the feed, so it must not exist unless access is allowed.
+describe("the gate", () => {
+  const show = (access: "checking" | "allowed" | "denied") =>
+    renderToStaticMarkup(<Gate access={access} apiUrl="http://api" auth={authWith("t")} />);
+
+  it("shows the notice and no dashboard when denied", () => {
+    const html = show("denied");
+    expect(html).toContain("You need the Dashboard.View role");
+    expect(html).not.toContain("Operations dashboard");
   });
 
-  it("sees a plain notice", () => {
-    expect(renderToStaticMarkup(<NoRole />)).toContain("You need the Dashboard.View role");
+  it("shows neither while checking", () => {
+    const html = show("checking");
+    expect(html).not.toContain("You need the Dashboard.View role");
+    expect(html).not.toContain("Operations dashboard");
+  });
+
+  it("shows the dashboard when allowed", () => {
+    const html = show("allowed");
+    expect(html).toContain("Operations dashboard");
+    expect(html).not.toContain("You need the Dashboard.View role");
   });
 });
 
