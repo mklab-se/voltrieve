@@ -1,7 +1,7 @@
 import { parseServerEvent } from "./events";
 import { createSseParser } from "./sse";
 import { CLIENT_TOOLS } from "./tools";
-import type { Backend, ServerEvent } from "./types";
+import type { Backend, ClientContext, ServerEvent } from "./types";
 
 export interface ChatRequestInput {
   apiUrl: string;
@@ -11,6 +11,9 @@ export interface ChatRequestInput {
   message: string;
   /** One id for the whole turn, sent on every request of it. */
   correlationId: string;
+  context?: ClientContext;
+  /** Ids from POST /attachments. Only a turn that names an attachment uses it. */
+  attachments?: string[];
 }
 
 export interface ToolResultsInput {
@@ -44,12 +47,14 @@ function post(input: Sendable, path: string, body: unknown): { url: string; init
 
 /** Build the POST /chat request, with the tools this client can run. */
 export function buildChatRequest(input: ChatRequestInput): { url: string; init: RequestInit } {
-  const body: { conversation_id?: string; message: string; client_tools: typeof CLIENT_TOOLS } = {
+  // JSON leaves out what is undefined.
+  return post(input, "/chat", {
+    conversation_id: input.conversationId,
     message: input.message,
     client_tools: CLIENT_TOOLS,
-  };
-  if (input.conversationId) body.conversation_id = input.conversationId;
-  return post(input, "/chat", body);
+    context: input.context,
+    attachments: input.attachments?.length ? input.attachments : undefined,
+  });
 }
 
 /** Build the POST /chat/tool-results request that continues a paused turn. */

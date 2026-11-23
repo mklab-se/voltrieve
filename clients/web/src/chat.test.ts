@@ -39,6 +39,13 @@ describe("buildChatRequest", () => {
     expect(body.client_tools.map((t: { name: string }) => t.name)).toEqual(["set_theme"]);
   });
 
+  it("names attachments only when there are any", () => {
+    const body = (attachments?: string[]) => JSON.parse(buildChatRequest({ ...base, attachments }).init.body as string);
+    expect(body(["a1"]).attachments).toEqual(["a1"]);
+    expect(body([])).not.toHaveProperty("attachments");
+    expect(body()).not.toHaveProperty("attachments");
+  });
+
   it("sets bearer auth and the backend header", () => {
     const { init } = buildChatRequest({ ...base, backend: "hosted" });
     const h = init.headers as Record<string, string>;

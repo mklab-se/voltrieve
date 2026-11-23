@@ -1,6 +1,19 @@
 export type Backend = "loop" | "prompt" | "hosted";
 export const BACKENDS: readonly Backend[] = ["loop", "prompt", "hosted"];
 
+/** What the client knows, sent with a question. The API treats it as data and nothing else. */
+export interface ClientContext {
+  car: {
+    model: string;
+    trim: string;
+    drive: string;
+    model_year: number;
+    registration: string;
+    odometer_km: number;
+  };
+  local_time: string;
+}
+
 export interface TraceData {
   step: string;
   component: string;

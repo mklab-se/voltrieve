@@ -171,7 +171,43 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
 .panes { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); min-height: 0; }
 .app[data-hood="true"] .panes { grid-template-columns: minmax(0, 1fr) minmax(360px, 420px); }
 
+/* The customer's page: the car beside the chat, or above it when there is little room */
+.portal { container: portal / inline-size; min-height: 0; min-width: 0; }
+.portal-body { height: 100%; display: grid; grid-template-columns: minmax(260px, 320px) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+.car { padding: 24px; border-right: 1px solid var(--line); background: var(--surface); overflow-y: auto; display: grid; gap: 14px; align-content: start; }
+.car-owner { font-size: 13.5px; color: var(--ink-2); overflow-wrap: anywhere; }
+.car-photo { width: 100%; aspect-ratio: 3 / 2; object-fit: cover; border-radius: 12px; border: 1px solid var(--line); display: block; }
+.car-name h2 { font-size: 22px; line-height: 1.2; letter-spacing: -0.01em; }
+.car-name p, .car-toggle { display: none; }
+.car-facts { margin: 0; display: grid; }
+.car-facts > div { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 9px 0; border-top: 1px solid var(--line); font-size: 13.5px; }
+.car-facts dt { color: var(--ink-3); white-space: nowrap; }
+.car-facts dd { margin: 0; text-align: right; font-weight: 550; font-variant-numeric: tabular-nums; }
+.swatch { display: inline-block; width: 11px; height: 11px; border-radius: 50%; margin-right: 7px; vertical-align: -1px; box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.15); }
+.plate {
+  display: inline-block; padding: 1px 8px 1px 7px; border-radius: 4px; background: #fff; color: #17201c;
+  border: 1px solid #b9c0bc; border-left: 8px solid #1f4fa8; font: 700 13px/1.5 var(--sans); letter-spacing: 0.08em;
+}
+@container portal (max-width: 719px) {
+  .portal-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .car {
+    grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 8px 16px;
+    border-right: 0; border-bottom: 1px solid var(--line); max-height: 45vh;
+  }
+  .car-owner { display: none; }
+  .car-photo { width: 66px; border-radius: 8px; }
+  .car-name h2 { font-size: 15px; }
+  .car-name p { display: block; font-size: 12.5px; color: var(--ink-3); }
+  .car-toggle { display: grid; place-items: center; height: 34px; }
+  .car-toggle svg { transition: transform 0.15s; }
+  .car[data-open="true"] .car-toggle svg { transform: rotate(180deg); }
+  .car-facts { display: none; grid-column: 1 / -1; }
+  .car[data-open="true"] .car-facts { display: grid; }
+}
+
 /* Chat */
+.chat-head { display: flex; align-items: center; gap: 10px; padding: 12px clamp(16px, 4vw, 40px); border-bottom: 1px solid var(--line); }
+.chat-head h2 { font-size: 14px; font-weight: 650; }
 .chat { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
 .messages { flex: 1; min-height: 0; overflow-y: auto; padding: 24px clamp(16px, 4vw, 40px); display: flex; flex-direction: column; gap: 18px; }
 .empty { margin: auto; max-width: 520px; display: grid; gap: 10px; text-align: center; justify-items: center; }
@@ -299,7 +335,7 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
   .tabs button { border: 0; background: transparent; padding: 10px; color: var(--ink-3); border-bottom: 2px solid transparent; font-weight: 600; }
   .tabs button.on { color: var(--ink); border-bottom-color: var(--accent); }
   .app[data-hood="true"] .panes { grid-template-columns: minmax(0, 1fr); }
-  .app[data-view="chat"] .hood, .app[data-view="timeline"] .chat { display: none; }
+  .app[data-view="chat"] .hood, .app[data-view="timeline"] .portal { display: none; }
   .hood { border-left: 0; }
   .ev { grid-template-columns: 64px 1fr; gap: 10px; }
   .bubble { max-width: 94%; }

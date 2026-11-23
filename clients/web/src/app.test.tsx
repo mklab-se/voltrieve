@@ -29,7 +29,7 @@ const OLD = ["dash", "board"].join("");
 describe("old links to the operations page", () => {
   it.each([`?view=${OLD}`, `?page=${OLD}`, ""])("open the chat for %j", (search) => {
     const html = renderAt(search);
-    expect(html).toContain("Ask Runa something");
+    expect(html).toContain("Ask Runa about your car");
     expect(html).not.toContain("data-page");
     expect(html).not.toContain(OLD);
   });

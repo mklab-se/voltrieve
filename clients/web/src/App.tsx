@@ -4,9 +4,11 @@ import { streamChat, streamToolResults } from "./chat";
 import { fetchSourceUrl, openSource } from "./sources";
 import { Chat } from "./components/Chat";
 import { Header } from "./components/Header";
+import { MyCar } from "./components/MyCar";
 import { ConfigMissing, Loading, SignIn } from "./components/Notices";
 import { UnderTheHood, readUnderTheHood, rememberUnderTheHood } from "./components/UnderTheHood";
 import { readConfig, type AppConfig } from "./config";
+import { webContext } from "./garage";
 import { runClientTool, type Theme } from "./tools";
 import { chatReducer, initialChatState } from "./turns";
 import type { Backend, ClientToolCall, SourceItem } from "./types";
@@ -101,6 +103,7 @@ export function Workspace({ config, auth, session }: { config: AppConfig; auth: 
             conversationId: conversationId.current,
             message,
             correlationId,
+            context: webContext(new Date()),
           },
           ctrl.signal,
         );
@@ -188,17 +191,22 @@ export function Workspace({ config, auth, session }: { config: AppConfig; auth: 
         </nav>
       )}
       <main className="panes">
-        <Chat
-          state={state}
-          busy={busy}
-          underTheHood={underTheHood}
-          onSend={(t) => {
-            setSourceError(undefined);
-            void send(t);
-          }}
-          onOpenSource={openDocument}
-          sourceError={sourceError}
-        />
+        <div className="portal">
+          <div className="portal-body">
+            <MyCar owner={session.name} />
+            <Chat
+              state={state}
+              busy={busy}
+              underTheHood={underTheHood}
+              onSend={(t) => {
+                setSourceError(undefined);
+                void send(t);
+              }}
+              onOpenSource={openDocument}
+              sourceError={sourceError}
+            />
+          </div>
+        </div>
         {underTheHood && <UnderTheHood state={state} backend={backend} onBackend={setBackend} busy={busy} />}
       </main>
     </div>

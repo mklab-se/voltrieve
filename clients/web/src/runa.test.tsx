@@ -17,8 +17,25 @@ describe("Runa in the chat", () => {
 
   it("introduces Runa before the first question", () => {
     const html = render(initialChatState);
-    expect(html).toContain("Ask Runa something");
-    expect(html).toContain('placeholder="Ask Runa about a Voltrieve model…"');
+    expect(html).toContain("Ask Runa about your car");
+    expect(html).toContain('placeholder="Ask Runa about your car…"');
+  });
+
+  it("suggests questions about the customer's own car", () => {
+    const html = render(initialChatState);
+    const questions = [...html.matchAll(/<button class="chip">([^<]+)<\/button>/g)].map((m) => m[1]);
+    expect(questions).toEqual([
+      "How fast can I charge at home?",
+      "When is my next service and what is done?",
+      "Which winter wheels fit my car?",
+      "What does my warranty cover?",
+    ]);
+  });
+
+  it("keeps the title over a conversation", () => {
+    const state = chatReducer(initialChatState, { type: "start", message: "Hi", backend: "loop", correlationId: "c" });
+    expect(render(state).match(/Ask Runa about your car<\/h2>/g)).toHaveLength(1);
+    expect(render(initialChatState).match(/Ask Runa about your car<\/h2>/g)).toHaveLength(1);
   });
 
   it("says that Runa is an AI", () => {
