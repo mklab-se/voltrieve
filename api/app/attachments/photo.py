@@ -1,16 +1,12 @@
-"""Attachment handlers: identify an upload by its content and turn it into content parts.
-
-The photo is the first kind. A new kind is one more handler in HANDLERS.
-Photo bytes are never logged here.
+"""The photo handler. Photo bytes are never logged here.
 """
 
 import base64
 import io
-import warnings
-from dataclasses import dataclass
-from typing import Protocol
 
 from PIL import Image, ImageFilter, ImageOps, ImageStat
+
+from .base import Part, Rejected
 
 MAX_BYTES = 8 * 1024 * 1024
 MAX_PIXELS = 25_000_000
@@ -18,7 +14,8 @@ MIN_SIDE = 200
 LONG_SIDE = 1600
 JPEG_QUALITY = 85
 SHARPNESS_SIDE = 1000
-# Variance of the Laplacian on the gray picture. Drawn signs measure 129 and up, blurred pictures 29 and down.
+# Variance of the Laplacian on the gray picture, border cropped. Sharp pictures measure 122
+# and up (23 real and repository pictures 290 and up), blurred ones 31 and down.
 MIN_SHARPNESS = 60.0
 FORMATS = ("JPEG", "PNG", "WEBP")
 
@@ -29,34 +26,12 @@ MESSAGES = {
 }
 
 
-@dataclass(frozen=True)
-class Part:
-    label: str
-    content: dict
-    size: int  # bytes
-    detail: str = ""  # for a photo, like "1200x1600"
-
-
-class Rejected(Exception):
-    def __init__(self, code: str, message: str | None = None):
-        self.code = code
-        self.message = message or MESSAGES[code]
-        super().__init__(self.message)
-
-
-class AttachmentHandler(Protocol):
-    kind: str
-    max_bytes: int
-
-    def accepts(self, head: bytes) -> bool: ...
-
-    def process(self, data: bytes, label: str) -> list[Part]: ...
-
-
 def sharpness(image: Image.Image) -> float:
     gray = image.convert("L")
     gray.thumbnail((SHARPNESS_SIDE, SHARPNESS_SIDE))
     edges = gray.filter(ImageFilter.Kernel((3, 3), (0, 1, 0, 1, -4, 1, 0, 1, 0), 1, 128))
+    # The filter copies the outermost pixels unfiltered, so a bright frame would add variance.
+    edges = edges.crop((1, 1, edges.width - 1, edges.height - 1))
     return ImageStat.Stat(edges).var[0]
 
 
@@ -73,17 +48,15 @@ class PhotoHandler:
 
     def process(self, data: bytes, label: str) -> list[Part]:
         try:
-            with warnings.catch_warnings():
-                warnings.simplefilter("error", Image.DecompressionBombWarning)
-                image = self._open(data)
+            image = self._open(data)
         except Rejected:
             raise
-        except Exception:  # any Pillow decoding problem, bomb warnings and truncation included
-            raise Rejected("unreadable") from None
+        except Exception:  # any Pillow decoding problem, bomb errors and truncation included
+            raise Rejected("unreadable", MESSAGES["unreadable"]) from None
         if min(image.size) < MIN_SIDE:
-            raise Rejected("too_small")
+            raise Rejected("too_small", MESSAGES["too_small"])
         if sharpness(image) < MIN_SHARPNESS:
-            raise Rejected("too_blurry")
+            raise Rejected("too_blurry", MESSAGES["too_blurry"])
         image.thumbnail((LONG_SIDE, LONG_SIDE))
         buffer = io.BytesIO()
         image.save(buffer, "JPEG", quality=JPEG_QUALITY)
@@ -97,16 +70,6 @@ class PhotoHandler:
         image = Image.open(io.BytesIO(data), formats=FORMATS)
         width, height = image.size  # from the header, nothing is decoded yet
         if width * height > MAX_PIXELS:
-            raise Rejected("unreadable")
+            raise Rejected("unreadable", MESSAGES["unreadable"])
         image.load()
         return ImageOps.exif_transpose(image).convert("RGB")
-
-
-HANDLERS: tuple[AttachmentHandler, ...] = (PhotoHandler(),)
-
-
-def identify(head: bytes, handlers: tuple[AttachmentHandler, ...] = HANDLERS) -> AttachmentHandler | None:
-    for handler in handlers:
-        if handler.accepts(head):
-            return handler
-    return None

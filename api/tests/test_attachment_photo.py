@@ -4,7 +4,8 @@ import io
 import pytest
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
-from app.attachments.photo import HANDLERS, Part, PhotoHandler, Rejected, identify
+from app.attachments import HANDLERS, AttachmentHandler, Part, Rejected, identify
+from app.attachments.photo import PhotoHandler, sharpness
 
 JPEG = b"\xff\xd8\xff\xe0\x00\x10JFIF"
 PNG = b"\x89PNG\r\n\x1a\n\x00\x00"
@@ -90,6 +91,21 @@ def png_6000x5000_flat() -> bytes:
     return to_bytes(Image.new("RGB", (6000, 5000), (128, 128, 128)), "PNG")
 
 
+def test_shared_names_come_from_the_package():
+    assert isinstance(HANDLERS[0], PhotoHandler) and AttachmentHandler
+    assert Rejected("x", "y").code == "x"
+
+
+def test_a_blurred_picture_with_a_bright_edge_is_rejected():
+    page = Image.new("RGB", (1200, 800), "white")
+    ImageDraw.Draw(page).text((200, 300), "Parking 2 h", font=ImageFont.load_default(size=120), fill="black")
+    page = page.filter(ImageFilter.BoxBlur(16))
+    assert sharpness(Image.open(io.BytesIO(to_bytes(page)))) < 60
+    with pytest.raises(Rejected) as exc:
+        PhotoHandler().process(to_bytes(page, quality=90), "")
+    assert exc.value.code == "too_blurry"
+
+
 def test_photo_becomes_one_image_part(sharp_jpeg):
     [part] = PhotoHandler().process(sharp_jpeg, "front camera")
     assert part.label == "front camera" and part.content["type"] == "input_image"
@@ -132,6 +148,14 @@ def test_poor_photos_are_rejected(data, code, request):
     with pytest.raises(Rejected) as exc:
         PhotoHandler().process(request.getfixturevalue(data), "")
     assert exc.value.code == code and exc.value.message
+
+
+def test_oversize_picture_is_rejected_from_the_header(png_6000x5000_flat, monkeypatch):
+    loaded = []
+    monkeypatch.setattr(Image.Image, "load", lambda self, *a, **k: loaded.append(1))
+    with pytest.raises(Rejected) as exc:
+        PhotoHandler().process(png_6000x5000_flat, "")
+    assert exc.value.code == "unreadable" and not loaded
 
 
 def test_a_sharp_sign_passes_and_the_same_sign_blurred_is_rejected():
