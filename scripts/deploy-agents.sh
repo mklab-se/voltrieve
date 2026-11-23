@@ -38,3 +38,4 @@ retry uv run --project infra/scripts/entra voltrieve-entra assign-app-role \
 retry uv run scripts/smoke.py --basic
 echo "Note: sessions are bound to the agent version they started on; conversations in flight stay on the old version until the API restarts (or a call fails and the session is dropped)."
 echo "Agents deployed. Hosted agent: ${HOSTED_AGENT_NAME:-voltrieve-hosted} (principal $HOSTED_AGENT_PRINCIPAL_ID)"
+echo "Next: deploy the API, then run the full check: uv run scripts/smoke.py"

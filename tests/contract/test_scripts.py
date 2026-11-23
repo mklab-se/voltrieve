@@ -524,3 +524,8 @@ def test_deploy_web_fails_when_the_build_is_missing(tmp_path):
     assert result.returncode == 1
     assert "clients/dashboard/dist" in result.stderr
     assert calls == ""
+
+
+def test_deploy_agents_ends_by_naming_the_full_smoke_check():
+    last = (SCRIPTS / "deploy-agents.sh").read_text().strip().splitlines()[-1]
+    assert last.startswith("echo ") and "uv run scripts/smoke.py" in last and "--basic" not in last
