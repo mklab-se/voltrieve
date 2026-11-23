@@ -1,0 +1,26 @@
+[project]
+name = "voltrieve-photo-tests"
+version = "0.1.0"
+description = "Drawn parking signs and pictures with known answers, for the photo tests and the live checks"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "pillow>=13.0.0",
+    "pyyaml",
+    "voltrieve-api",
+    "voltrieve-agent-core",
+    "voltrieve-search",
+]
+
+[dependency-groups]
+dev = ["pytest"]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+voltrieve-api = { path = "../../api" }
+voltrieve-agent-core = { path = "../../agent_core" }
+voltrieve-search = { path = "../../search" }
+
+[tool.pytest.ini_options]
+testpaths = ["."]

@@ -1,0 +1,69 @@
+# Photo questions with known answers, for `uv run tests/routing/check.py --photos`.
+#
+# Every photo is drawn by code or comes from the repository's own pictures (see signs.py and
+# pictures.py): `sign` is one of the eight parking signs, `lamp` a Spark with a cracked headlamp on
+# its left or right, `car` the undamaged Spark, `blurred` a sign photographed at speed.
+#
+# `context.when` is the car's clock, local time. `rule` says how the verdict was made: a stay of
+# `minutes` (with `charging`), or the `fee`. test_questions.py checks every verdict against the rules
+# of signs.py, so a wrong answer here cannot hide.
+#
+# `verdict` is yes or no at the start of the answer. `article` and `no_article` are resolved from
+# data/generated/parts-index.json by key and vehicle: `no_article: any` forbids every article number.
+# `rejected` means the upload must be refused with that code, so there is no chat turn.
+# `free_sources` leaves the knowledge bases out of the judgement.
+#
+# The first questions are a spread of all kinds: --limit 20 takes the first turns.
+questions:
+  - { id: sign-fee-tue-3h, group: sign, photo: { sign: two_hours_fee }, context: { when: "2026-11-24 10:00" }, ask: "Can I park here for 3 hours?", expect: [], verdict: "no", rule: { minutes: 180 } }
+  - { id: lamp-left-site, group: lamp, photo: { lamp: left }, ask: "This is my Voltrieve Spark. What is broken, and which part do I need?", expect: [parts], article: { key: headlamp_left, fits: Voltrieve Spark }, no_article: { key: headlamp_right, fits: Voltrieve Spark }, mentions: [left] }
+  - { id: undamaged-site, group: undamaged, photo: { car: undamaged }, ask: "This is my Voltrieve Spark. What is broken, and which part do I need?", expect: [], free_sources: true, no_article: any }
+  - { id: sign-charging-yes, group: sign, photo: { sign: charging }, context: { when: "2026-11-24 10:00" }, ask: "I will charge the whole time. Can I park here for 1 hour?", expect: [], verdict: "yes", rule: { minutes: 60, charging: true } }
+  - { id: blurred-sign, group: blurred, photo: { blurred: two_hours_fee }, ask: "Can I park here?", expect: [], rejected: too_blurry }
+  - { id: sign-as-part, group: broken-part, photo: { sign: two_hours_fee }, ask: "This looks broken on my Voltrieve Spark. Which part do I need to order?", expect: [], free_sources: true, no_article: any }
+  - { id: which-part-left, group: which-part, photo: { lamp: left }, ask: "Which part is this?", expect: [], free_sources: true, no_article: { key: headlamp_right, fits: Voltrieve Spark } }
+  - { id: car-parking, group: car-parking, photo: { car: undamaged }, context: { when: "2026-11-24 10:00" }, ask: "Can I park here for 3 hours?", expect: [], mentions: [sign], no_article: any }
+  - { id: lamp-right-site, group: lamp, photo: { lamp: right }, ask: "This is my Voltrieve Spark. What is broken, and which part do I need?", expect: [parts], article: { key: headlamp_right, fits: Voltrieve Spark }, no_article: { key: headlamp_left, fits: Voltrieve Spark }, mentions: [right] }
+  - { id: lamp-left-car, group: lamp, photo: { lamp: left }, context: { when: "2026-11-24 10:00" }, ask: "What is broken on the car in this photo? Which part do I need?", expect: [parts], article: { key: headlamp_left, fits: Voltrieve Spark }, no_article: { key: headlamp_right, fits: Voltrieve Spark }, mentions: [left] }
+  - { id: lamp-right-car, group: lamp, photo: { lamp: right }, context: { when: "2026-11-24 10:00" }, ask: "What is broken on the car in this photo? Which part do I need?", expect: [parts], article: { key: headlamp_right, fits: Voltrieve Spark }, no_article: { key: headlamp_left, fits: Voltrieve Spark }, mentions: [right] }
+  - { id: undamaged-car, group: undamaged, photo: { car: undamaged }, context: { when: "2026-11-24 10:00" }, ask: "What is broken on the car in this photo? Which part do I need?", expect: [], free_sources: true, no_article: any }
+  - { id: which-part-right, group: which-part, photo: { lamp: right }, ask: "Which part is this?", expect: [], free_sources: true, no_article: { key: headlamp_left, fits: Voltrieve Spark } }
+  - { id: sign-as-part-charging, group: broken-part, photo: { sign: charging }, ask: "The part in this photo is broken on my Voltrieve Spark. What is its article number?", expect: [], free_sources: true, no_article: any }
+
+  # Two hours and a fee, on separate panels, and the weekdays, Saturdays, Sundays and red days.
+  - { id: sign-fee-tue-evening, group: sign, photo: { sign: two_hours_fee }, context: { when: "2026-11-24 18:30" }, ask: "Can I park here for 3 hours?", expect: [], verdict: "yes", rule: { minutes: 180 } }
+  - { id: sign-fee-sat-morning, group: sign, photo: { sign: two_hours_fee }, context: { when: "2026-11-28 10:00" }, ask: "Can I park here for 3 hours?", expect: [], verdict: "no", rule: { minutes: 180 } }
+  - { id: sign-fee-sat-afternoon, group: sign, photo: { sign: two_hours_fee }, context: { when: "2026-11-28 16:00" }, ask: "Can I park here for 3 hours?", expect: [], verdict: "yes", rule: { minutes: 180 } }
+  - { id: sign-fee-sun, group: sign, photo: { sign: two_hours_fee }, context: { when: "2026-11-29 12:00" }, ask: "Can I park here for 5 hours?", expect: [], verdict: "yes", rule: { minutes: 300 } }
+  - { id: sign-fee-before-epiphany, group: sign, photo: { sign: two_hours_fee }, context: { when: "2027-01-05 15:30" }, ask: "Can I park here for 4 hours?", expect: [], verdict: "yes", rule: { minutes: 240 } }
+  - { id: fee-tue-evening, group: fee, photo: { sign: two_hours_fee }, context: { when: "2026-11-24 18:15" }, ask: "Do I have to pay to park here now?", expect: [], verdict: "yes", rule: { fee: true } }
+  - { id: fee-tue-late, group: fee, photo: { sign: two_hours_fee }, context: { when: "2026-11-24 19:30" }, ask: "Do I have to pay to park here now?", expect: [], verdict: "no", rule: { fee: true } }
+  - { id: fee-epiphany, group: fee, photo: { sign: two_hours_fee }, context: { when: "2027-01-06 12:00" }, ask: "Do I have to pay to park here now?", expect: [], verdict: "no", rule: { fee: true } }
+
+  # A fee that always applies, and a limit that only applies at some times.
+  - { id: sign-fee-always-sun, group: sign, photo: { sign: fee_always_two_hours }, context: { when: "2026-11-29 09:00" }, ask: "Can I park here for 3 hours?", expect: [], verdict: "no", rule: { minutes: 180 } }
+  - { id: sign-fee-always-night, group: sign, photo: { sign: fee_always_two_hours }, context: { when: "2026-11-24 22:00" }, ask: "Can I park here for 3 hours?", expect: [], verdict: "yes", rule: { minutes: 180 } }
+  - { id: fee-always-night, group: fee, photo: { sign: fee_always_two_hours }, context: { when: "2026-11-24 03:00" }, ask: "Do I have to pay to park here now?", expect: [], verdict: "yes", rule: { fee: true } }
+
+  # A limit that always applies, and a fee that only applies at some times.
+  - { id: sign-limit-always-night, group: sign, photo: { sign: two_hours_always_fee }, context: { when: "2026-11-24 22:00" }, ask: "Can I park here for 3 hours?", expect: [], verdict: "no", rule: { minutes: 180 } }
+  - { id: fee-limit-always-night, group: fee, photo: { sign: two_hours_always_fee }, context: { when: "2026-11-24 22:00" }, ask: "Do I have to pay to park here now?", expect: [], verdict: "no", rule: { fee: true } }
+  - { id: fee-limit-always-day, group: fee, photo: { sign: two_hours_always_fee }, context: { when: "2026-11-24 10:00" }, ask: "Do I have to pay to park here now?", expect: [], verdict: "yes", rule: { fee: true } }
+
+  # Both on one panel.
+  - { id: sign-one-panel-night, group: sign, photo: { sign: one_panel }, context: { when: "2026-11-24 22:00" }, ask: "Can I park here for 3 hours?", expect: [], verdict: "yes", rule: { minutes: 180 } }
+  - { id: sign-one-panel-day, group: sign, photo: { sign: one_panel }, context: { when: "2026-11-24 10:00" }, ask: "Can I park here for 3 hours?", expect: [], verdict: "no", rule: { minutes: 180 } }
+  - { id: fee-one-panel-night, group: fee, photo: { sign: one_panel }, context: { when: "2026-11-24 22:00" }, ask: "Do I have to pay to park here now?", expect: [], verdict: "no", rule: { fee: true } }
+
+  # No parking on a weekday in a season, and street cleaning.
+  - { id: sign-friday-winter, group: sign, photo: { sign: friday }, context: { when: "2026-11-27 10:00" }, ask: "Can I park here for 1 hour?", expect: [], verdict: "no", rule: { minutes: 60 } }
+  - { id: sign-friday-summer, group: sign, photo: { sign: friday }, context: { when: "2026-06-12 10:00" }, ask: "Can I park here for 1 hour?", expect: [], verdict: "yes", rule: { minutes: 60 } }
+  - { id: sign-friday-tuesday, group: sign, photo: { sign: friday }, context: { when: "2026-11-24 10:00" }, ask: "Can I park here for 1 hour?", expect: [], verdict: "yes", rule: { minutes: 60 } }
+  - { id: sign-cleaning-monday, group: sign, photo: { sign: cleaning }, context: { when: "2026-11-30 13:00" }, ask: "Can I park here for 1 hour?", expect: [], verdict: "no", rule: { minutes: 60 } }
+  - { id: sign-cleaning-summer, group: sign, photo: { sign: cleaning }, context: { when: "2026-06-01 13:00" }, ask: "Can I park here for 1 hour?", expect: [], verdict: "yes", rule: { minutes: 60 } }
+  - { id: sign-cleaning-tuesday, group: sign, photo: { sign: cleaning }, context: { when: "2026-12-01 13:00" }, ask: "Can I park here for 1 hour?", expect: [], verdict: "yes", rule: { minutes: 60 } }
+
+  # No stopping, and charging only.
+  - { id: sign-no-stopping-day, group: sign, photo: { sign: no_stopping }, context: { when: "2026-11-24 10:00" }, ask: "Can I park here for 1 hour?", expect: [], verdict: "no", rule: { minutes: 60 } }
+  - { id: sign-no-stopping-night, group: sign, photo: { sign: no_stopping }, context: { when: "2026-11-29 23:00" }, ask: "Can I park here for 1 hour?", expect: [], verdict: "no", rule: { minutes: 60 } }
+  - { id: sign-charging-no, group: sign, photo: { sign: charging }, context: { when: "2026-11-24 10:00" }, ask: "I will not charge the car. Can I park here for 1 hour?", expect: [], verdict: "no", rule: { minutes: 60, charging: false } }
