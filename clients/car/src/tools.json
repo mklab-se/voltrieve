@@ -1,0 +1,39 @@
+[
+  {
+    "name": "set_speed",
+    "description": "Set the speed of the car the user drives, in km/h. 0 stops the car.",
+    "parameters": {
+      "type": "object",
+      "properties": { "kmh": { "type": "integer", "minimum": 0, "maximum": 150 } },
+      "required": ["kmh"]
+    }
+  },
+  {
+    "name": "set_wipers",
+    "description": "Set the windscreen wipers of the car the user drives.",
+    "parameters": {
+      "type": "object",
+      "properties": { "mode": { "type": "string", "enum": ["off", "slow", "fast"] } },
+      "required": ["mode"]
+    }
+  },
+  {
+    "name": "honk",
+    "description": "Sound the horn of the car the user drives. At most 5 times.",
+    "parameters": {
+      "type": "object",
+      "properties": { "times": { "type": "integer", "minimum": 1, "maximum": 5 } },
+      "required": ["times"]
+    }
+  },
+  {
+    "name": "park",
+    "description": "Park the car in the next free bay on the right. Returns when it has stopped.",
+    "parameters": { "type": "object", "properties": {} }
+  },
+  {
+    "name": "get_sign_photo",
+    "description": "Get the car's last photo of a parking sign. Use it when the user asks about parking here and no photo is attached.",
+    "parameters": { "type": "object", "properties": {} }
+  }
+]

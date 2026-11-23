@@ -24,6 +24,18 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["--prefix", "clients/dashboard", "run", "dev:mock"],
       "port": 5174
+    },
+    {
+      "name": "car-mock-api",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["clients/car/mock/server.mjs"],
+      "port": 8789
+    },
+    {
+      "name": "car-dev-mock",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "clients/car", "run", "dev:mock"],
+      "port": 5175
     }
   ]
 }

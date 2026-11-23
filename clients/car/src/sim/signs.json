@@ -1,0 +1,60 @@
+[
+  {
+    "id": "two_hours_fee",
+    "top": "P",
+    "panels": [
+      { "color": "blue", "rows": [{"text": "2 tim"}, {"text": "9-18"}, {"text": "(9-15)"}] },
+      { "color": "blue", "rows": [{"text": "Avgift"}, {"text": "7-19"}, {"text": "(11-17)"}] }
+    ]
+  },
+  {
+    "id": "fee_always_two_hours",
+    "top": "P",
+    "panels": [
+      { "color": "blue", "rows": [{"text": "Avgift"}] },
+      { "color": "blue", "rows": [{"text": "2 tim"}, {"text": "8-18"}, {"text": "(8-11)"}, {"text": "8-15", "red": true}] }
+    ]
+  },
+  {
+    "id": "two_hours_always_fee",
+    "top": "P",
+    "panels": [
+      { "color": "blue", "rows": [{"text": "2 tim"}] },
+      { "color": "blue", "rows": [{"text": "Avgift"}, {"text": "8-18"}] }
+    ]
+  },
+  {
+    "id": "one_panel",
+    "top": "P",
+    "panels": [
+      { "color": "blue", "rows": [{"text": "2 tim"}, {"text": "Avgift"}, {"text": "8-18"}] }
+    ]
+  },
+  {
+    "id": "friday",
+    "top": "no_parking",
+    "panels": [
+      { "color": "yellow", "rows": [{"text": "Fredag"}, {"text": "8-16"}, {"text": "1/11-15/5"}] }
+    ]
+  },
+  {
+    "id": "cleaning",
+    "top": "P",
+    "panels": [
+      { "color": "blue", "rows": [{"text": "Avgift"}, {"text": "8-18"}] },
+      { "color": "yellow", "symbol": "no_parking", "rows": [{"text": "Måndag"}, {"text": "12-15"}, {"text": "1 okt-30 april"}] }
+    ]
+  },
+  {
+    "id": "no_stopping",
+    "top": "no_stopping",
+    "panels": []
+  },
+  {
+    "id": "charging",
+    "top": "P",
+    "panels": [
+      { "color": "blue", "rows": [{"text": "Endast"}, {"text": "laddning"}] }
+    ]
+  }
+]
