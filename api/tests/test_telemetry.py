@@ -2,9 +2,6 @@ import json
 import logging
 
 import pytest
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import SimpleSpanProcessor
-from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from voltrieve_agent.events import AgentEvent, trace
 from voltrieve_agent.loop import TurnOutcome
@@ -17,15 +14,6 @@ from app.main import create_app
 from app.settings import Settings
 from app.turns import TurnStore
 from tests.conftest import answer, parse_sse
-
-
-@pytest.fixture
-def spans(monkeypatch):
-    exporter = InMemorySpanExporter()
-    provider = TracerProvider()
-    provider.add_span_processor(SimpleSpanProcessor(exporter))
-    monkeypatch.setattr(telemetry, "tracer", provider.get_tracer("test"))
-    return exporter
 
 
 def test_telemetry_is_off_without_connection_string(monkeypatch):

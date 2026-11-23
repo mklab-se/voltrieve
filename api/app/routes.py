@@ -1,4 +1,5 @@
 import asyncio
+import datetime as dt
 import json
 import logging
 
@@ -9,9 +10,13 @@ from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError
 from voltrieve_agent.events import AgentEvent, format_event
 
+from app.attachments import Rejected
+from app.attachments.store import Stored, attachment_parts
+from app.attachments.upload import read_upload, refuse
 from app.auth import AuthError, Claims
 from app.backends import BACKEND_NAMES
 from app.backends.base import BackendUnavailable
+from app.context import context_line
 from app.logging_setup import correlation_id
 from app.schemas import (
     MAX_CLIENT_TOOLS_BYTES,
@@ -79,7 +84,10 @@ def json_body(model: type[BaseModel]):
         except RecursionError as exc:
             raise HTTPException(422, "JSON is nested too deeply") from exc
         except ValidationError as exc:
-            raise HTTPException(422, json.loads(exc.json(include_url=False, include_context=False))) from exc
+            # Without the input: it may hold what the client knows about the user, and values that
+            # JSON cannot carry.
+            errors = exc.json(include_url=False, include_context=False, include_input=False)
+            raise HTTPException(422, json.loads(errors)) from exc
         except ValueError as exc:
             raise HTTPException(422, "Invalid JSON") from exc
 
@@ -130,6 +138,33 @@ async def _check_owner(state, backend, conversation_id: str, oid: str) -> None:
 def _requested_backend(request: Request, header: str | None) -> str:
     """The backend the client asked for when it names a real one, else the default."""
     return header if header in BACKEND_NAMES else request.app.state.settings.agent_backend
+
+
+def _attachments(state, oid: str, ids: list[str]) -> list[Stored]:
+    """The named attachments. An unknown, expired or someone else's id gives the same answer, so ids
+    cannot be probed."""
+    found = [state.attachments.get(oid, id) for id in ids]
+    if any(stored is None for stored in found):
+        raise HTTPException(422, {"code": "unknown_attachment"})
+    return found
+
+
+async def _store_upload(request: Request, oid: str) -> dict:
+    """Read, process and keep an upload, and return the answer to the client. An upload is logged
+    with its kind, size, detail, status and code, and nothing else."""
+    state = request.app.state
+    with state.uploads.place():
+        upload = await read_upload(request)
+        kind = upload.handler.kind
+        try:
+            parts = await state.uploads.process(upload)
+        except Rejected as exc:
+            logger.info("Attachment rejected: kind %s, %d bytes, code %s", kind, len(upload.data), exc.code)
+            return {"id": None, "kind": kind, "status": "rejected", "code": exc.code, "message": exc.message}
+        stored = state.attachments.put(oid, kind, parts)
+    logger.info("Attachment ready: kind %s, %d bytes, %s", kind, stored.size, stored.detail)
+    expires = dt.datetime.now(dt.UTC) + dt.timedelta(seconds=state.attachments.ttl)
+    return {"id": stored.id, "kind": kind, "status": "ready", "expires_at": expires.isoformat(timespec="seconds")}
 
 
 def _stream(request: Request, job: Job) -> StreamingResponse:
@@ -211,6 +246,21 @@ def build_router() -> APIRouter:
             raise HTTPException(403, "This document cannot be opened") from exc
         return JSONResponse({"url": url, "expires_in": LINK_SECONDS}, headers={"Cache-Control": "no-store"})
 
+    @router.post("/attachments")
+    async def upload_attachment(request: Request, claims: Claims = Depends(authenticate)) -> JSONResponse:
+        """An attachment for a later turn. One that is not good enough is an answer, not an error."""
+        failure = ""
+        try:
+            answer = await _store_upload(request, claims.oid)
+        except HTTPException:
+            raise
+        except Exception as exc:
+            failure = type(exc).__name__  # its text may quote the attachment
+        if failure:  # outside the except block, so that nothing is chained to it
+            logger.error("Attachment failed: %s", failure)
+            refuse(500, "The attachment could not be processed.")
+        return JSONResponse(answer, 201, headers={"Cache-Control": "no-store"})
+
     @router.post("/chat")
     async def chat(
         request: Request,
@@ -225,6 +275,7 @@ def build_router() -> APIRouter:
             backend = state.registry.get_backend(name)
         except BackendUnavailable as exc:
             raise HTTPException(400, str(exc)) from exc
+        attachments = _attachments(state, claims.oid, body.attachments)
 
         stale = None
         if body.conversation_id is not None:
@@ -242,6 +293,10 @@ def build_router() -> APIRouter:
                 body.message,
                 to_client_tools(body.client_tools),
                 stale=stale,
+                parts=attachment_parts(attachments),
+                attachments=[a.summary() for a in attachments],
+                context=body.context.model_dump(exclude_none=True) if body.context else {},
+                context_line=context_line(body.context),
             ),
         )
 
@@ -280,6 +335,8 @@ def build_router() -> APIRouter:
             )
         if request.app.state.turns.is_running(paused.conversation_id):
             raise HTTPException(409, "turn_in_progress")
+        # Before the pause is taken, so it can still be answered with another id.
+        attachments = _attachments(request.app.state, claims.oid, body.attachment_ids())
         store.remove(body.turn_id)
         items = [
             {"type": "function_call_output", "call_id": r.call_id, "output": r.output_text()}
@@ -297,7 +354,9 @@ def build_router() -> APIRouter:
                 paused.pending_outputs,
                 usage=paused.usage,
                 text=paused.text,
+                parts=attachment_parts(attachments),
                 kept=paused.kept,
+                attachments=[a.summary() for a in attachments],
             ),
         )
 

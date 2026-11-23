@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 
 TURN_TTL_SECONDS = 15 * 60
 MAX_CONVERSATIONS = 1000
+MAX_UNSTORED_PAUSES = 3  # per user: each keeps its attachments in memory
 GENERIC_ERROR = AgentEvent(
     "error", {"code": "internal_error", "message": "The request could not be completed."}
 )
@@ -126,6 +127,9 @@ class TurnStore:
         paused.expires_at = self._clock() + self._ttl
         self._paused[paused.turn_id] = paused
         self._paused_by_conversation[paused.conversation_id] = paused.turn_id
+        unstored = [p for p in self._paused.values() if p.oid == paused.oid and p.kept is not None]
+        for oldest in unstored[:-MAX_UNSTORED_PAUSES]:
+            self._drop(oldest)
 
     def get(self, turn_id: str) -> PausedTurn | None:
         return self._paused.get(turn_id)
@@ -148,9 +152,12 @@ class TurnStore:
         """Drop expired pauses. Their conversations are left dirty, so the next touch repairs."""
         expired = [p for p in self._paused.values() if self.is_expired(p)]
         for paused in expired:
-            self.remove(paused.turn_id)
-            self.mark_dirty(paused.conversation_id)
+            self._drop(paused)
         return len(expired)
+
+    def _drop(self, paused: PausedTurn) -> None:
+        self.remove(paused.turn_id)
+        self.mark_dirty(paused.conversation_id)
 
 
 @dataclass
@@ -171,16 +178,23 @@ class Job:
     parts: list[dict] = field(default_factory=list, repr=False)
     kept: dict | None = field(default=None, repr=False)
     context: dict = field(default_factory=dict, repr=False)
+    context_line: str = field(default="", repr=False)  # goes before the message, to the backend only
+    attachments: list[dict] = field(default_factory=list)  # kind, detail and size of each, for the trace
+
+    @property
+    def unstored(self) -> bool:
+        return bool(self.parts or self.kept)
 
 
 class _Run:
     """The events of one request: a queue the response drains, fed by a background task."""
 
-    def __init__(self, recorder: TurnRecorder | None = None) -> None:
+    def __init__(self, recorder: TurnRecorder | None = None, unstored: bool = False) -> None:
         self.queue: asyncio.Queue[AgentEvent | None] = asyncio.Queue()
         self._start = time.perf_counter()
         self.held_tool_calls: AgentEvent | None = None
         self.recorder = recorder
+        self.unstored = unstored
         self.text = ""  # the answer so far, to find the documents it cites
 
     async def emit(self, event: AgentEvent) -> None:
@@ -199,9 +213,7 @@ class _Run:
             return
         await self.queue.put(event)
 
-
-    @staticmethod
-    def _record(data: dict) -> None:
+    def _record(self, data: dict) -> None:
         """Every hop is a log line and a span event, so logs and traces show the whole turn."""
         step = data["step"]
         logger.info(
@@ -218,7 +230,10 @@ class _Run:
             component=data.get("component"),
             detail=data.get("detail"),
             elapsed_ms=data.get("elapsed_ms"),
+            **({k: data.get(k) for k in ("kind", "size")} if step == "attachment_used" else {}),
         )
+        if self.unstored:
+            return  # arguments and results may say what is in the attachment
         # Arguments and results can hold user data: only at debug level, truncated.
         for key in ("arguments", "output_preview"):
             if key in data:
@@ -251,7 +266,7 @@ class TurnService:
         kind = "message" if isinstance(job.input, str) else "tool_results"
         # An expired turn runs nothing, and its turn id is client input: it stays off the feed.
         recorder = None if job.turn_expired else TurnRecorder(job.backend, self._model, user, cold_start=cold, kind=kind)
-        run = _Run(recorder)
+        run = _Run(recorder, job.unstored)
         run.text = job.text
         if job.turn_expired:
             pass  # nothing to show
@@ -350,7 +365,7 @@ class TurnService:
                 try:
                     await backend.repair(conversation_id)
                 except Exception:
-                    log_failure("Conversation repair failed", bool(job.parts or job.kept))
+                    log_failure("Conversation repair failed", job.unstored)
                     self.store.mark_dirty(conversation_id)
                     await run.emit(
                         AgentEvent(
@@ -374,13 +389,18 @@ class TurnService:
                 annotate_span(conversation_id=conversation_id)
                 await run.emit(trace("conversation_created", "api", conversation_id))
 
-            if not (job.parts or job.kept):  # the input of an unstored turn may be about the attachment
+            if not job.unstored:  # the input of an unstored turn may be about the attachment
                 debug_payload(logger, "turn input", job.input)
+            for used in job.attachments:
+                await run.emit(trace("attachment_used", "api", **used))
+            input_ = job.input
+            if job.context_line and isinstance(input_, str):
+                input_ = f"{job.context_line}\n{input_}"
             ctx = TurnContext(
                 user=UserContext(oid, job.claims.username, frozenset(job.claims.roles)),
                 conversation_id=conversation_id,
                 turn_id=job.turn_id,
-                input=job.input,
+                input=input_,
                 client_tools=job.client_tools,
                 pending_outputs=job.pending_outputs,
                 correlation_id=correlation_id.get(),
@@ -417,7 +437,7 @@ class TurnService:
                 if outcome.unrecorded:
                     # The answer was given but not recorded: repair before the conversation is used.
                     self.store.mark_dirty(conversation_id)
-                await self._send_sources(run, job.turn_id)
+                await self._send_sources(run, job)
                 await run.emit(
                     AgentEvent(
                         "done",
@@ -435,7 +455,7 @@ class TurnService:
                 # conversation), so check it before its next use.
                 self.store.mark_dirty(conversation_id)
         except Exception:
-            log_failure("Turn failed", bool(job.parts or job.kept))
+            log_failure("Turn failed", job.unstored)
             if conversation_id:
                 self.store.mark_dirty(conversation_id)
             if run.recorder is not None:
@@ -446,15 +466,19 @@ class TurnService:
             self._release(conversation_id, run)
             await run.queue.put(None)
 
-    async def _send_sources(self, run: _Run, turn_id: str) -> None:
+    async def _send_sources(self, run: _Run, job: Job) -> None:
         """The documents the answer cites, after the text, so the first text is never later.
         A failed lookup costs the links, never the answer."""
         if self.sources is None or not run.text:
             return
         try:
             items = await asyncio.wait_for(self.sources.resolve(run.text), LOOKUP_TIMEOUT_SECONDS)
-        except Exception:
-            logger.warning("Source lookup failed", exc_info=True)
+        except Exception as exc:
+            # The lookup is made of the answer, which may say what is in the attachment.
+            if job.unstored:
+                logger.warning("Source lookup failed: %s", type(exc).__name__)
+            else:
+                logger.warning("Source lookup failed", exc_info=True)
             return
         if not items:
             return
@@ -467,12 +491,12 @@ class TurnService:
                 sources=len(items),
             )
         )
-        await run.emit(AgentEvent("sources", {"turn_id": turn_id, "items": items}))
+        await run.emit(AgentEvent("sources", {"turn_id": job.turn_id, "items": items}))
 
     async def _close(self, paused: PausedTurn, run: _Run) -> None:
         """Give the open function calls of an abandoned or expired turn an output."""
-        outputs = paused.abandon_outputs()
         try:
+            outputs = paused.abandon_outputs()
             backend = self._registry.get_backend(paused.backend)
             if outputs:  # an unstored turn may have nothing in the conversation to close
                 await backend.abandon(paused.conversation_id, outputs)

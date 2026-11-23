@@ -66,7 +66,7 @@ class TurnInput:
     user: UserContext
     conversation_id: str
     turn_id: str
-    input: str | list[dict]
+    input: str | list[dict] = field(repr=False)
     client_tools: list[ClientTool] = field(default_factory=list)
     correlation_id: str | None = None
     # The content parts of an attachment, and what an unstored turn kept when it paused. Neither

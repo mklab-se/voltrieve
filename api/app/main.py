@@ -12,6 +12,8 @@ from fastapi.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from voltrieve_agent.server_tools import build_server_tools
 
+from app.attachments.store import AttachmentStore
+from app.attachments.upload import UploadQueue
 from app.auth import TokenValidator
 from app.backends import BackendRegistry
 from app.logging_setup import configure_logging, correlation_id
@@ -24,6 +26,8 @@ from app.turns import TurnService, TurnStore
 logger = logging.getLogger("app.access")
 CORRELATION_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 MAX_BODY_BYTES = 64 * 1024
+# 8 MB for the file, and the form around it.
+MAX_UPLOAD_BODY_BYTES = 8 * 1024 * 1024 + 64 * 1024
 EVICTION_INTERVAL_SECONDS = 60.0
 
 
@@ -33,6 +37,10 @@ class BodyTooLarge(HTTPException):
 
     def __init__(self) -> None:
         super().__init__(413, "Request body too large")
+
+
+def max_body_bytes(path: str) -> int:
+    return MAX_UPLOAD_BODY_BYTES if path == "/attachments" else MAX_BODY_BYTES
 
 
 def forwarded_client(headers: dict[str, str]) -> str | None:
@@ -79,19 +87,20 @@ class RequestGuard:
             await send(message)
 
         received = 0
+        limit = max_body_bytes(scope["path"])
 
         async def receive_wrapper() -> Message:
             nonlocal received
             message = await receive()
             if message["type"] == "http.request":
                 received += len(message.get("body", b""))
-                if received > MAX_BODY_BYTES:
+                if received > limit:
                     raise BodyTooLarge
             return message
 
         try:
             length = headers.get("content-length", "")
-            if length.isdigit() and int(length) > MAX_BODY_BYTES:
+            if length.isdigit() and int(length) > limit:
                 raise BodyTooLarge
             await self.app(scope, receive_wrapper, send_wrapper)
         except BodyTooLarge:
@@ -118,6 +127,7 @@ def create_app(
     registry: BackendRegistry | None = None,
     store: TurnStore | None = None,
     sources: SourceService | None = None,
+    attachments: AttachmentStore | None = None,
 ) -> FastAPI:
     configure_logging(settings.log_level)
     configure_telemetry(settings.applicationinsights_connection_string)
@@ -128,6 +138,7 @@ def create_app(
             while True:
                 await asyncio.sleep(EVICTION_INTERVAL_SECONDS)
                 app.state.store.evict_expired()
+                app.state.attachments.evict_expired()
 
         evictor = asyncio.create_task(evict_periodically())
         try:
@@ -153,6 +164,8 @@ def create_app(
     app.state.validator = validator or TokenValidator(settings.tenant_id, settings.api_client_id)
     app.state.registry = registry or BackendRegistry(settings)
     app.state.store = store or TurnStore()
+    app.state.attachments = attachments if attachments is not None else AttachmentStore()
+    app.state.uploads = UploadQueue()
     app.state.sources = sources if sources is not None else build_source_service(settings)
     app.state.turns = TurnService(app.state.store, app.state.registry, model=settings.chat_deployment,
                                   sources=app.state.sources)

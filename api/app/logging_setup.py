@@ -44,3 +44,6 @@ def configure_logging(level: str) -> None:
     root.setLevel(level.upper())
     # The Azure SDK logs every HTTP request and response header at INFO.
     logging.getLogger("azure").setLevel(logging.WARNING)
+    # These log what is in an uploaded photo (EXIF included) and bytes of the form around it.
+    for name in ("PIL", "python_multipart"):
+        logging.getLogger(name).setLevel(logging.CRITICAL)

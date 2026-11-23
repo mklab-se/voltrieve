@@ -9,9 +9,14 @@ import httpx  # noqa: E402
 import jwt  # noqa: E402
 import pytest  # noqa: E402
 from cryptography.hazmat.primitives.asymmetric import rsa  # noqa: E402
+from opentelemetry.sdk.trace import TracerProvider  # noqa: E402
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor  # noqa: E402
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter  # noqa: E402
 from voltrieve_agent.events import AgentEvent, trace  # noqa: E402
 from voltrieve_agent.loop import TurnOutcome  # noqa: E402
 
+from app import telemetry  # noqa: E402
+from app.attachments.store import AttachmentStore  # noqa: E402
 from app.auth import TokenValidator  # noqa: E402
 from app.backends import BackendRegistry  # noqa: E402
 from app.main import create_app  # noqa: E402
@@ -147,7 +152,18 @@ def clock():
 def app(validator, backend, clock):
     settings = Settings(cors_origins="http://localhost:5173")
     registry = BackendRegistry(settings, {"loop": lambda s: backend})
-    return create_app(settings, validator, registry, TurnStore(clock=clock))
+    return create_app(
+        settings, validator, registry, TurnStore(clock=clock), attachments=AttachmentStore(clock=clock)
+    )
+
+
+@pytest.fixture
+def spans(monkeypatch):
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    monkeypatch.setattr(telemetry, "tracer", provider.get_tracer("test"))
+    return exporter
 
 
 @pytest.fixture

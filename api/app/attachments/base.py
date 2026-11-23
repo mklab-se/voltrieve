@@ -1,13 +1,13 @@
 """The types every attachment handler shares."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol
 
 
 @dataclass(frozen=True)
 class Part:
-    label: str
-    content: dict
+    label: str = field(repr=False)
+    content: dict = field(repr=False)
     size: int  # bytes
     detail: str = ""  # for a photo, like "1200x1600"
 

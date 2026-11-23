@@ -26,8 +26,9 @@ class TurnContext:
     conversation_id: str
     turn_id: str
     # The new user message (str), or, when continuing a paused turn, the client results as
-    # function_call_output items covering every pending call id.
-    input: str | list[dict]
+    # function_call_output items covering every pending call id. A message may begin with the line
+    # that says what the client knows, so it is not in the repr.
+    input: str | list[dict] = field(repr=False)
     client_tools: list[ClientTool] = field(default_factory=list)
     # Server tool outputs from the paused iteration. They must reach the conversation
     # together with the client results. Empty for a new message.
