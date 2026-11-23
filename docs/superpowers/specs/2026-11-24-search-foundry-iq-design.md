@@ -137,7 +137,7 @@ Never do steps 1 and 2 in one provision: between the new definitions and the new
 ## 8. Rollback
 
 - **Serverless:** set `standby`, provision, `deploy-agents.sh`. If the documents changed while Serverless was active, the provision indexes Basic again.
-- **Planner:** set `gpt-5.4-mini`, provision. Seconds, no new images.
+- **Planner:** set `gpt-5.4-mini`, provision. Minutes, no new images. Writing the two bases again with the old planner takes seconds.
 - **Version:** the planner first, then the code of the commit before, with a provision, a deployment of the API and `deploy-agents.sh`. The index and its content are the same in both versions, so nothing is rebuilt.
 
 ## 9. How it is measured
@@ -168,9 +168,9 @@ Prices for search are from the Azure retail prices API for Sweden Central, read 
 
 ## 11. Not now
 
-- **Image serving:** it needs images extracted at ingestion and answer synthesis, and our agents write the answers and get images another way.
+- **Image serving:** it only runs with answer synthesis and on blob, OneLake or SharePoint sources, and we use `extractiveData` on search index sources.
 - **Citation URLs:** they point at the index document and need a token with index access, and our source links are signed blob links for linkable documents only.
-- **Freshness:** it favors newer documents, and all our documents are generated together.
+- **Freshness:** it is a setting on sources that ingest for themselves, ours read an index, and all our documents are generated together.
 - **Named knowledge base tools:** they could give the two MCP tools distinct names, but that changes routing, so it needs its own measurement.
 
 ## 12. Not verified
@@ -181,5 +181,5 @@ Prices for search are from the Azure retail prices API for Sweden Central, read 
 - That the Responses call works with the roles given, on either service.
 - `maxOutputSize` on the new version.
 - Serverless: creation, MCP, managed identity, cold start, CU use.
-- `2026-11-01` for a write of the Basic service in France Central.
+- `2026-11-01` for a write of the Basic service in France Central. A what-if of the whole template with it succeeded, with Serverless off and in standby, and showed no deletion.
 - The price of `gpt-6-luna`: taken from the table in the repository, not read again.
