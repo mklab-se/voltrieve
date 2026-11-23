@@ -8,6 +8,8 @@ export type TimelineEntry =
 export interface Turn {
   id: number;
   userText: string;
+  /** The photo the question is about. */
+  photo?: Blob;
   /** Sent as X-Correlation-Id: the id to search for in logs and traces. */
   correlationId: string;
   requestedBackend: Backend;
@@ -26,14 +28,19 @@ export interface Turn {
 export interface ChatState {
   conversationId?: string;
   turns: Turn[];
+  /** The text in the field. */
+  draft: string;
 }
 
 export type ChatAction =
-  | { type: "start"; message: string; backend: Backend; correlationId: string }
+  | { type: "start"; message: string; backend: Backend; correlationId: string; photo?: Blob }
+  /** Take back the last turn, which was not sent, with its text in the field again. */
+  | { type: "withdraw" }
+  | { type: "draft"; text: string }
   | { type: "event"; event: ServerEvent }
   | { type: "reset" };
 
-export const initialChatState: ChatState = { turns: [] };
+export const initialChatState: ChatState = { turns: [], draft: "" };
 
 function updateLast(state: ChatState, fn: (t: Turn) => Turn): ChatState {
   if (state.turns.length === 0) return state;
@@ -49,18 +56,28 @@ function fail(t: Turn, code: string, message: string): Turn {
 export function chatReducer(state: ChatState, action: ChatAction): ChatState {
   switch (action.type) {
     case "reset":
-      return initialChatState;
+      return { ...initialChatState, draft: state.draft };
+    case "draft":
+      return { ...state, draft: action.text };
+    case "withdraw": {
+      const text = state.turns[state.turns.length - 1]?.userText;
+      const draft = [text, state.draft].filter(Boolean).join("\n");
+      return { ...state, turns: state.turns.slice(0, -1), draft };
+    }
     case "start": {
       const turn: Turn = {
         id: state.turns.length + 1,
         userText: action.message,
+        photo: action.photo,
         correlationId: action.correlationId,
         requestedBackend: action.backend,
         answer: "",
         entries: [],
         status: "streaming",
       };
-      return { ...state, turns: [...state.turns, turn] };
+      // A suggested question does not come from the field.
+      const draft = state.draft.trim() === action.message ? "" : state.draft;
+      return { ...state, turns: [...state.turns, turn], draft };
     }
     case "event": {
       const ev = action.event;

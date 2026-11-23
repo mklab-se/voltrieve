@@ -43,9 +43,11 @@ function answered(): ChatState {
   return chatReducer(state, { type: "event", event: { type: "done", data: done } });
 }
 
+const photo = { attached: {}, choose: () => {}, retry: () => {}, remove: () => {} };
+
 const chat = (underTheHood: boolean) =>
   renderToStaticMarkup(
-    <Chat state={answered()} busy={false} underTheHood={underTheHood} onSend={() => {}} onOpenSource={() => {}} />,
+    <Chat state={answered()} busy={false} underTheHood={underTheHood} photo={photo} onDraft={() => {}} onSend={() => {}} onOpenSource={() => {}} />,
   );
 
 afterEach(() => vi.unstubAllGlobals());

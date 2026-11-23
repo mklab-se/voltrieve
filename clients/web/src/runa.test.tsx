@@ -3,9 +3,11 @@ import { describe, expect, it } from "vitest";
 import { Chat } from "./components/Chat";
 import { chatReducer, initialChatState, type ChatState } from "./turns";
 
+const photo = { attached: {}, choose: () => {}, retry: () => {}, remove: () => {} };
+
 // Issue #15: the assistant is called Runa, and the chat never hides that it is an AI.
 const render = (state: ChatState) =>
-  renderToStaticMarkup(<Chat state={state} busy={false} underTheHood={false} onSend={() => {}} onOpenSource={() => {}} />);
+  renderToStaticMarkup(<Chat state={state} busy={false} underTheHood={false} photo={photo} onDraft={() => {}} onSend={() => {}} onOpenSource={() => {}} />);
 
 describe("Runa in the chat", () => {
   it("labels each answer with Runa's name and avatar", () => {

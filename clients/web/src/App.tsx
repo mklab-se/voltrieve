@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { PhotoNotSent, withPhoto } from "./attachments";
 import { bootAuth, type Auth, type AuthSession } from "./auth";
 import { streamChat, streamToolResults } from "./chat";
 import { fetchSourceUrl, openSource } from "./sources";
@@ -12,6 +13,7 @@ import { webContext } from "./garage";
 import { runClientTool, type Theme } from "./tools";
 import { chatReducer, initialChatState } from "./turns";
 import type { Backend, ClientToolCall, SourceItem } from "./types";
+import { usePhoto } from "./usePhoto";
 
 // A client tool result can lead to another tool call, but not forever.
 const MAX_TOOL_ROUNDS = 5;
@@ -67,6 +69,7 @@ export function Workspace({ config, auth, session }: { config: AppConfig; auth: 
   const [underTheHood, setUnderTheHood] = useState(readUnderTheHood);
   const [view, setView] = useState<"chat" | "timeline">("chat");
   const [sourceError, setSourceError] = useState<string>();
+  const photo = usePhoto(config.apiUrl, auth);
   const abort = useRef<AbortController | null>(null);
   const conversationId = useRef<string | undefined>(undefined);
   conversationId.current = state.conversationId;
@@ -86,27 +89,27 @@ export function Workspace({ config, auth, session }: { config: AppConfig; auth: 
     }
   }, []);
 
+  const { upload } = photo;
+  const attached = photo.attached.photo;
   const send = useCallback(
     async (message: string) => {
       setBusy(true);
       const correlationId = crypto.randomUUID();
-      dispatch({ type: "start", message, backend, correlationId });
+      dispatch({ type: "start", message, backend, correlationId, photo: attached?.blob });
       const ctrl = new AbortController();
       abort.current = ctrl;
       try {
         const token = await auth.getToken();
-        let events = streamChat(
-          {
-            apiUrl: config.apiUrl,
-            token,
-            backend,
-            conversationId: conversationId.current,
-            message,
-            correlationId,
-            context: webContext(new Date()),
-          },
-          ctrl.signal,
-        );
+        const request = {
+          apiUrl: config.apiUrl,
+          token,
+          backend,
+          conversationId: conversationId.current,
+          message,
+          correlationId,
+          context: webContext(new Date()),
+        };
+        let events = withPhoto(attached, (attachments) => streamChat({ ...request, attachments }, ctrl.signal), upload);
         for (let round = 0; round <= MAX_TOOL_ROUNDS; round += 1) {
           let paused: { turnId: string; conversationId: string; calls: ClientToolCall[] } | undefined;
           for await (const event of events) {
@@ -138,15 +141,17 @@ export function Workspace({ config, auth, session }: { config: AppConfig; auth: 
           );
         }
       } catch (e) {
-        dispatch({
-          type: "event",
-          event: { type: "error", data: { code: "auth", message: e instanceof Error ? e.message : "Could not get a token." } },
-        });
+        if (e instanceof PhotoNotSent) dispatch({ type: "withdraw" }); // the notice beside the field says why
+        else
+          dispatch({
+            type: "event",
+            event: { type: "error", data: { code: "auth", message: e instanceof Error ? e.message : "Could not get a token." } },
+          });
       } finally {
         setBusy(false);
       }
     },
-    [applyTheme, auth, backend, config.apiUrl],
+    [applyTheme, attached, auth, backend, config.apiUrl, upload],
   );
 
   function openDocument(source: SourceItem) {
@@ -164,6 +169,11 @@ export function Workspace({ config, auth, session }: { config: AppConfig; auth: 
     setView("chat"); // on a small screen the panel has a tab of its own
   }
 
+  function newChat() {
+    dispatch({ type: "reset" });
+    photo.reset();
+  }
+
   function toggleTheme() {
     applyTheme(theme === "dark" ? "light" : "dark");
   }
@@ -177,7 +187,7 @@ export function Workspace({ config, auth, session }: { config: AppConfig; auth: 
         onToggleTheme={toggleTheme}
         underTheHood={underTheHood}
         onToggleUnderTheHood={toggleUnderTheHood}
-        onNewChat={() => dispatch({ type: "reset" })}
+        onNewChat={newChat}
         busy={busy}
       />
       {underTheHood && (
@@ -198,8 +208,11 @@ export function Workspace({ config, auth, session }: { config: AppConfig; auth: 
               state={state}
               busy={busy}
               underTheHood={underTheHood}
+              photo={photo}
+              onDraft={(text) => dispatch({ type: "draft", text })}
               onSend={(t) => {
                 setSourceError(undefined);
+                if (!attached) photo.remove(); // why the last photo was refused is old news
                 void send(t);
               }}
               onOpenSource={openDocument}

@@ -66,14 +66,27 @@ export function buildToolResultsRequest(input: ToolResultsInput): { url: string;
   });
 }
 
-function httpError(status: number): ServerEvent {
+/** An HTTP error as an event. It keeps the API's own code, when there is one. */
+export function httpError(status: number, code?: string): ServerEvent {
   const message =
-    status === 401
-      ? "The API rejected the access token (401). Try signing in again."
-      : status === 403
-        ? "The API refused the request (403). Check that your account has the Chat.User role, that the token carries the access_as_user scope, and that the conversation is yours."
-        : `The API answered with HTTP ${status}.`;
-  return { type: "error", data: { code: `http_${status}`, message } };
+    code === "unknown_attachment"
+      ? "The photo is no longer available. Attach it again, or remove it and ask without it."
+      : status === 401
+        ? "The API rejected the access token (401). Try signing in again."
+        : status === 403
+          ? "The API refused the request (403). Check that your account has the Chat.User role, that the token carries the access_as_user scope, and that the conversation is yours."
+          : `The API answered with HTTP ${status}.`;
+  return { type: "error", data: { code: code ?? `http_${status}`, message } };
+}
+
+async function errorCode(res: Response): Promise<string | undefined> {
+  try {
+    const body = (await res.json()) as { detail?: { code?: unknown } } | null;
+    const code = body?.detail?.code;
+    return typeof code === "string" ? code : undefined;
+  } catch {
+    return undefined; // not JSON
+  }
 }
 
 /** POST /chat and yield typed events as they arrive. Never throws for network or HTTP errors. */
@@ -112,7 +125,7 @@ async function* stream(
     return;
   }
   if (!res.ok || !res.body) {
-    yield httpError(res.status);
+    yield httpError(res.status, await errorCode(res));
     return;
   }
 

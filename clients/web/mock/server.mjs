@@ -9,6 +9,10 @@
 // server_tool_returned, model_returned). Special messages: containing "tools" emits
 // client_tool_calls, "error" emits an error event. Everything else gets the scripted grounded
 // answer. The X-Correlation-Id of the request is echoed back, as the real API does.
+//
+// POST /attachments takes any photo of at least 200 px. Special messages with a photo: containing
+// "forget" loses the photo once, "gone" loses it every time, and "reject" loses it and refuses the
+// next upload.
 import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 
@@ -46,6 +50,52 @@ function script(message, backend) {
   return { trace: t, answer };
 }
 
+// Attachments. Only their ids and sizes are kept.
+const attachments = new Map();
+const forgotten = new Set(); // correlation ids
+let rejectNext = false;
+
+function rejected(code, message) {
+  return { id: null, kind: "photo", status: "rejected", code, message };
+}
+
+/** Width and height from the first SOF segment of a JPEG, which is what the SPA sends. */
+function jpegSize(bytes) {
+  for (let at = bytes.indexOf(Buffer.from([0xff, 0xd8, 0xff])) + 2; at > 1 && at + 9 < bytes.length; ) {
+    const marker = bytes[at + 1];
+    if (marker === 0xc0 || marker === 0xc2) return { height: bytes.readUInt16BE(at + 5), width: bytes.readUInt16BE(at + 7) };
+    at += 2 + bytes.readUInt16BE(at + 2);
+  }
+  return undefined;
+}
+
+function upload(bytes) {
+  const size = jpegSize(bytes);
+  if (!size) return [415, { detail: "Unknown kind of attachment" }];
+  if (Math.min(size.width, size.height) < 200) {
+    return [201, rejected("too_small", "The photo is too small. Move closer and take a new one.")];
+  }
+  if (rejectNext) {
+    rejectNext = false;
+    return [201, rejected("too_blurry", "The photo is blurred. Hold still or slow down and take a new one.")];
+  }
+  const id = `att-${randomUUID().slice(0, 8)}`;
+  attachments.set(id, { kind: "photo", size: bytes.length, detail: `${size.width}x${size.height}` });
+  return [201, { id, kind: "photo", status: "ready", expires_at: new Date(Date.now() + 900_000).toISOString() }];
+}
+
+/** Whether the API still has what the turn names, after what the message asks the mock to do. */
+function hasAttachments(body, correlationId) {
+  const ids = body.attachments ?? [];
+  if (ids.length === 0) return true;
+  const msg = String(body.message ?? "");
+  const once = /forget|reject/i.test(msg) && !forgotten.has(correlationId);
+  if (once) forgotten.add(correlationId);
+  if (once && /reject/i.test(msg)) rejectNext = true;
+  if (once || /gone/i.test(msg)) for (const id of ids) attachments.delete(id);
+  return ids.every((id) => attachments.has(id));
+}
+
 async function turn(res, body, backend) {
   const t0 = Date.now();
   const send = (event, data) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
@@ -54,7 +104,12 @@ async function turn(res, body, backend) {
   const conversation_id = body.conversation_id ?? `conv-${randomUUID().slice(0, 8)}`;
   const turn_id = `turn-${randomUUID().slice(0, 8)}`;
 
-  const { trace, answer } = script(msg, backend);
+  const photos = (body.attachments ?? []).map((id) => attachments.get(id));
+  const scripted = script(msg, backend);
+  const answer = photos.length ? "Thank you, I can see your photo. This mock cannot tell what is in it." : scripted.answer;
+  const trace = scripted.trace.flatMap((t) =>
+    t[0] === "conversation_created" ? [t, ...photos.map((p) => ["attachment_used", "api", `${p.kind} ${p.detail}`, 22])] : [t],
+  );
   if (/error/i.test(msg)) {
     send("trace", { step: "token_validated", component: "auth", detail: "roles: Chat.User", elapsed_ms: el() });
     await sleep(300);
@@ -113,6 +168,14 @@ createServer(async (req, res) => {
     res.end(`event: done\ndata: ${JSON.stringify({ conversation_id: "conv_mock", turn_id: "t", backend: "loop" })}\n\n`);
     return;
   }
+  if (req.method === "POST" && req.url === "/attachments") {
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
+    await sleep(900);
+    const [status, body] = req.headers.authorization?.startsWith("Bearer ") ? upload(Buffer.concat(chunks)) : [401, {}];
+    res.writeHead(status, { ...CORS, "Content-Type": "application/json" }).end(JSON.stringify(body));
+    return;
+  }
   // GET /sources/{id}: a made-up signed link, so the click can be seen without Azure.
   if (req.method === "GET" && req.url?.startsWith("/sources/")) {
     const id = decodeURIComponent(req.url.slice("/sources/".length));
@@ -142,6 +205,11 @@ createServer(async (req, res) => {
   }
   const backend = String(req.headers["x-agent-backend"] ?? "loop");
   const correlationId = String(req.headers["x-correlation-id"] ?? randomUUID());
+  if (!hasAttachments(body, correlationId)) {
+    res.writeHead(422, { ...CORS, "Content-Type": "application/json" });
+    res.end(JSON.stringify({ detail: { code: "unknown_attachment" } }));
+    return;
+  }
   res.writeHead(200, {
     ...CORS,
     "Content-Type": "text/event-stream",
