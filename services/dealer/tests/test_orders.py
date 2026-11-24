@@ -273,13 +273,14 @@ async def test_what_was_not_ordered_is_logged_with_a_fixed_text(client, app, clo
     assert all(e["number"] is None for e in orders) and "Marker" not in json.dumps(log(app))
 
 
-async def test_an_order_tells_the_open_pages_once(client, app):
+async def test_every_placement_tells_the_open_pages(client, app):
+    """Also a repeated one: the answer to the first may have been lost, before it told them."""
     offer = await make_offer(client)
     queue = app.state.hub.subscribe()
     await place(client, offer)
     await place(client, offer)
     items = [queue.get_nowait() for _ in range(queue.qsize())]
-    assert [name for name, _ in items] == ["log", "changed", "log"]
+    assert [name for name, _ in items] == ["log", "changed"] * 2
     assert [e["result"] for e in log(app, "order")] == [None, "Already placed"]
 
 
@@ -357,6 +358,33 @@ async def test_a_store_that_is_away_at_startup_is_tried_again(settings, validato
             await c.get("/stock")
     assert store.seeds == 1
     assert "StoreUnavailable" in capsys.readouterr().out
+
+
+async def test_a_failing_purge_closes_neither_the_stock_nor_the_terms(settings, validator, auth_header, capsys):
+    class NoPurge(MemoryStore):
+        away, purges, seeds = True, 0, 0
+
+        async def seed(self, stock):
+            self.seeds += 1
+            await super().seed(stock)
+
+        async def purge(self, now):
+            self.purges += 1
+            if self.away:
+                raise StoreUnavailable("the store gave no answer")
+            await super().purge(now)
+
+    store = NoPurge()
+    app = create_app(settings, validator, store=store)
+    async with client_of(app, auth_header) as c:
+        assert (await c.get("/stock")).status_code == 200
+        assert (await c.get("/orders/terms", params={"model": "fjord"})).status_code == 200
+        assert (store.seeds, store.purges) == (1, 2)  # tried again until it works, and the seed is done
+        assert "The old orders were not removed: StoreUnavailable" in capsys.readouterr().out
+        store.away = False
+        for _ in range(2):
+            assert (await c.get("/stock")).status_code == 200
+        assert (store.seeds, store.purges) == (1, 3)
 
 
 async def test_the_lifespan_closes_the_store(settings, validator):

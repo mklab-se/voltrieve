@@ -1,6 +1,7 @@
 """The log of the calls, and the open pages that follow it. It lives in memory, in the one event loop.
 
-An entry names a model, a city, an order and staff. It never holds an address, or anything a caller typed.
+An entry names a model, a city, an order and staff. It never holds an address. One value is the caller's own
+text: the correlation id, 1 to 64 of A-Z, a-z, 0-9, dot, underscore and hyphen. The page shows it as text.
 """
 
 import asyncio

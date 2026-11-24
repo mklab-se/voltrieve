@@ -250,6 +250,55 @@ async def test_what_is_not_an_id_is_never_sent(store, table):
             await store.deliver(number, "Malmö", "Bo", NOW)
 
 
+DAMAGE = {
+    "no price": ("order|VO-1001", {"price_sek": None}),
+    "price in words": ("order|VO-1001", {"price_sek": MARKER}),
+    "no address": ("order|VO-1001", {"address": None}),
+    "a bad time": ("order|VO-1001", {"created": MARKER}),
+    "a time without a zone": ("order|VO-1001", {"created": "2026-11-24T12:00:00"}),
+    "a bad number": ("order|VO-1001", {"number": MARKER}),
+    "a bad offer": ("offer|x", {"created": MARKER, "order": None}),
+    "stock in words": ("stock|spark|Malmö", {"in_stock": MARKER}),
+    "no stock": ("stock|spark|Malmö", {"in_stock": None}),
+    "no city": ("stock|spark|Malmö", {"city": None}),
+    "a bad counter": ("counter", {"next": MARKER}),
+}
+
+
+@pytest.mark.parametrize("damage", DAMAGE)
+async def test_a_damaged_row_is_store_unavailable(store, table, caplog, damage):
+    offer, _ = await an_order(store)
+    waiting = an_offer()
+    await store.save_offer(waiting)
+    key, changes = DAMAGE[damage]
+    key = f"offer|{offer.id}" if key == "offer|x" else key
+    table.put({k: v for k, v in {**table.rows[key][0], **changes}.items() if v is not None})
+    failed = 0
+    for name, call in {**calls(store), "place": lambda: store.place(waiting.id, "customer-1", "turn-2", NOW)}.items():
+        if name == "reset":  # it reads no values, so it can repair
+            continue
+        try:
+            await call()
+        except StoreUnavailable as exc:
+            failed += 1
+            assert exc.__cause__ is None and exc.__context__ is None
+            assert MARKER not in "".join(traceback.format_exception(exc))
+        except Exception as exc:  # what the rules say, never an error in the code
+            assert type(exc).__module__ == "app.model"
+    assert failed and MARKER not in caplog.text
+    await store.reset(STOCK)
+    assert await store.stock() == STOCK and await store.orders() == []
+
+
+async def test_a_damaged_order_is_not_deleted_by_halves(store, table):
+    await an_order(store)
+    table.put({**table.rows["order|VO-1001"][0], "created": MARKER})
+    before = dict(table.rows)
+    with pytest.raises(StoreUnavailable):
+        await store.delete("VO-1001")
+    assert table.rows == before
+
+
 async def test_close_closes_the_client_and_the_credential(table):
     credential = FakeTable()
     await TableStore(table, credential).close()

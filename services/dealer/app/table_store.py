@@ -90,17 +90,20 @@ class TableStore:
         await self._until_done(attempt)
 
     async def stock(self) -> dict[str, dict[str, int]]:
-        found: dict[str, dict[str, int]] = {}
-        for row in await self._rows("stock"):
-            found.setdefault(row["model"], {})[row["city"]] = row["in_stock"]
-        return found
+        async def attempt():
+            found: dict[str, dict[str, int]] = {}
+            for row in await self._rows("stock"):
+                found.setdefault(row["model"], {})[row["city"]] = _count(row, "in_stock")
+            return found
+
+        return await self._until_done(attempt)
 
     async def change_stock(self, model: str, city: str, change: int) -> int:
         async def attempt():
             row = await self._get("stock", model, city)
             if row is None:
                 raise NotFound
-            left = stock_after(row["in_stock"], change)
+            left = stock_after(_count(row, "in_stock"), change)
             await self._commit([_update(row, in_stock=left)])
             return left
 
@@ -119,7 +122,7 @@ class TableStore:
             if offer.order:
                 return _read(Order, await self._order(offer.order)), False
             counter = await self._get(COUNTER)
-            number = counter["next"] if counter else FIRST_NUMBER
+            number = _count(counter, "next") if counter else FIRST_NUMBER
             order = order_from(offer, number, turn, now)
             counting = _update(counter, next=number + 1) if counter else ("create", _new(COUNTER, next=number + 1))
             order_row = {**_row(order, "order", order.number), "offer": offer.id}
@@ -130,13 +133,16 @@ class TableStore:
         return await self._until_done(attempt)
 
     async def orders(self) -> list[Order]:
-        return newest_first([_read(Order, row) for row in await self._rows("order")])
+        async def attempt():
+            return newest_first([_read(Order, row) for row in await self._rows("order")])
+
+        return await self._until_done(attempt)
 
     async def deliver(self, number: str, city: str, by: str, now: datetime) -> Order:
         async def attempt():
             row = await self._order(number)
             stock = await self._get("stock", row["model"], city)
-            in_stock = stock["in_stock"] if stock else 0
+            in_stock = _count(stock, "in_stock") if stock else 0
             order = delivered(_read(Order, row), in_stock, city, by, now)
             await self._commit([_update(row, **_row(order)), _update(stock, in_stock=in_stock - 1)])
             return order
@@ -146,9 +152,10 @@ class TableStore:
     async def delete(self, number: str) -> Order:
         async def attempt():
             row = await self._order(number)
+            order = _read(Order, row)
             offer = await self._get("offer", row["offer"])
             await self._commit([_delete(found) for found in (row, offer) if found])
-            return _read(Order, row)
+            return order
 
         return await self._until_done(attempt)
 
@@ -221,7 +228,7 @@ class TableStore:
                 raise failed.unavailable()
 
     async def _until_done[T](self, attempt: Callable[[], Awaitable[T]]) -> T:
-        """Each attempt reads again."""
+        """Each attempt reads again. A damaged row fails it, and the error can hold the row."""
         for tries in range(1 + RETRIES):
             if tries:
                 await self._wait()
@@ -229,6 +236,9 @@ class TableStore:
                 return await attempt()
             except _Conflict as conflict:
                 failed = conflict.failed
+            except (KeyError, TypeError, ValueError) as exc:
+                failed = _Failure(exc)
+                break
         raise failed.unavailable()
 
 
@@ -296,7 +306,18 @@ def _read[T: (Offer, Order)](kind: type[T], row: TableEntity) -> T:
     for name in ("created", "delivered"):
         if values.get(name):
             values[name] = datetime.fromisoformat(values[name])
+    for field in fields(kind):
+        if not isinstance(values[field.name], field.type):
+            raise ValueError("a damaged row")
+    if values["created"].tzinfo is None:
+        raise ValueError("a damaged row")
     return kind(**values)
+
+
+def _count(row: TableEntity, name: str) -> int:
+    if not isinstance(row[name], int):
+        raise ValueError("a damaged row")
+    return row[name]
 
 
 def _stock_rows(stock: dict[str, dict[str, int]]) -> list[dict]:

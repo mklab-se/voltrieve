@@ -218,9 +218,8 @@ def build_router(data: DealerData) -> APIRouter:
             raise HTTPException(status, detail)
         result = None if new else "Already placed"
         note(request, "order", model=order.model, client=order.client, number=order.number, result=result)
-        if new:
-            request.app.state.hub.changed()
-        else:
+        request.app.state.hub.changed()  # also a repeated one: the first may have been lost on its way
+        if not new:
             response.status_code = 200
         return confirmation(order)
 

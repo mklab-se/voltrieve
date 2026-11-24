@@ -31,15 +31,21 @@ UNAVAILABLE = "The dealer system is not available right now."
 
 
 def preparer(store: Store, data: DealerData, clock: Callable[[], datetime]) -> Callable[[], Awaitable[None]]:
-    """Seeds and purges until it has worked once. Two at the same time do no harm."""
-    done = False
+    """Seeds and purges, each until it has worked once. Two at the same time do no harm. Only the seeding is
+    needed for an answer."""
+    seeded = purged = False
 
     async def ready() -> None:
-        nonlocal done
-        if not done:
+        nonlocal seeded, purged
+        if not seeded:
             await store.seed(data.opening_stock)
-            await store.purge(clock())
-            done = True
+            seeded = True
+        if not purged:
+            try:
+                await store.purge(clock())
+                purged = True
+            except StoreUnavailable as exc:
+                logger.warning("The old orders were not removed: %s", type(exc).__name__)
 
     return ready
 
