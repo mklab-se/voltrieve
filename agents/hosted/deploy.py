@@ -68,6 +68,8 @@ def environment_variables(env: dict[str, str]) -> dict[str, str]:
         "DEALER_CLIENT_ID": env["DEALER_CLIENT_ID"],
         "ALLOWED_CALLER_OID": allowed,
         "AZURE_EXPERIMENTAL_ENABLE_GENAI_TRACING": "true",
+        # Our own spans never carry message text, whatever a library defaults to.
+        "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT": "false",
         "PYTHONNOUSERSITE": "1",
     }
 

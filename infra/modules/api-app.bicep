@@ -83,6 +83,8 @@ resource api 'Microsoft.App/containerApps@2026-07-01' = {
             { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsightsConnectionString }
             { name: 'OTEL_SERVICE_NAME', value: 'voltrieve-api' }
             { name: 'AZURE_EXPERIMENTAL_ENABLE_GENAI_TRACING', value: 'true' }
+            // Our own spans never carry message text, whatever a library defaults to.
+            { name: 'OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT', value: 'false' }
             { name: 'LOG_LEVEL', value: 'INFO' }
             { name: 'ASPNETCORE_HTTP_PORTS', value: '8000' } // only used by the placeholder image
           ]

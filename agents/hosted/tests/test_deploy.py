@@ -30,6 +30,7 @@ def test_environment_has_no_reserved_names_and_defaults_the_caller_to_the_api():
     assert env["ALLOWED_CALLER_OID"] == "api-oid"
     assert env["PYTHONNOUSERSITE"] == "1"
     assert env["AZURE_EXPERIMENTAL_ENABLE_GENAI_TRACING"] == "true"
+    assert env["OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT"] == "false"
     assert env["MODEL_DEPLOYMENT_NAME"] == "gpt-6.1-terra"
 
 

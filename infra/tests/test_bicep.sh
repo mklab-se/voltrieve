@@ -8,6 +8,7 @@ if grep -rn "roleDefinitionId.*'[A-Z][a-zA-Z ]*'" modules/ main.bicep; then echo
 # the only key lookups allowed are the commented, non-application ones
 if grep -rn -i "listKeys\|apiKey\|accountKey" modules/ main.bicep | grep -v "not an application secret"; then echo "key usage found"; exit 1; fi
 # the API emits GenAI spans, and nothing reads the knowledge base connection name at runtime
+grep -q "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT', value: 'false'" modules/api-app.bicep || { echo "api-app may record message content"; exit 1; }
 grep -q "AZURE_EXPERIMENTAL_ENABLE_GENAI_TRACING" modules/api-app.bicep || { echo "api-app lacks the GenAI tracing setting"; exit 1; }
 if grep -q "KB_CONNECTION_NAME\|kbConnectionName" modules/api-app.bicep; then echo "api-app still takes the knowledge base connection name"; exit 1; fi
 # three browser apps, each a Free Static Web App tagged for azd by a required serviceName
