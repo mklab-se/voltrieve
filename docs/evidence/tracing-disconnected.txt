@@ -24,8 +24,9 @@ Version 35, marked 14:56
   searched 15:43 (47 minutes)   no rows on any backend
 
 What the hosted agent sends now: its own logs and spans arrive, 31 AppTraces, 2 AppDependencies and 1 AppExceptions from
-version 35. One trace id joins the API and the hosted agent. A trace across the API, the hosted agent and the dealer was
-not looked at.
+version 35. One trace id joins the API, the hosted agent and the dealer: two stock questions at about 17:11, each with 44 to
+48 rows from the API, 23 from the hosted agent and 5 to 7 from the dealer. A third one at 16:57, with a cold dealer, had no
+dealer rows 13 minutes later.
 
 Conversations: the newest one per backend carries client `test`, its backend, and car_model `spark` where the client
 stated the car. Spans: 137 turns carry voltrieve.client, all `test`, which were our own runs.
@@ -34,6 +35,6 @@ Smoke test 10 of 10. Routing suite, one question at a time, once per question on
 parts 77 % (88 % before, the same kind of miss, known noise). First text: hosted p95 13.6 s (12.6 s over the days before),
 over the 10 s limit as it was before. Own loop and prompt agent under it.
 
-Not verified: the trace with the dealer, and what Foundry keeps for itself. The hosted agent's platform also turns on an
+Not verified: what Foundry keeps for itself. The hosted agent's platform also turns on an
 Agent 365 exporter, which reported that it had nothing to export. Nobody at Voltrieve asked for it, and it is not ours
 to change here.

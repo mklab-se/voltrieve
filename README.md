@@ -199,7 +199,7 @@ Verified live:
 - The cross-document question "cheapest AWD in Sweden" repeated 6 times per backend: 18 of 18 right. At the default reasoning effort it was 11 to 15 of 18, so the sample uses medium effort.
 - A tool the server has never seen, declared only in the request: relayed on loop and hosted, refused on prompt (`docs/evidence/new-client-tool.txt`). The demo declares a car function, `set_seat_heating`.
 - Recovery on all three backends: a paused turn nobody answers, and a conversation resumed after the API scaled to zero (`docs/evidence/repair.txt`).
-- One trace per turn across API, Foundry, hosted agent and dealer (`docs/evidence/application-insights.txt`), before Foundry's tracing was disconnected. Afterwards one trace joins the API and the hosted agent.
+- One trace per turn across API, Foundry, hosted agent and dealer (`docs/evidence/application-insights.txt`), before Foundry's tracing was disconnected. Afterwards one trace joins the API, the hosted agent and the dealer.
 - The prompt agent's 400.
 - Where a photo turn leaves its text and its photo, on 2026-11-24: the photo nowhere we looked, the text of prompt and hosted turns in Foundry's tracing (`docs/evidence/photos-privacy.txt`). [Foundry's tracing was then disconnected](docs/decisions.md#closed-foundrys-tracing-is-disconnected), and the marked question and client's line of a turn on each backend left no rows in telemetry (`docs/evidence/tracing-disconnected.txt`).
 - The authorization denied path, on the loop backend, against real Foundry with a fake token validator.
@@ -212,11 +212,10 @@ Not verified:
 - The car in Safari or Firefox, on a slow or Windows computer, and with a screen reader. Whether a person hears the horn and the motor.
 - A rollback of the Serverless search service or of the Search versions, and what Serverless costs on an invoice.
 - The workbook's check of Foundry's tracing rows.
-- A trace with the dealer since Foundry's tracing was disconnected, the Agent 365 exporter that the hosted agent's platform turns on, and what Foundry keeps for itself.
+- The Agent 365 exporter that the hosted agent's platform turns on, and what Foundry keeps for itself.
 - The usage insights on real conversations, their schedule, and the switch from `off` to `on`. The job's identity deleting a conversation that exists (it was refused for an id that is not there).
 - The job at its caps of 1,000 real and 500 made up conversations. At the measured speed both take about 12 minutes of its 25.
 - The queries that take the newest week first (the page and the group names), and the workbook's table of missing nights since the newest night waits for 04:00 UTC: tested, not run live.
-- That the job's deployed model calls accept `store: false`: the next live run checks it.
 - A 403 from `GET /admin/insights` for a user without `Dashboard.View`, and four made up people plus one real: only in tests.
 - The page "What people ask" against the deployed API in a browser, the new sentence in the notice seen in a signed in session, a night of the schedule that failed, and a conversation marked `car` or `web`.
 - The group names over several nights of real use, the labels on real conversations, and the price of the detection of personal data.

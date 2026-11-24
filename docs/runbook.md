@@ -219,7 +219,7 @@ This is what is left of the end to end trace since Foundry's tracing was [discon
 | `prompt` | The same | The same, with no Search call, because Foundry makes it |
 | `hosted` | The same, and `voltrieve-hosted` | The call to `.../protocols/invocations`. The model and dealer calls are made in the agent, with the role `voltrieve-hosted` |
 
-Foundry's own rows (`responsesapi` for prompt and hosted, `agentsv2` for hosted) and the traces in the Foundry portal are gone from new turns by design. One trace id was seen to join the API and the hosted agent on 2026-11-24 (`docs/evidence/tracing-disconnected.txt`). A trace with the dealer was not looked at since.
+Foundry's own rows (`responsesapi` for prompt and hosted, `agentsv2` for hosted) and the traces in the Foundry portal are gone from new turns by design. One trace id joins the API, the hosted agent and the dealer (`docs/evidence/tracing-disconnected.txt`).
 
 A client tool turn is two HTTP requests, so it spans two `operation_Id` values under one correlation id. The query handles that when the client sends the same id on both, as `scripts/runbook.py` and the CLI do.
 

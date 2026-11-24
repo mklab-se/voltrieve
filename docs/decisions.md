@@ -263,7 +263,7 @@ This was open as *The product owner decides what Foundry's tracing may record*. 
 
 The hosted agent's own logs and spans arrive from version 35, and one trace id joins the API and the hosted agent. The smoke test passed 10 of 10. First text on hosted had a p95 of 13.6 s, over the 10 s limit as before (12.6 s over the days before). The own loop and the prompt agent are under it.
 
-**Not verified.** A trace with the dealer since then, whether a text found only in the answer would show (the marker was not put there), the Agent 365 exporter that the hosted agent's platform turns on (it reported that it had nothing to export, nobody at Voltrieve asked for it, and it is not ours to change here), and what Foundry keeps for itself. Rows from before 14:25 UTC stay until [retention removes them](runbook.md#the-operations-dashboard).
+**Not verified.** Whether a text found only in the answer would show (the marker was not put there), the Agent 365 exporter that the hosted agent's platform turns on (it reported that it had nothing to export, nobody at Voltrieve asked for it, and it is not ours to change here), and what Foundry keeps for itself. Rows from before 14:25 UTC stay until [retention removes them](runbook.md#the-operations-dashboard).
 
 ### The hosted agent gets our own connection string through the host's argument
 
@@ -420,7 +420,7 @@ up in the indexes, so an invented title gets no link. Other choices:
 - Cold-start figures. Whole turn times are in `docs/why-foundry.md` section 6, measured from one laptop.
 - Whether `alwaysQuerySource` would make one knowledge base cover both sources.
 - A trace with the dealer since Foundry's tracing was disconnected, and the Agent 365 exporter of the hosted agent's platform.
-- The usage insights on real conversations and on a schedule, the job at its cap, group names over several nights of real use, the price of the detection, and the queries that take the newest week first, for the page and for the group names (tested, not run live). That the deployed model calls accept `store: false`: the next live run checks it.
+- The usage insights on real conversations and on a schedule, the job at its cap, group names over several nights of real use, the price of the detection. The queries that take the newest week first, for the page and for the group names, ran live, and the deployed model calls accept `store: false`.
 - A 403 from `GET /admin/insights` for a user without `Dashboard.View`, live.
 - The 10 minute run expiry from older documentation.
 - Whether an MCP tool with a project connection works outside an agent definition.

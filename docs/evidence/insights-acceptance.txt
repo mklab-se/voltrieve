@@ -93,10 +93,16 @@ Cost, with the list prices in scripts/model_costs.py
    The workbook's query ran live for the seeded source: 18 of the last 30 days have no run. The failed run of 15:50 saved no
    run row.
 
+11. After the final fixes (caps 1,000 and 500, `store: false`)
+   Smoke 10 of 10. The job ran at 16:52: 500 sampled of 514 made up conversations, 494 labelled, 6 refused, 109 rows, 514,646
+   tokens in and 55,231 out, 4 minutes. `store: false` was accepted. The page shows a sample of 97 %.
+   21 of the 25 named groups of the run at 16:07 were named the same in the run at 16:52, over mostly the same data.
+   The marker in the seeded conversation, searched at 17:10, 14 minutes after that run: no rows in any table.
+
 Not verified
    403 for a user without Dashboard.View, live (only tests: the one account at hand has the role).
    A run on real conversations, the schedule, and the switch from Manual to Schedule.
    The job at the cap of 2,000 conversations per source. 514 took 4 minutes, listing and grouping included. At that speed
    2,000 take about 16 minutes, and both sources at the cap about 31, which is over the deadline of 25 minutes.
-   Names of groups over several nights of real use (the same run twice kept 100 % of the names).
+   Names of groups over several nights of real use (two runs an hour apart kept 21 of 25).
    The price of the detection.
