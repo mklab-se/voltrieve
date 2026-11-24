@@ -9,7 +9,7 @@ Model output is kept verbatim, with two exceptions that the writers apply to eve
 
 Nothing else is edited. In particular, the citation markers of the prompt agents (for example `【5:0†voltrieve-fjord-specifications.pdf】` in `grounding.txt`) are left as the run produced them. The runs predate the filter that rewrites them to ` (file)` in backend A, so the recorded answers of that backend show the markers a client would have seen then.
 
-Evidence holds no tokens, usernames or URLs.
+Evidence holds no tokens, usernames or URLs of the deployment.
 
 `runbook-table.txt` is the last full run on the final build.
 

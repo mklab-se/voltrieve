@@ -11,6 +11,8 @@ Tools:
 - Node.js and npm, for the website build
 - Docker, where the Static Web Apps CLI cannot run (see below)
 
+Model quota in `AZURE_LOCATION`, GlobalStandard, in thousands of tokens a minute: 150 each for `gpt-6.1-terra`, `gpt-5.4-mini` and `gpt-6-luna`, and 10 for `text-embedding-3-large`. `gpt-6-luna` is always deployed, also when it does not plan anything, so a subscription without that quota cannot provision. It costs nothing until it is used.
+
 Rights, for one user account. A service principal does not work, because the deployer role assignments use `principalType: 'User'`:
 
 - enough on the subscription to create resources and role assignments;
@@ -33,7 +35,7 @@ azd auth login
 
 Search reaches Foundry and storage over public endpoints with Entra tokens.
 
-All three backends run `gpt-6.1-terra` version `2026-10-26`, set with `chatModelName`. `gpt-6-luna` plans the Search queries, set with `PLANNING_MODEL_NAME` (`planningModelName` in Bicep), and `gpt-5.4-mini` is the way back. Do not move a model without checking availability: `gpt-5.4-mini` is deployed as GlobalStandard with capacity 50. Capacity 10 caused rate limit failures in multi-question runs. On pay-per-token, capacity is a cap, not a cost.
+All three backends run `gpt-6.1-terra` version `2026-10-26`, set with `chatModelName`. `gpt-5.4-mini` plans the Search queries. `gpt-6-luna` is opt-in, set with `PLANNING_MODEL_NAME` (`planningModelName` in Bicep). Do not move a model without checking availability: all three are deployed as GlobalStandard with capacity 150. Capacity 10 caused rate limit failures in multi-question runs. On pay-per-token, capacity is a cap, not a cost.
 
 ## Environment
 
@@ -47,7 +49,7 @@ The name is limited to 22 characters and appears in resource names. Optional val
 | Name | Default | Purpose |
 | --- | --- | --- |
 | `AZURE_SEARCH_LOCATION` | `francecentral` | Search region |
-| `PLANNING_MODEL_NAME` | `gpt-6-luna` | The model that plans Search queries. The only other value is `gpt-5.4-mini` |
+| `PLANNING_MODEL_NAME` | `gpt-5.4-mini` | The model that plans Search queries. The only other value is `gpt-6-luna`, which is opt-in and follows [its own order](#order-for-an-update-with-the-new-search-values) |
 | `SEARCH_SERVERLESS` | `off` | A Serverless search service next to the Basic one. `off`: not deployed. `standby`: deployed, nothing uses it. `active`: the API and agents use it. Basic stays in all three, and going back to `off` does not delete a deployed service |
 | `VOLTRIEVE_VERIFIED_DOMAIN` | the tenant's default domain | Domain for the tester account |
 
@@ -74,27 +76,32 @@ What each hook does:
 | `hooks/preprovision.sh` | Before each provision | Creates or updates the app registrations (`voltrieve-api`, `voltrieve-cli`, `voltrieve-web`, `voltrieve-car`, `voltrieve-dashboard`, `voltrieve-dealer`), the tester, roles and consent, and stores the ids in the azd environment. Idempotent. Runs interactively so the password is visible. |
 | `hooks/postprovision.sh` | After each provision | Checks that `az` and `azd` are the same user. Uploads the documents to their two containers, applies the search objects of both knowledge bases, runs both indexers, gives the API identity `Dealer.Access`, and adds the redirect URI of each of the three sites (`set-spa-redirect --app web|car|dashboard`). Each step retries up to 10 times, 60 seconds apart, for role propagation. |
 | `hooks/web-prepackage.sh` | Before the web package | Writes `clients/web/.env.production` with public values only. |
-| `hooks/dashboard-prepackage.sh` | Before the dashboard package | Writes `clients/dashboard/.env.production` with public values only. The car gets the same kind of hook with its client. |
+| `hooks/car-prepackage.sh` | Before the car package | Writes `clients/car/.env.production` with public values only. |
+| `hooks/dashboard-prepackage.sh` | Before the dashboard package | Writes `clients/dashboard/.env.production` with public values only. |
 | `hooks/postup.sh` | After `azd up` | Runs the search smoke test. It runs last so that a retrieval miss cannot block a deployment. |
 
 Provision keeps deployed images: azd sets `SERVICE_API_RESOURCE_EXISTS` and `SERVICE_DEALER_RESOURCE_EXISTS`, so Bicep reuses the current image instead of the placeholder.
 
 ### 2. Apple Silicon without Rosetta: `scripts/deploy-web.sh`
 
-`azd` deploys each Static Web App with the Static Web Apps CLI, whose upload client is an x86 binary. On Apple Silicon without Rosetta that step fails. `dealer` and `api` deploy first, so only the Static Web Apps are missing. Installing Rosetta is a system change, so this repository uses a container instead:
+`azd` deploys each Static Web App with the Static Web Apps CLI, whose upload client is an x86 binary. On Apple Silicon without Rosetta that step fails, and on macOS 27 without Rosetta so do `azd deploy web`, `azd deploy car` and `azd deploy dashboard`. `dealer` and `api` deploy first, so only the Static Web Apps are missing. Installing Rosetta is a system change, so this repository uses a container instead. This worked on macOS 27 on 2026-11-24:
 
 ```sh
-azd package web        # only if clients/web/dist is missing or stale
-scripts/deploy-web.sh              # web, the default
-scripts/deploy-web.sh dashboard
-scripts/deploy-web.sh car
+azd package web && scripts/deploy-web.sh web
+azd package car && scripts/deploy-web.sh car
+azd package dashboard && scripts/deploy-web.sh dashboard
 ```
+
+`azd package` runs the hook of the site and builds it. Without an argument, `scripts/deploy-web.sh` uploads `web`.
 
 It runs the Linux `StaticSitesClient` in Docker against `clients/<service>/dist`, and keeps the deployment token in memory. It finds the site by its `azd-service-name` tag, never by its position in a list, and stops if none or more than one matches. If `azd up` stopped at this step, run the smoke test by hand, since the `postup` hook may not have run:
 
 ```sh
-SEARCH_ENDPOINT="$(azd env get-value SEARCH_ENDPOINT)" uv run --project search voltrieve-search smoke
+SEARCH_ENDPOINT="$(azd env get-value SEARCH_ENDPOINT)" PLANNING_MODEL="$(azd env get-value PLANNING_MODEL)" \
+  uv run --project search voltrieve-search smoke
 ```
+
+Without `PLANNING_MODEL` the check does not look at which model planned.
 
 ### 3. `scripts/deploy-agents.sh`
 
@@ -122,13 +129,15 @@ See [runbook.md](runbook.md).
 
 ## Order for an update with attachments
 
+When attachments and the new Search values ship in the same update, this order applies. The planner stays on `gpt-5.4-mini` and `SEARCH_SERVERLESS` on `off` for all of it. Steps 2 and 3 of [the new search values](#order-for-an-update-with-the-new-search-values) come afterwards, in their own provisions.
+
 When an environment already runs an older version, deploy the hosted agent before the API. With a new API and an old agent, a photo turn answers without the photo and the protection of the logs is missing.
 
 1. Preview, then `azd provision`: the three registrations and sites, the CORS origins, and `PROMPT_AGENT_CAR`. Not `azd up`, which would deploy the API before the agents.
-2. `scripts/deploy-agents.sh`: the three prompt agents, then the hosted agent, then `azd provision` again (the agent identity did not exist before, so Bicep gives it its roles then) and the `Dealer.Access` role. Its final check is `scripts/smoke.py --basic`, because the API is still older.
+2. `scripts/deploy-agents.sh` at once after the provision, with nothing in between, since a provision moves the MCP connections and the prompt agents keep the old address until it has run. It deploys the three prompt agents, then the hosted agent, then `azd provision` again (the agent identity did not exist before, so Bicep gives it its roles then) and the `Dealer.Access` role. Its final check is `scripts/smoke.py --basic`, because the API is still older.
 3. `azd deploy api`. The new revision drops the sessions that are bound to the old hosted version.
 4. `uv run scripts/smoke.py`, the full check. It adds one turn with the car's tools on the prompt agent and one upload on each backend.
-5. `web` and `dashboard` together, then `car`.
+5. `web` and `dashboard` together, then `car`. On macOS 27 without Rosetta, package and upload each one [with the container](#2-apple-silicon-without-rosetta-scriptsdeploy-websh).
 
 **Rollback** goes in reverse, the API first, then the agents, so a new API never meets an older agent.
 
@@ -139,8 +148,7 @@ When an environment already runs an older version, deploy the hosted agent befor
 | Change | Command |
 | --- | --- |
 | API or dealer code, `agent_core` | `azd deploy api`, `azd deploy dealer` |
-| Website, dashboard | `azd deploy web`, `azd deploy dashboard`, or `azd package <service> && scripts/deploy-web.sh <service>` |
-| Car | `azd deploy car` once `azure.yaml` lists it, or `scripts/deploy-web.sh car` |
+| Website, car, dashboard | `azd deploy web`, `azd deploy car`, `azd deploy dashboard`, or `azd package <service> && scripts/deploy-web.sh <service>` where the SWA client cannot run (macOS 27 without Rosetta) |
 | Agents, including `agent_core` as used by the hosted agent | `scripts/deploy-agents.sh` |
 | Infrastructure | `azd provision` |
 | Documents | `azd provision` (the post-provision hook uploads and indexes) |
@@ -152,6 +160,8 @@ Approximate:
 | Resource | Idle cost |
 | --- | --- |
 | Azure AI Search Basic | About 75 USD a month |
+| Azure AI Search Serverless, `off` (the default) | 0 |
+| Azure AI Search Serverless, `standby` or `active` | Storage under 0.01 USD a month, and 0.255 USD per CU hour while it works, on top of Basic. It sleeps after 10 idle minutes |
 | Container Registry Basic | About 5 USD a month |
 | Log Analytics | Small, by ingestion |
 | Container Apps | None when scaled to zero |
@@ -164,8 +174,8 @@ Search is the cost that matters. Tear down when you are done.
 The car and the dashboard add no idle cost: two more Static Web Apps on the Free tier, one more prompt agent, and two more registrations. What they add is use:
 
 - A photo adds about 950 input tokens to each turn while it lives.
-- The pictures for the car cost about 2.50 USD once: one cockpit picture in up to four variants, and up to six facade textures, at the 0.25 USD an image estimated earlier. Image generation stops at 5 USD and the first image is measured before the rest are made.
-- <!-- MEASURE: cost of the first 20 photo turns, and of the whole photo run -->
+- The pictures for the car cost 0.32 USD once: the cockpit in its variants and five house fronts ([how they were made](https://github.com/mklab-se/voltrieve/blob/main/clients/car/assets/README.md)).
+- <!-- MEASURE: cost of the first 20 photo turns, and of the whole photo run --> Not measured yet: the cost of the first 20 photo turns, and of the whole photo run.
 
 ## Before a demo
 
@@ -206,11 +216,38 @@ The tester password is printed again only if the account was deleted and is recr
 
 ## Order for an update with the new search values
 
-A GPT-6 planning model needs every caller of Search to use `2026-11-01-preview` or later, so the code goes first. Planning on `gpt-6-luna` and Serverless are described in [Decisions](decisions.md#search-moved-to-the-foundry-iq-versions).
+The default stays as it was: `PLANNING_MODEL_NAME` is `gpt-5.4-mini` and `SEARCH_SERVERLESS` is `off`, so a plain `azd provision` changes neither. A GPT-6 planning model needs every caller of Search to use `2026-11-01-preview` or later, so the code goes first. The reasons are in [Decisions](decisions.md#search-moved-to-the-foundry-iq-versions).
 
-1. Set `PLANNING_MODEL_NAME` to `gpt-5.4-mini` and run `azd provision`. This writes the search definitions with the new API version and still plans with the old model.
-2. Run `scripts/deploy-agents.sh`, then `azd deploy api`, and check with `uv run scripts/smoke.py`.
-3. Set `PLANNING_MODEL_NAME` to `gpt-6-luna` and run `azd provision`. The definitions are written again, and the next retrieve plans with the new model. To go back, set `gpt-5.4-mini` and provision.
-4. Serverless last, and only if wanted: `SEARCH_SERVERLESS=standby`, provision, fill it and run the search smoke questions against it. Then `active`, provision and `scripts/deploy-agents.sh`.
+Each step is an `azd provision`, with `scripts/deploy-agents.sh` at once after it. A provision moves the MCP connections, and the prompt agents keep the old address until `deploy-agents.sh` has run.
+
+1. **The versions, with the old planner.** Leave both values alone. `azd provision`, then `scripts/deploy-agents.sh`, then `azd deploy api`. The provision writes the search definitions with the new version. Check with `uv run scripts/smoke.py`, the prompt agent first.
+2. **The planner, if wanted.** `azd env set PLANNING_MODEL_NAME gpt-6-luna`, then `azd provision`, then `scripts/deploy-agents.sh`. The next retrieve plans with it, with no new API image. Never do this in the same provision as step 1: an old client would meet a base that plans with GPT-6.
+3. **Serverless, if wanted, and last.** `active` is refused before `standby` has been provisioned. Set `standby`, provision and fill the service:
+
+```sh
+azd env set SEARCH_SERVERLESS standby
+azd provision
+scripts/deploy-agents.sh
+
+set -a; eval "$(azd env get-values)"; set +a
+export SEARCH_ENDPOINT="$SEARCH_SERVERLESS_ENDPOINT"   # this shell only, the API still uses Basic
+uv run --project search voltrieve-search apply         # the definitions
+uv run --project search voltrieve-search index         # the documents, already in storage
+uv run --project search voltrieve-search smoke
+unset SEARCH_ENDPOINT
+```
+
+Then switch. Use a new shell, so that the changed `SEARCH_ENDPOINT` is gone:
+
+```sh
+azd env set SEARCH_SERVERLESS active
+azd provision
+scripts/deploy-agents.sh
+```
+
+**Rollback** goes the other way: Serverless, planner, version. The commands are in [the design, section 8](https://github.com/mklab-se/voltrieve/blob/main/docs/superpowers/specs/2026-11-24-search-foundry-iq-design.md#8-rollback).
+
+When attachments ship in the same update, use [that order](#order-for-an-update-with-attachments) for step 1, since it deploys the agents before the API too.
 
 <!-- MEASURE: time to first token and cost with gpt-6-luna as the planner, and with Serverless, also after more than 10 idle minutes -->
+Not measured yet: time to first token and cost with `gpt-6-luna` as the planner, and with Serverless, also after more than 10 idle minutes. The commands for Serverless are not verified.

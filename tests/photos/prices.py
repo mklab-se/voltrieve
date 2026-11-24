@@ -14,7 +14,7 @@ PRICES_USD_PER_MILLION = {
     "gpt-5.4-mini": (0.75, 0.075, 4.50),
 }
 AGENT_MODEL = "gpt-6.1-terra"  # what all three backends run
-PLANNING_MODEL = "gpt-5.4-mini"  # Search plans its queries with it
+PLANNING_MODEL = "gpt-5.4-mini"  # prices the planning of a run that does not name its planner
 SEARCH_REASONING_USD_PER_MILLION = 0.022
 
 

@@ -22,12 +22,12 @@ Most agent samples stop at "it answers". This one answers the questions you meet
 
 | The question | The short answer | Read more |
 | --- | --- | --- |
-| **Why host an agent in Foundry at all?** | For a managed identity, versions and a publishing path. Not for the loop, which is 252 lines of Python. | [Comparison](docs/why-foundry.md) |
+| **Why host an agent in Foundry at all?** | For a managed identity, versions and a publishing path. Not for the loop, which is 348 lines of Python. | [Comparison](docs/why-foundry.md) |
 | **My client has its own tools. Now what?** | A prompt agent refuses per-request tools with a 400. An own loop or a hosted agent runs them, even one the server has never seen. | [Client tools](docs/why-foundry.md#1-what-happened-with-client-tools) |
 | **Can a client send a photo, and where does it go?** | Straight into the model call, as an unstored turn. The conversation keeps the text only. Foundry's tracing also records the text of prompt and hosted turns, [an open decision](docs/decisions.md#open-the-product-owner-decides-what-foundrys-tracing-may-record). A new kind of attachment is one handler. | [Photos and attachments](docs/attachments.md) |
 | **How does the agent decide to use RAG?** | No classifier exists. The model decides in its first call, from words you control. | [The journey of a prompt](docs/prompt-journey.md) |
 | **Can it use several knowledge bases without calling them in vain?** | Yes: all three reached the right bases in every run. Two of them run the searches at the same time. | [Two knowledge bases](docs/why-foundry.md#6-two-knowledge-bases-who-chooses-and-who-runs-them-together) |
-| **Which model should I use?** | Newer isn't always better. `gpt-6.1-terra` runs all three backends, with 1 of 48 turns over 10 s to first token on the own loop. `gpt-6-luna` costs about a third of `gpt-5.4-mini`. It plans the Search queries (`PLANNING_MODEL_NAME`), and `gpt-5.4-mini` is the way back. | [Choosing a model](docs/model-comparison.md) |
+| **Which model should I use?** | Newer isn't always better. `gpt-6.1-terra` runs all three backends, with 1 of 48 turns over 10 s to first token on the own loop. `gpt-6-luna` costs about a third of `gpt-5.4-mini`. Search plans its queries with `gpt-5.4-mini`, and `gpt-6-luna` is opt-in (`PLANNING_MODEL_NAME`), not measured as the planner yet. | [Choosing a model](docs/model-comparison.md) |
 | **I need curated answers without slowing everything down.** | Pick the answer in the model call you already make, then skip the second one. Curated questions took under 2 s on two of the three, and other questions showed no measurable delay. | [Curated answers](docs/prompt-journey.md#curated-answers) |
 
 ## Who it is for: one client for each audience
@@ -40,6 +40,10 @@ Most agent samples stop at "it answers". This one answers the questions you meet
 | [The CLI](docs/clients.md#the-cli) | Developers | A test tool for the API, on every backend, with the whole trace |
 
 All four clients are built. [The clients](docs/clients.md) says what each one does, and what has not been run live is marked there.
+
+![The car: a dashboard from the driver's seat, a street behind the windscreen, 50 km/h on the driver display, and Runa and the last parking sign on the center screen](docs/images/car-driving.webp)
+
+*The car at 50 km/h. Runa's text comes from a mock server, not from the deployed agents. The car, the street and the sign are made up.*
 
 ## See it: the journey of a prompt
 
@@ -158,34 +162,44 @@ Tear down with `azd down --purge`. App registrations and the tester are not remo
 | `hooks/` | azd hooks |
 | `scripts/` | Agent and web deployment, runbook, denied demo, line count |
 | `tests/` | Contract tests, the grounding check and the routing suite |
-| `docs/` | Principles, comparison, journey of a prompt, runbook, deployment, decisions, evidence, design |
+| `docs/` | Principles, comparison, journey of a prompt, runbook, deployment, decisions, evidence, design, screenshots |
 
 ## Costs
 
-Idle, about 80 USD a month plus a small amount for Log Analytics: Search Basic is about 75 USD and Container Registry Basic about 5 USD. Container Apps scale to zero, the three Static Web Apps (website, car and dashboard) are on the Free tier, models bill per token, and the hosted agent bills per active session.
+Idle, about 80 USD a month plus a small amount for Log Analytics: Search Basic is about 75 USD and Container Registry Basic about 5 USD. Container Apps scale to zero, the three Static Web Apps (website, car and dashboard) are on the Free tier, models bill per token, and the hosted agent bills per active session. A Serverless search service is built and off, so it adds nothing until it is turned on ([Deployment](docs/deploy.md#idle-cost)).
 
 ## Status
 
-<!-- MEASURE: status of the car, the website and attachments: what was run live, test counts including the new suites, and what is not verified -->
+Deployed and run live on 2026-11-04 and 2026-11-05. Photos, the car, the new website and the newer Search versions came on 2026-11-23 and 2026-11-24, and their live results are not all in the repository yet.
 
-Deployed and run live on 2026-11-04 and 2026-11-05.
+<!-- MEASURE: what was run live of the car, the website and attachments -->
+Not measured yet: what of the car, the website and the photos has run live, beyond the privacy check below.
 
 Verified live:
 
 - All three backends through the deployed API: every runbook step passes on the final build, including the automated trace check in step 12.
 - Grounding: 30 of 30 answers passed.
 - The cross-document question "cheapest AWD in Sweden" repeated 6 times per backend: 18 of 18 right. At the default reasoning effort it was 11 to 15 of 18, so the sample uses medium effort.
-- A tool the server has never seen (`set_seat_heating`, declared only in the request): relayed on loop and hosted, refused on prompt (`docs/evidence/new-client-tool.txt`).
+- A tool the server has never seen, declared only in the request: relayed on loop and hosted, refused on prompt (`docs/evidence/new-client-tool.txt`). That run used an earlier version of the demo. The demo now declares a car function, `set_seat_heating`, and is not yet run live in that form.
 - Recovery on all three backends: a paused turn nobody answers, and a conversation resumed after the API scaled to zero (`docs/evidence/repair.txt`).
 - One trace per turn across API, Foundry, hosted agent and dealer (`docs/evidence/application-insights.txt`).
 - The prompt agent's 400.
+- Where a photo turn leaves its text and its photo, on 2026-11-24: the photo nowhere we looked, the text of prompt and hosted turns in Foundry's tracing (`docs/evidence/photos-privacy.txt`). That breaks a rule, and [the decision is open](docs/decisions.md#open-the-product-owner-decides-what-foundrys-tracing-may-record).
 - The authorization denied path, on the loop backend, against real Foundry with a fake token validator.
 
-Offline tests pass: `agent_core` 81, `api` 118, `agents/hosted` 18, `tests/contract` 25, `clients/cli` 51, `services/dealer` 37, `search` 25, Entra setup 31, `clients/web` 47.
+<!-- MEASURE: the offline test counts, including the new suites (clients/car, clients/dashboard, tests/photos, infra) -->
+Offline tests: every suite runs in [CI](.github/workflows/tests.yml). The counts are not measured yet after the last merge.
 
 Not verified:
 
-- Interactive sign-in to the website, and a real browser sign-in with `voltrieve login` (its MSAL calls are tested against a fake).
+- The car and the new website in a browser against the deployed API, and sign-in to the car, the website and the dashboard.
+- The car in Safari or Firefox, on a slow or Windows computer, and with a screen reader. Whether a person hears the horn and the motor.
+- Planning on `gpt-6-luna`, and the Serverless search service.
+- `set_seat_heating`, the new version of the client tool demo.
+- The workbook's check of Foundry's tracing rows.
+- What each choice about Foundry's tracing does in practice.
+- Reading a small sign in a large photo: [a known limit](docs/attachments.md#the-known-limit).
+- A real browser sign-in with `voltrieve login` (its MSAL calls are tested against a fake).
 - A real sign-in as the tester.
 - Publishing to Teams and Microsoft 365.
 - Latency and cold-start figures.

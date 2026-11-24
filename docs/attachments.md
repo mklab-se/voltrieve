@@ -120,7 +120,7 @@ A parking answer gives the verdict first, then until when, then the fee, then wh
 
 The checks on a photo (size, sharpness) cannot see that a sign is small in a large, sharp photo. In the spike, a sign at about a third of the first test size made the model invent a row, and at a fifth it answered "yes" when the answer was no, 3 of 3 times.
 
-The car avoids this by always photographing the sign close up. A photo from the website can still have the problem. Do not rely on a photo of a small sign for a parking decision.
+The car avoids this by always photographing the sign close up: the sign fills up to 82 percent of a photo of 1024 x 1024 pixels, whatever the speed. A blurred photo, above 70 km/h, is rejected. A photo from the website can still have the problem. Do not rely on a photo of a small sign for a parking decision.
 
 ## How it extends
 
@@ -203,12 +203,12 @@ That last row breaks a rule of this project, and it is older than the photos: `g
 
 ## Still to be measured
 
-The numbers above come from a spike. These come from the evidence runs that follow, with drawn signs and repository pictures only. Nothing here is a result yet.
+The numbers above come from a spike, except the privacy check. These come from the evidence runs that follow, with drawn signs and repository pictures only. Not measured yet:
 
-<!-- MEASURE: the three approaches and the four places for the rules, run again with drawn signs (tests/photos/compare.py): right, median, tokens -->
-<!-- MEASURE: photo questions on the three backends, three times each: right, median time to first token, share over 10 s, cost of the first 20 turns -->
-<!-- MEASURE: the broken lamp on the left and right, the undamaged car, a drawn sign asked about as a broken part, a blurred photo, "which part is this?" -->
-<!-- MEASURE: the routing suite before and after, for turns without attachments -->
-<!-- MEASURE: the car's tools on three backends, "honk" after a sign question stored as usual -->
+- <!-- MEASURE: the three approaches and the four places for the rules, run again with drawn signs (tests/photos/compare.py): right, median, tokens --> The three approaches and the four places for the rules, run again with drawn signs (tests/photos/compare.py): right, median, tokens.
+- <!-- MEASURE: photo questions on the three backends, three times each: right, median time to first token, share over 10 s, cost of the first 20 turns --> Photo questions on the three backends, three times each: right, median time to first token, share over 10 s, cost of the first 20 turns.
+- <!-- MEASURE: the broken lamp on the left and right, the undamaged car, a drawn sign asked about as a broken part, a blurred photo, "which part is this?" --> The broken lamp on the left and right, the undamaged car, a drawn sign asked about as a broken part, a blurred photo, "which part is this?".
+- <!-- MEASURE: the routing suite before and after, for turns without attachments --> The routing suite before and after, for turns without attachments.
+- <!-- MEASURE: the car's tools on three backends, "honk" after a sign question stored as usual --> The car's tools on three backends, "honk" after a sign question stored as usual.
 
 Not verified, and not planned: real sign photos in the repository, an attachment larger than the API's memory allows, and whether Foundry keeps a photo that was sent unstored.

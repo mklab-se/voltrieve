@@ -4,9 +4,12 @@ Which model should run the agent, and does it depend on the architecture? This p
 
 ## The result
 
-All three backends run `gpt-6.1-terra`, chosen from these results. `gpt-6-luna` plans the Search queries (`PLANNING_MODEL_NAME`) and `gpt-5.4-mini` is the way back. The numbers below were measured with `gpt-5.4-mini` as the planner. A last run on that setup, 48 turns per backend:
+All three backends run `gpt-6.1-terra`, chosen from these results. `gpt-5.4-mini` plans the Search queries, and the numbers below were measured with it. `gpt-6-luna` can plan them instead, opt-in with `PLANNING_MODEL_NAME`.
 
 <!-- MEASURE: the same run with gpt-6-luna as the planner -->
+Not measured yet: the same run with `gpt-6-luna` as the planner.
+
+A last run on that setup, 48 turns per backend:
 
 | Architecture | Median TTFT | Turns over 10 s | Two-base total | Article numbers |
 | --- | --- | --- | --- | --- |

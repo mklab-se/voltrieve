@@ -446,3 +446,15 @@ def test_every_caller_of_search_uses_the_same_api_version():
     connection = (ROOT / "infra/modules/foundry-kb-connection.bicep").read_text()
     assert f"/mcp?api-version={DEFAULT_API_VERSION}'" in connection
     assert f'SEARCH_API_VERSION = "{DEFAULT_API_VERSION}"' in (ROOT / "scripts/smoke.py").read_text()
+
+
+def test_the_documented_planning_model_is_the_default_in_bicep():
+    """A plain provision must plan with the model the deployment page says it does."""
+    import re
+
+    row = re.search(r"^\| `PLANNING_MODEL_NAME` \| `([^`]+)` \|", (ROOT / "docs/deploy.md").read_text(), re.M)
+    bicep = re.search(r"^param planningModelName string = '([^']+)'", (ROOT / "infra/main.bicep").read_text(), re.M)
+    parameters = json.loads((ROOT / "infra/main.parameters.json").read_text())["parameters"]
+    assert row and bicep
+    assert row[1] == bicep[1]
+    assert parameters["planningModelName"]["value"] == f"${{PLANNING_MODEL_NAME={bicep[1]}}}"

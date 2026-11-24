@@ -43,7 +43,7 @@ Both scripts compare answers with `data/voltrieve.yaml` and exit 1 on a miss. Re
 - Grounding: 30 of 30 passed (`docs/evidence/grounding.txt`).
 - Routing: 45 of 45 runs used exactly the right sources on every backend, with no knowledge base call in vain. Overlapping calls on two source questions: 12 of 12 on `loop` and `hosted`, 0 of 12 on `prompt`. Article numbers: 117 of 117 on `prompt`, 115 of 117 on `loop` and `hosted`, none invented. The script exits 1 on a missing article, so the recorded run exits 1. Run it with `--workers 1`: more turns at once measure the rate limit, not the routing.
 
-`uv run scripts/new_client_tool_demo.py` shows a client bringing a tool the server has never seen, as a car with a seat heater would (`set_seat_heating`, level 0 to 3).
+`uv run scripts/new_client_tool_demo.py` shows a client bringing a tool the server has never seen, as a car with a seat heater would (`set_seat_heating`, level 0 to 3). The demo was changed to this car function, and is not yet run live: `docs/evidence/new-client-tool.txt` is from the earlier version.
 
 Step 7 and `cheapest-awd-se` are the same question. At the default reasoning effort it varied between runs on every backend. At medium effort it passed 18 of 18 (`docs/evidence/cross-document-repeat.txt`).
 
@@ -69,7 +69,7 @@ Each knowledge base is an MCP tool inside Foundry, so a retrieval shows as one `
 | 9b | `uv run scripts/denied_demo.py --backend prompt` | `server_tool_called`, `authorization_denied`, `server_tool_returned`, `model_called`, polite refusal, then `PASS: authorization_denied emitted` | Not recorded for this backend |
 | 10 | In `voltrieve chat --backend prompt --az-token`, ask: `What is the towing capacity of the Voltrieve Fjord? When you have the answer, beep three times.` | `token_validated`, `backend_selected`, `model_called`, `model_returned`, `client_tool_requested`, `client_tool_calls`. The CLI rings the bell and posts the result. Then `token_validated`, `backend_selected`, `model_called`, deltas, `model_returned`, `done`. There is no `conversation_created`: the conversation already exists. | PASS (`make_noise`, times=3) |
 | 11 | `uv run scripts/runbook.py --backends prompt --steps 11` for the API's refusal, and `uv run --project agents/prompt agents/prompt/demo_rejection.py` for Foundry's 400 | Runbook script: `token_validated`, `backend_selected`, `conversation_created`, `unsupported_client_tool`, `error`. Demo script prints `400 invalid_payload: Error code: 400 - Not allowed when agent is specified.` | PASS, `docs/evidence/prompt-agent-rejection.txt` |
-| 12 | See [Follow a correlation id](#follow-a-correlation-id), with `runbook-prompt-2` or `runbook-prompt-8` | One `chat.turn` span and the calls around it | MANUAL, not recorded |
+| 12 | See [Follow a correlation id](#follow-a-correlation-id), with `runbook-prompt-2` or `runbook-prompt-8` | One `chat.turn` span and the calls around it | PASS, `docs/evidence/application-insights.txt` |
 
 Step 1 alternative for an interactive sign-in: `voltrieve login`, then leave out `--az-token`.
 
@@ -91,7 +91,7 @@ The API runs the loop, so every hop is an event. `knowledge_base_retrieved` carr
 | 9b | `uv run scripts/denied_demo.py --backend loop` | `server_tool_called`, `authorization_denied`, `server_tool_returned`, `model_called`, polite refusal, then `PASS: authorization_denied emitted` | PASS, `docs/evidence/authorization-denied.txt` |
 | 10 | In `voltrieve chat --backend loop --az-token`, ask: `What is the towing capacity of the Voltrieve Fjord? When you have the answer, beep three times.` | `token_validated`, `backend_selected`, `model_called`, `model_returned`, `client_tool_requested`, `client_tool_calls`. The CLI rings the bell and posts the result. Then `token_validated`, `backend_selected`, `model_called`, deltas, `model_returned`, `done`. There is no `conversation_created`: the conversation already exists. | PASS (`make_noise`, times=3) |
 | 11 | Skip | Backend A only. | SKIP |
-| 12 | See [Follow a correlation id](#follow-a-correlation-id), with `runbook-loop-2` or `runbook-loop-8` | One `chat.turn` span and the calls around it | MANUAL, not recorded |
+| 12 | See [Follow a correlation id](#follow-a-correlation-id), with `runbook-loop-2` or `runbook-loop-8` | One `chat.turn` span and the calls around it | PASS, `docs/evidence/application-insights.txt` |
 
 ## Backend C: hosted
 
@@ -111,7 +111,7 @@ The same core runs in the Foundry container. The trace sequence matches backend 
 | 9b | No in-process demo for this backend. Sign in as the tester in the website or with `voltrieve login`, choose hosted, and ask the same question. | Should match backend B: `server_tool_called`, `authorization_denied`, `server_tool_returned`, polite refusal. Role gating here is covered by offline tests. | Not tested live |
 | 10 | In `voltrieve chat --backend hosted --az-token`, ask: `What is the towing capacity of the Voltrieve Fjord? When you have the answer, beep three times.` | `token_validated`, `backend_selected`, `model_called`, `model_returned`, `client_tool_requested`, `client_tool_calls`. The CLI rings the bell and posts the result. Then `token_validated`, `backend_selected`, `model_called`, deltas, `model_returned`, `done`. There is no `conversation_created`: the conversation already exists. | PASS (`make_noise`, times=3) |
 | 11 | Skip | Backend A only. | SKIP |
-| 12 | See [Follow a correlation id](#follow-a-correlation-id), with `runbook-hosted-2` or `runbook-hosted-8` | One `chat.turn` span and the calls around it | MANUAL, not recorded |
+| 12 | See [Follow a correlation id](#follow-a-correlation-id), with `runbook-hosted-2` or `runbook-hosted-8` | One `chat.turn` span and the calls around it | PASS, `docs/evidence/application-insights.txt` |
 
 ## Step 9 as the tester, for real
 
@@ -123,26 +123,35 @@ The website declares `set_theme`. The CLI declares `make_noise`, `honk`, `get_lo
 
 ## The car demo
 
-This follows the design, section 8. The car client is built on its own branch, so this walkthrough says what you should see and has not been recorded. Evidence for it goes in `docs/evidence/car-tools.txt`.
+This walkthrough follows the code of the car. It says what you should see, and it has not been run in the car against the deployed API. [The clients](clients.md#the-car) says more about each part.
 
 ```sh
-azd env get-value CAR_URL     # sign in with an account that holds Chat.User
+just open-car                 # or: azd env get-value CAR_URL. Sign in with an account that holds Chat.User
 ```
 
 | Step | Type, or press | Expect |
 | --- | --- | --- |
-| 1 | `Turn the wipers on` | `client_tool_calls` for `set_wipers`, the wipers move, light rain starts, and Runa confirms |
-| 2 | `Honk twice` | `honk(times=2)`, and the horn is heard twice |
-| 3 | `Drive 50` | `set_speed(kmh=50)`. The speed shown and the street follow the same value |
-| 4 | Press **Park here?** after a sign has passed | The photo goes with the question. Runa answers yes or no first, then until when, then the fee, then what to check |
+| 1 | `Turn the wipers on` | `client_tool_calls` for `set_wipers`, the wipers move, rain starts, and Runa confirms |
+| 2 | `Honk twice` | `honk(times=2)`, and the horn is heard twice. If the browser blocks the sound, Runa says to click in the car first |
+| 3 | `Drive 50` | `set_speed(kmh=50)`. The speed shown and the street follow the same value. The up and down keys drive too |
+| 4 | Press **Park here?** after a sign has passed (it is off until then) | The photo goes with the question. Runa answers yes or no first, then until when, then the fee, then what to check |
 | 5 | `Can I park here until 12?`, with no photo attached | The model calls `get_sign_photo`, the car uploads the last photo, and the answer comes after the second turn |
-| 6 | `Park the car` after the car has entered a new block | `park()` returns that the bay is in another block, and Runa says that another sign applies |
-| 7 | Drive above 70 km/h and press **Park here?** | The photo is rejected as `too_blurry` and Runa asks the driver to slow down |
-| 8 | Switch **Under the hood** on | The event timeline and the backend picker appear. With the switch off, nothing on the screen mentions backends |
+| 6 | Ask about a sign, drive into the next block, then `Park the car` | Before parking, the answer on screen says it is for the previous block. `park()` waits until the car stands, returns that it parked in another block, and Runa says that another sign applies |
+| 7 | Pass a sign above 70 km/h and press **Park here?** | The photo is rejected as `too_blurry`. The question goes without it, Runa asks for the photo with `get_sign_photo`, gets the reason and asks the driver to slow down |
+| 8 | Open the menu in the corner and switch **Under the hood** on | The event timeline and the backend picker appear. With the switch off, nothing on the screen mentions backends |
 
 Run steps 1 to 8 on each backend. After "honk" or "wipers on" that follows a sign question, the turn is stored as usual, which the conversation shows. On the prompt agent, the API picks `voltrieve-prompt-car` because the car declares its five tools.
 
-Without Azure, the car client has a mock server (design section 8.7).
+Without Azure, the car has a mock server with scripted answers:
+
+```sh
+cd clients/car
+npm ci
+npm run mock          # scripted API on port 8789
+npm run dev:mock      # in a second terminal, the car on http://localhost:5175 with fake auth
+```
+
+The photos of the signs can be checked without Azure too, against the server's photo handler: `npm run sign-photos` in `clients/car`, then `uv run --project api python scripts/spikes/check_sign_photos.py clients/car/out` from the root. On 2026-11-24 it gave 8 ready and 8 `too_blurry` (not recorded in `docs/evidence/`).
 
 ## Under the hood and private turns
 
@@ -168,7 +177,7 @@ The URL is `azd env get-value WEB_URL`. Sign-in is an Entra redirect with PKCE. 
 
 The tester's password is generated by `azd up` and printed once by the preprovision hook, when the account is created. It is not stored anywhere. If it is lost, reset it in the Entra admin center. A tenant's MFA or sign-in policies may also apply to this account.
 
-The header has a backend selector, which sets `X-Agent-Backend`. The side panel shows the same trace events as the CLI.
+The backend selector, which sets `X-Agent-Backend`, is in **Under the hood**, with the same trace events as the CLI.
 
 To try the website without Azure:
 
@@ -207,7 +216,7 @@ Expect `cloud_RoleName` `voltrieve-api`, with `voltrieve-dealer` for the dealer 
 
 - on `loop`: `POST /chat`, the `chat.turn` span, calls to the Foundry project and Search, the call to the dealer;
 - on `prompt`: the same, with no Search call, because Foundry makes it;
-- on `hosted`: the call to `.../protocols/invocations`. The model and dealer calls are made in the agent, under whatever service name the agent host sets.
+- on `hosted`: the call to `.../protocols/invocations`. The model and dealer calls are made in the agent, with the role `voltrieve-hosted`.
 
 A client tool turn is two HTTP requests, so it spans two `operation_Id` values under one correlation id. The query handles that when the client sends the same id on both, as `scripts/runbook.py` and the CLI do.
 
@@ -219,7 +228,7 @@ dependencies
 | project timestamp, operation_Id, duration, customDimensions
 ```
 
-Step 12 stayed manual in the recorded run, and this query was written from the code. It has not been run against the deployment, so adjust it if the rows differ. Whether spans from the hosted agent join the same trace is also unverified, although `traceparent` is forwarded.
+Step 12 is checked by `scripts/runbook.py`, and it passed on all three backends on 2026-11-04: one trace id spans the API, Foundry, the hosted agent (`voltrieve-hosted`) and the dealer (`docs/evidence/application-insights.txt`). The queries on this page were written from the code and have not been run as they stand, so adjust them if the rows differ.
 
 ## Run locally against Azure
 
@@ -322,7 +331,7 @@ shown to an audience unless the people asking know.
 
 ## Source links
 
-Under each answer the web client shows the documents it used (**Sources**) and, for an answer
+Under each answer the website and the car show the documents it used (**Sources**) and, for an answer
 about cars, the brochure and specifications of every model it names (**Read more**). A document
 title cited in the text is a link too. The CLI numbers the same documents under the answer, and
 `/open 2` in `voltrieve chat` opens the second one in the browser.

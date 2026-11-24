@@ -26,13 +26,18 @@ flowchart LR
     API["Web API"] --> Backends["A prompt agent, B own loop, C hosted agent"]
 ```
 
-<!-- MEASURE: screenshots of the car and the website, and a short recording of the car, go here -->
-
 ## Status
 
-All four clients are built in this repository: the car, the website, the operations dashboard and the CLI. This page was checked against the design. What has run live is listed below as it is measured.
+All four clients are built in this repository: the car, the website, the operations dashboard and the CLI. This page was checked against the code of the car on 2026-11-24. The pictures on it were taken with mock servers, so the answers and the numbers in them are mock data.
 
-<!-- MEASURE: what has run live for each client (sign-in, a photo turn, the car's five tools on three backends), and what is not verified -->
+<!-- MEASURE: what has run live for each client: sign-in, a photo turn, the car's five tools on three backends -->
+Not measured yet: what has run live for each client.
+
+Not verified:
+
+- sign-in to the car, the new website and the dashboard, and a conversation from them with the deployed API,
+- the car in Safari or Firefox, on a slow or Windows computer, or with a screen reader,
+- whether a person hears the horn and the motor.
 
 ## What the clients share
 
@@ -43,23 +48,42 @@ All four clients are built in this repository: the car, the website, the operati
 
 ## The car
 
-The car is the Spark, the city car in saffron yellow. The driver sees a picture of its dashboard from the driver's seat, with a street in 3D behind the windscreen. A typed message stands in for the driver talking. Voice is not built.
+The car is the Spark, the city car in saffron yellow. The driver sees a picture of its dashboard from the driver's seat, with a street in 3D behind the windscreen and in the rear view mirror. A typed message stands in for the driver talking. Voice is not built.
+
+![The car at 50 km/h on a made-up street, with the last parking sign and Park here? on the center screen](images/car-driving.webp)
+
+*Driving at 50 km/h. The center screen shows the last sign that was passed. Mock data.*
 
 | Tool | What happens |
 | --- | --- |
-| `set_speed(kmh)`, 0 to 150 | The car accelerates or brakes to it. From a bay it pulls out first |
-| `set_wipers(mode)`: off, slow, fast | The wipers move. Slow and fast also start light rain |
-| `honk(times)`, 1 to 5 | A horn is heard |
-| `park()` | The car pulls into the next bay and stops. Runa says so if the bay belongs to another parking block than the last answer |
+| `set_speed(kmh)`, 0 to 150 | The car accelerates or brakes to it. From a bay it pulls out first, and finishes that also when it is told to stop |
+| `set_wipers(mode)`: off, slow, fast | The wipers move. Slow and fast also start rain |
+| `honk(times)`, 1 to 5 | A horn is heard. A browser blocks sound until the first click in the car, and then the tool says so |
+| `park()` | The car pulls into the next bay it has room to stop for. The result says when the bay belongs to another block than the sign asked about |
 | `get_sign_photo()` | Uploads the last photo of a sign and returns its attachment id with the result |
 
-The street is made of blocks. One parking rule holds for a block, and its sign stands at the start. When the car passes a sign, a second camera takes a close-up, so the smallest row of text is large enough to read. Above 70 km/h the photo is blurred, the server rejects it as `too_blurry`, and Runa asks the driver to slow down. The button "Park here?" sends the last photo with the question.
+The driver can do some of it alone: the up and down keys, or the Go and Brake buttons, drive the car, and the speaker button turns the sound of the motor on. Typing anywhere starts a message. The driver display shows gear, speed, range, battery, wipers and the distance to the next sign. Its range and battery are made up.
 
-The answer to a question floats above the dashboard in large type, then sinks back into the center screen after 12 quiet seconds or when the driver presses Escape. It stays while the pointer or keyboard focus is in it. The layout keeps its proportions from 1280 to 2560 pixels wide, and a smaller screen gets a message that asks for a larger one. The clock on the screen can be set to any day and time, and it is sent as the local time in the context.
+The street is endless and made of blocks of 400 m. One parking rule holds for a block, and its sign stands at the start, followed by five bays. There are eight signs, and they come in the same order again and again. When the car passes a sign, a second camera takes a close-up of 1024 x 1024 pixels, where the sign fills most of the photo, so the smallest row of text is large enough to read. Above 70 km/h the photo is blurred, and the server rejects it as `too_blurry`. The photos were checked offline with the server's own photo handler: all eight signs were accepted at 50 km/h, and all eight rejected at 90.
+
+"Park here?" sends the last photo with the question "Can I park here?". If the photo cannot be used, the question goes alone. Runa is then expected to ask for the photo with `get_sign_photo`, get the reason and tell the driver. The car keeps its last 10 photos and uploads again when the API has lost one.
+
+![Runa's answer to Can I park here? floats above the dashboard while the car stands in a bay](images/car-parking.webp)
+
+*Parked and asking. The answer is scripted in the mock server and is not a reading of the sign: the real agents read the photo.*
+
+The answer to a question floats above the dashboard in large type, then sinks back into the center screen after 12 quiet seconds, or when the driver closes it or presses Escape. It stays while Runa works, and while the pointer or keyboard focus is in it. When the car has come to another sign, it says that the answer is for the previous block. The car needs a window of at least 1280 pixels wide, and a smaller one gets a message that says so. It was looked at from 1280 x 720 to 2560 x 1440. The clock on the screen can be set to any day and time, and it is sent as the local time in the context, with the car, the odometer and the speed.
+
+| | |
+| --- | --- |
+| ![A long answer with three distances floats above the dashboard](images/car-answer.webp) | ![Rain on the windscreen, the wipers on fast](images/car-rain.webp) |
+| *A long answer while it streams. Mock data.* | *Wipers on fast, and rain. Mock data.* |
+
+The cockpit and five house fronts are generated pictures ([how they were made](https://github.com/mklab-se/voltrieve/blob/main/clients/car/assets/README.md)), and the product owner has not picked them yet. The rest of the street is drawn by code. Without Azure, `npm run mock` and `npm run dev:mock` in `clients/car` run the car against a mock server on port 8789.
 
 **`set_speed` does what it is told.** It is a simulation. A real car must decide for itself what it accepts, whatever the model asks for. See [Decisions](decisions.md#set_speed-does-what-it-is-told).
 
-**Under the hood.** A switch, off by default, opens the event timeline and the backend picker beside the car. When it is off, nothing on the screen mentions backends or events.
+**Under the hood.** A switch in the menu in the corner, off by default, opens the event timeline and the backend picker beside the car. When it is off, nothing on the screen mentions backends or events. The car starts on the own loop.
 
 ## The website
 
@@ -67,9 +91,21 @@ The answer to a question floats above the dashboard in large type, then sinks ba
 
 The gauge, `set_gauge`, the name "Flight Recorder" and the dashboard are not in the website. The website declares only `set_theme`. "Under the hood" works as in the car: timeline, backend picker and correlation id, off by default.
 
+![My Voltrieve: the customer's car on the left, and a chat where Runa answers about a photo](images/website-photo.webp)
+
+*A photo on the website. The photo is a catalog picture and the answer is scripted in the mock server, so the two do not match. Mock data, and a test user.*
+
+![The same page in the dark theme with Under the hood on: the backend picker and the event timeline](images/website-under-the-hood.webp)
+
+*Under the hood. Mock data. The note under the chat is cut off in both pictures, since its text was corrected afterwards.*
+
 ## The operations dashboard
 
 Its own app with its own sign-in. It shows the live feed and links to Live Metrics and the workbook, for users with the `Dashboard.View` role. See [the runbook](runbook.md#the-operations-dashboard).
+
+![The live dashboard: users, messages, cost and first text per backend, and one card for each turn](images/dashboard.webp)
+
+*The live dashboard with mock data: the times and costs are not measurements. The note says "never stored", which was corrected afterwards: the live feed stores nothing, but [Foundry's tracing stores text](decisions.md#open-the-product-owner-decides-what-foundrys-tracing-may-record).*
 
 ## The CLI
 

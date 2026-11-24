@@ -13,7 +13,7 @@ Numbers come from live runs on 2026-11-04 (`scripts/prompt_journey.py`, `docs/ev
 - **The API sends the prompt to the model unchanged.** It never rewrites it, and it never loads history into the request.
 - **History lives in Foundry.** The API sends a conversation id, and Foundry supplies the earlier turns to the model.
 - **The user's words never go to Azure AI Search as they are.** The model writes a search query. Search then uses a second model call to turn that query into sub-queries.
-- **Two chat models are at work.** All three backends run `gpt-6.1-terra`, and `gpt-6-luna` plans the Search queries (`PLANNING_MODEL_NAME`, with `gpt-5.4-mini` as the way back). The timings and token counts in this page were measured with `gpt-5.4-mini`  as the planner. An embedding model is also used, by Search.
+- **Two chat models are at work.** All three backends run `gpt-6.1-terra`, and `gpt-5.4-mini` plans the Search queries, also in the timings and token counts on this page. `gpt-6-luna` is opt-in as the planner (`PLANNING_MODEL_NAME`). Not measured yet: the planning step with `gpt-6-luna`. An embedding model is also used, by Search.
 <!-- MEASURE: the query planning step again with gpt-6-luna -->
 - **The figures below were recorded with `gpt-6.1-terra`,** except where a section names another model. See [Choosing a model](model-comparison.md).
 
@@ -33,7 +33,7 @@ flowchart LR
     end
     subgraph F["Microsoft Foundry"]
         V[("Conversations")]
-        M["gpt-6.1-terra<br/>(Search plans with gpt-6-luna)"]
+        M["gpt-6.1-terra<br/>(Search plans with gpt-5.4-mini)"]
     end
     subgraph S["Azure AI Search"]
         P["Planner"]

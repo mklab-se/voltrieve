@@ -9,7 +9,7 @@ So client tools must already be in the agent definition, which only works for a 
 The Responses API with a model instead of an agent accepts per-request tools, so an own loop in a web API solves it directly.
 A hosted agent can run that same loop, but its Responses protocol dropped caller tools, so it needs Invocations and a custom contract.
 All three ran the same runbook. Answer quality matched: 30 of 30 grounding questions on all hosts once reasoning effort was raised, which mattered more than the host. They differed in how much the trace shows.
-Agentic RAG without Foundry agents is not hard: the loop is 252 lines. The hard part is pausing and repairing turns, which every backend needs.
+Agentic RAG without Foundry agents is not hard: the loop is 348 lines, with its events. The hard part is pausing and repairing turns, which every backend needs.
 Foundry agents add a managed identity, versions and a path to Teams and Microsoft 365. Publishing was not exercised here.
 Two knowledge bases are chosen equally well on every host, with no call in vain, but only the own loop and the hosted agent run them together (section 6).
 Recommendation: own loop when clients bring tools, hosted agent when you also need agent identity or publishing, prompt agent when tools are fixed.
@@ -125,59 +125,63 @@ Backend B still depends on Foundry: models, Responses and Conversations all come
 
 ## 3. What the own-loop backend had to implement
 
-Measured with `uv run scripts/measure_loc.py`: non-blank Python lines, excluding comments and docstrings. Each line counts in one group. An `x` means the backend needs that group.
+Measured with `uv run scripts/measure_loc.py`: non-blank Python lines, excluding comments and docstrings. Each line counts in one group. Measured on 2026-11-24, with attachments, source links and the dashboard's feed in place. An `x` means the backend needs that group.
 
 | Concern | Lines | A | B | C |
 | --- | ---: | --- | --- | --- |
-| Orchestration loop and events | 252 | x | x | x |
-| Instructions (system prompt) | 33 | x | x | x |
-| Model client (Responses streaming) | 137 | x | x | x |
-| Tool set (validate, authorize, run) | 102 | x | x | x |
-| Server tool definitions | 106 | x | x | x |
-| Dealer client | 57 | x | x | x |
-| Knowledge base client (retrieve) | 212 |  | x | x |
-| API contract (routes, schemas, app) | 366 | x | x | x |
+| Orchestration loop and events | 348 | x | x | x |
+| Unstored turns and private logs | 145 | x | x | x |
+| Instructions (system prompt) | 75 | x | x | x |
+| Model client (Responses streaming) | 185 | x | x | x |
+| Tool set (validate, authorize, run) | 107 | x | x | x |
+| Server tool definitions | 202 | x | x | x |
+| Dealer client | 60 | x | x | x |
+| Knowledge base client (retrieve) | 255 |  | x | x |
+| API contract (routes, schemas, app) | 516 | x | x | x |
+| Attachments and client context | 402 | x | x | x |
+| Source links (sources.py) | 195 | x | x | x |
 | Auth (token validation) | 116 | x | x | x |
-| Turn state and repair | 413 | x | x | x |
-| Telemetry and logging | 70 | x | x | x |
+| Turn state and repair | 524 | x | x | x |
+| Telemetry and logging | 77 | x | x | x |
+| Turn measurements and live feed (insights.py) | 209 | x | x | x |
 | Backend registry | 43 | x | x | x |
-| Loop host in the API (backends/loop.py) | 75 | x | x |  |
-| Prompt backend (backends/prompt.py) | 128 | x |  |  |
-| Prompt agent definitions (create_agents.py) | 109 | x |  |  |
-| Hosted relay (backends/hosted.py) | 172 |  |  | x |
-| Hosted agent entry point (main.py) | 186 |  |  | x |
-| Hosted agent deployment (deploy.py) | 107 |  |  | x |
-| **Total the backend runs** | 2684 | 2007 | 1982 | 2372 |
+| Loop host in the API (backends/loop.py) | 78 | x | x |  |
+| Prompt backend (backends/prompt.py) | 162 | x |  |  |
+| Prompt agent definitions (create_agents.py) | 172 | x |  |  |
+| Hosted relay (backends/hosted.py) | 183 |  |  | x |
+| Hosted agent entry point (main.py) | 208 |  |  | x |
+| Hosted agent deployment (deploy.py) | 108 |  |  | x |
+| **Total the backend runs** | 4370 | 3616 | 3537 | 3958 |
 
 For scale, not part of the totals above:
 
 | Other Python | Lines |
 | --- | ---: |
-| CLI client | 495 |
-| Dealer service | 341 |
-| Search setup (rest of search/) | 267 |
-| Entra setup | 377 |
-| Demo and test scripts | 970 |
-| Automated tests | 3964 |
+| CLI client | 824 |
+| Dealer service | 379 |
+| Search setup (rest of search/) | 384 |
+| Entra setup | 411 |
+| Automated tests | 9449 |
+| Demo, test and evidence scripts | 3241 |
 
 Reading the table:
 
-- The totals are close because the backends share so much. Backend A is not smaller, because it has the same clients to serve and the same function calls to relay. A prompt agent saves the 212 line retrieve client and costs 237 lines for its definitions and its backend (128 of them filter and rewrite Foundry's citation markers, so clients see the same text as from the other backends).
-- The agent proper in backend B (loop through knowledge base client) is 899 lines. The web API around it is 1083 lines. Most of that API would exist whichever backend answered.
+- The totals are close because the backends share so much. Backend A is not smaller, because it has the same clients to serve and the same function calls to relay. A prompt agent saves the 255 line retrieve client and costs 334 lines for its definitions and its backend (the backend is 162 of them, and part of it rewrites Foundry's citation markers, so clients see the same text as from the other backends).
+- The agent proper in backend B (loop through knowledge base client) is 1377 lines. The web API around it is 2160 lines. Most of that API would exist whichever backend answered.
 - The telemetry row counts only the setup. Trace events are emitted inside the loop and the tool set and are counted there.
-- Bicep, shell, the SPA and the client apps are not counted. Backend A could be written with a smaller relay than the shared loop, so 2007 is what this repository has, not a floor.
+- Bicep, shell and the TypeScript clients (the car, the website and the dashboard) are not counted. Backend A could be written with a smaller relay than the shared loop, so 3616 is what this repository has, not a floor.
 
 What backend B cannot get at all: publishing to Teams and Microsoft 365 Copilot, a managed agent identity, and registry entries for the agent.
 
 ## 4. Is agentic RAG without Foundry agents hard?
 
-No. The orchestration loop is 252 lines including its events, and the model client is 137. The loop itself is short: call the model, run server tools, stop for client tools, repeat, with a cap of eight iterations.
+No. The orchestration loop is 348 lines including its events, the code for unstored turns and private logs is 145, and the model client is 185. The loop itself is short: call the model, run server tools, stop for client tools, repeat, with a cap of eight iterations.
 
 The complexity sits elsewhere:
 
-- **Turn state (413 lines, the largest group).** A paused turn is stored with its pending server outputs and expected call ids, for 15 minutes. A second message during a running turn gets 409. A new message on a paused conversation closes the old turn with synthetic outputs. Conversation ownership is checked on every use. A conversation left dirty by a failure, or touched first by a new process, is repaired before use.
+- **Turn state (524 lines, the largest group).** A paused turn is stored with its pending server outputs and expected call ids, for 15 minutes. A second message during a running turn gets 409. A new message on a paused conversation closes the old turn with synthetic outputs. Conversation ownership is checked on every use. A conversation left dirty by a failure, or touched first by a new process, is repaired before use.
 - **Tool relay.** Server and client calls can arrive in the same model response. Server outputs must wait and reach the conversation together with the client results.
-- **Tool safety (102 lines).** Arguments from the model are validated against JSON schema, for server tools in `execute` and for client tools before the call is forwarded (a call the client's own schema rejects is answered with the error and never sent on). Roles are checked in `execute`, and failures go back to the model as text. The requester on a booking comes from the token, never from the model.
+- **Tool safety (107 lines).** Arguments from the model are validated against JSON schema, for server tools in `execute` and for client tools before the call is forwarded (a call the client's own schema rejects is answered with the error and never sent on). Roles are checked in `execute`, and failures go back to the model as text. The requester on a booking comes from the token, never from the model.
 - **Tracing.** Every visible hop is an event we emit. This is what makes the three backends comparable, and it has to be written whichever backend is used.
 
 Almost none of it is Foundry-specific. Only `model.py` speaks the Responses API, and only `ConversationBackend` speaks the Conversations API. Both are OpenAI SDK calls. Apart from the model endpoint, the conversation store is the one piece you would replace if you left Foundry entirely. The tool relay, turn state, auth and tracing are ordinary web API work.
@@ -188,7 +192,7 @@ Recovery was tested live too. A paused turn nobody answers, and a conversation r
 
 ## 5. Hosted agent versus custom code in a web API
 
-The code is the same: `agent_core.run_turn` runs unchanged in both places. Moving from B to C costs 465 lines (relay, entry point, deployment) and frees 75. The API stays in front in both cases, because it holds the client contract, the token validation and the paused turns.
+The code is the same: `agent_core.run_turn` runs unchanged in both places. Moving from B to C costs 499 lines (relay, entry point, deployment) and frees 78. The API stays in front in both cases, because it holds the client contract, the token validation and the paused turns.
 
 | | Custom code in the web API (B) | Hosted agent (C) |
 | --- | --- | --- |
@@ -206,7 +210,7 @@ Section 6 measures whole turns, from a laptop in one region: the hosted agent ad
 
 ### Honest limits of hosted agents
 
-- **Invocations is a custom contract.** You write both ends: 172 lines in the API and 186 in the agent, plus the `outcome` event. It is not a drop-in target for an OpenAI client.
+- **Invocations is a custom contract.** You write both ends: 183 lines in the API and 208 in the agent, plus the `outcome` event. It is not a drop-in target for an OpenAI client.
 - **No OpenAI compatibility for caller tools.** Over the Responses protocol, caller `tools` and `metadata` arrive as `None`, with no error. The failure is silent, so test it before you design around it.
 - **Identity setup has an order.** The agent identity only exists after the first version is created. You need a `linux/amd64` image, Foundry Project Manager for the deployer, and registry pull roles for the project identity. Then you create the version, read the principal id, provision a second time so Bicep can assign Search and Foundry roles, and assign `Dealer.Access` through Graph. Until then the running agent lacks its access.
 - **Cold starts are real.** The first call on a new session is slow. No figure was recorded. The API allows a 300 second read timeout for this. A broken image shows up as `session_not_ready`.
@@ -296,7 +300,7 @@ Choose by what the clients need, in this order.
 - you also need a managed per-agent identity, Foundry-run containers and agent versions, or expect to publish through the Activity protocol;
 - and you accept a custom Invocations contract, cold starts, the identity setup order and version-pinned sessions.
 
-Start with B if unsure. The core moves to C unchanged, for about 465 lines.
+Start with B if unsure. The core moves to C unchanged, for about 500 lines.
 
 **Pick a prompt agent (A) when:**
 
@@ -309,7 +313,7 @@ Start with B if unsure. The core moves to C unchanged, for about 465 lines.
 
 ## A device that brings its own tools
 
-This was run against the deployed API with `scripts/new_client_tool_demo.py`. A script declares `set_seat_heating(level)`, from 0 to 3, in the request, and nothing about that tool exists in the API, the agents or Foundry. Backends B and C relayed the call to the client with the level 2 and finished the turn, with no server change. Backend A refused it with `unsupported_client_tool` (`docs/evidence/new-client-tool.txt`). The script stands in for a car with a function the server has never seen: no car software or vehicle was involved.
+This was run against the deployed API with an earlier version of `scripts/new_client_tool_demo.py`: the client declared a tool in the request that nothing in the API, the agents or Foundry knew. Backends B and C relayed the call to the client and finished the turn, with no server change. Backend A refused it with `unsupported_client_tool` (`docs/evidence/new-client-tool.txt`). The demo was then changed to a car function, `set_seat_heating(level)`, from 0 to 3, and is not yet run live in that form. The script stands in for a car with a function the server has never seen: no car software or vehicle was involved.
 
 The problem: the software in a car exposes `set_seat_heating` to the agent, alongside knowledge bases. This repository did not test a real in-car system or a real seat heater. Two knowledge bases are tested in section 6. The advice below follows from what was measured.
 

@@ -9,7 +9,7 @@ A line counts when it holds code: blank lines, comment lines and docstrings do n
 source line lands in exactly one group. `path::Name` takes one top-level class or function out of
 a file; the plain path of the same file then takes what is left. The A, B and C columns say which
 backend needs the group, so the totals show what each backend really runs. Only Python is counted:
-Bicep, shell, TypeScript and JSON are not.
+Bicep, shell, TypeScript (the car, the website and the dashboard) and JSON are not.
 """
 
 from __future__ import annotations
@@ -34,10 +34,11 @@ class Group:
 
 AGENT_GROUPS = (
     Group("Orchestration loop and events", "ABC", (f"{CORE}/loop.py", f"{CORE}/events.py")),
+    Group("Unstored turns and private logs", "ABC", (f"{CORE}/unstored.py", f"{CORE}/private.py")),
     Group("Instructions (system prompt)", "ABC", (f"{CORE}/instructions.py",)),
     Group("Model client (Responses streaming)", "ABC", (f"{CORE}/model.py",)),
     Group("Tool set (validate, authorize, run)", "ABC", (f"{CORE}/tools.py",)),
-    Group("Server tool definitions", "ABC", (f"{CORE}/server_tools.py",)),
+    Group("Server tool definitions", "ABC", (f"{CORE}/server_tools.py", f"{CORE}/curated.py")),
     Group("Dealer client", "ABC", (f"{CORE}/dealer.py", f"{CORE}/http_client.py")),
     Group(
         "Knowledge base client (retrieve)",
@@ -48,9 +49,14 @@ AGENT_GROUPS = (
         "api/app/routes.py", "api/app/schemas.py", "api/app/main.py",
         "api/app/settings.py",
     )),
+    Group("Attachments and client context", "ABC", (
+        "api/app/attachments", "api/app/context.py", "api/app/text.py",
+    )),
+    Group("Source links (sources.py)", "ABC", ("api/app/sources.py",)),
     Group("Auth (token validation)", "ABC", ("api/app/auth.py",)),
     Group("Turn state and repair", "ABC", ("api/app/turns.py", "api/app/backends/base.py")),
     Group("Telemetry and logging", "ABC", ("api/app/telemetry.py", "api/app/logging_setup.py")),
+    Group("Turn measurements and live feed (insights.py)", "ABC", ("api/app/insights.py",)),
     Group("Backend registry", "ABC", ("api/app/backends/__init__.py",)),
     Group("Loop host in the API (backends/loop.py)", "AB", ("api/app/backends/loop.py",)),
     Group("Prompt backend (backends/prompt.py)", "A", ("api/app/backends/prompt.py",)),
@@ -63,14 +69,18 @@ AGENT_GROUPS = (
 # Shared by all three, or not part of any agent: shown for scale, left out of the backend totals.
 CONTEXT_GROUPS = (
     Group("CLI client", "", ("clients/cli/src",)),
-    Group("Dashboard", "", ("clients/dashboard/src",)),
     Group("Dealer service", "", ("services/dealer/app",)),
     Group("Search setup (rest of search/)", "", ("search/src",)),
     Group("Entra setup", "", ("infra/scripts/entra/src",)),
-    Group("Demo and test scripts", "", ("scripts", "agents/prompt/demo_rejection.py", "tests/grounding")),
+    # Before the scripts: tests/photos holds both.
     Group("Automated tests", "", (
         "agent_core/tests", "api/tests", "agents/hosted/tests", "clients/cli/tests",
-        "services/dealer/tests", "search/tests", "infra/scripts/entra/tests", "tests/contract",
+        "services/dealer/tests", "search/tests", "infra/scripts/entra/tests", "infra/tests", "tests/contract",
+        *(str(p.relative_to(ROOT)) for p in sorted((ROOT / "tests/photos").glob("test_*.py"))),
+    )),
+    Group("Demo, test and evidence scripts", "", (
+        "scripts", "agents/prompt/demo_rejection.py", "agents/prompt/demo_parallel_setting.py",
+        "tests/grounding", "tests/routing", "tests/photos",
     )),
 )
 

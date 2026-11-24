@@ -25,22 +25,17 @@ The user decided to use the latest API versions, preview included. This replaced
 
 ### Search management stepped back from the newest listed version
 
-`2026-11-01` is listed in the docs but was not live in France Central, so Bicep used `2026-09-01-preview`, the newest the service accepted. It is live now, and the next section says what moved.
-
-
-### Search moved to the Foundry IQ versions
-
-The data plane and the knowledge base MCP endpoint move to `2026-11-01-preview`, and Bicep to the stable `2026-11-01`. `gpt-6-luna` plans the Search queries, set with `PLANNING_MODEL_NAME`, and `gpt-5.4-mini` is the way back. A Serverless search service is built and off (`SEARCH_SERVERLESS`). This is not measured yet. The reasons, the order and the way back are in [the design](https://github.com/mklab-se/voltrieve/blob/main/docs/superpowers/specs/2026-11-24-search-foundry-iq-design.md) and in [Deployment](deploy.md#order-for-an-update-with-the-new-search-values).
+On 2026-11-04 `2026-11-01` was listed in the docs but not live in France Central, so Bicep used `2026-09-01-preview`, the newest the service accepted then. By 2026-11-24 it was live, and Bicep uses it: see the next section.
 
 ### Search moved to the Foundry IQ versions
 
-On 2026-11-24 the product owner asked for the newest search APIs. The data plane and the MCP endpoint use `2026-11-01-preview`, not the stable `2026-10-01`, because only the preview accepts GPT-6 models for planning. Bicep uses the stable `2026-11-01`, which is live in France Central now, so the section above no longer applies. No field we send or read changed.
+On 2026-11-24 the product owner asked for the newest search APIs. The data plane and the MCP endpoint use `2026-11-01-preview`, not the stable `2026-10-01`, because only the preview accepts GPT-6 models for planning. Bicep uses the stable `2026-11-01`, which is live in France Central now, so the section above is history. No field we send or read changed.
 
 - **Planning stays on `gpt-5.4-mini` until `gpt-6-luna` is measured:** `gpt-6.1-terra` is not among the models Search lists, and `gpt-6-luna` is the cheapest that is. Both are deployed, and `PLANNING_MODEL_NAME` is the one value that chooses. The new planner is opt-in, so a plain `azd provision` cannot switch it. Deploy the code before choosing a GPT-6 model: older clients are not documented to work with such a base.
 - **Serverless is built, and off:** it fits Sweden Central, knowledge bases, indexers and our size, but the documentation does not say what a small index costs in compute units. `SEARCH_SERVERLESS` is `off`, `standby` or `active`. The Basic service stays in all three. `active` is refused before `standby` has been provisioned, and pruning documents prunes every service.
 - **The Serverless identity has one Foundry role,** Cognitive Services OpenAI User, as the identity page asks. Basic keeps its two.
 
-Not measured yet. The design has what breaks, the order and the way back: [design](superpowers/specs/2026-11-24-search-foundry-iq-design.md).
+Not measured yet. The design has what breaks, the order and the way back: [design](https://github.com/mklab-se/voltrieve/blob/main/docs/superpowers/specs/2026-11-24-search-foundry-iq-design.md). The commands are in [Deployment](deploy.md#order-for-an-update-with-the-new-search-values).
 
 ### Bicep BCP081 warnings are expected
 
@@ -50,7 +45,7 @@ The lint reports BCP081 ("does not have types available") for `Microsoft.Cogniti
 
 ### Query planning on
 
-The knowledge base has the chat model in `models` with `retrievalReasoningEffort` low. On `2026-08-01-preview` this produced `modelQueryPlanning` activity and three sub-queries for one question. GA `2026-04-01` cannot plan with a model for `searchIndex` sources. The search service identity needs Cognitive Services User on Foundry for this. Output mode is `extractiveData`: the agent writes the answer.
+Each knowledge base has the planning model in `models` with `retrievalReasoningEffort` low. The planning model is `gpt-5.4-mini`, with a deployment of its own, and `gpt-6-luna` is opt-in. On `2026-08-01-preview`, with the chat model of that time, this produced `modelQueryPlanning` activity and three sub-queries for one question. GA `2026-04-01` cannot plan with a model for `searchIndex` sources. The search service identity needs a role on Foundry for this: Cognitive Services OpenAI User, and Basic keeps Cognitive Services User as well. Output mode is `extractiveData`: the agent writes the answer.
 
 ### Retrieve request shape
 
@@ -68,7 +63,7 @@ The skillset splits extracted text into character-based chunks, and extraction g
 
 ## Models
 
-- Chat: `gpt-5.4-mini` version `2026-03-17`, GlobalStandard, capacity 50. The agents later moved to `gpt-6.1-terra`: see below.
+- Chat: `gpt-5.4-mini` version `2026-03-17`, GlobalStandard, capacity 50 at first. The agents later moved to `gpt-6.1-terra`, and the capacity to 150: see below. `gpt-5.4-mini` is still deployed, for planning Search queries.
 - Embeddings: `text-embedding-3-large` version 1, GlobalStandard, capacity 10.
 - Capacity 10 on chat broke multi-question runs with rate limits. On pay-per-token, capacity is a cap, not a cost, so it was raised to 50.
 
@@ -212,7 +207,7 @@ Agent Skills would let someone change what Runa does without deploying code. Who
 
 ### The car is a browser app, not a native one
 
-A browser cockpit can be opened by anyone who watches a demo, signs in the same way as the website, and costs nothing more than a Static Web App on the Free tier. A native app would need a build and a device for each audience, and the car has no hardware to show. The street is a 3D scene (three.js) behind a rendered cockpit, which costs one more dependency and stylized buildings. Sprites would have made the sign photo fake, and a looped video could not vary the signs or let the car park.
+A browser cockpit can be opened by anyone who watches a demo, signs in the same way as the website, and costs nothing more than a Static Web App on the Free tier. A native app would need a build and a device for each audience, and the car has no hardware to show. The street is a 3D scene (three.js) behind a picture of the cockpit, which costs one more dependency (the scene is 163 kB compressed). The cockpit and five house fronts are generated pictures, which cost 0.32 USD in all and are provisional until the product owner has picked them. The rest of the street, the signs and their photos are drawn by code, so the text on a sign is right and the answer is known. Sprites would have made the sign photo fake, and a looped video could not vary the signs or let the car park. The price: the cars on the street are simple when they are close, the steering wheel does not turn, and very wide windows lose part of the picture.
 
 ### One client for each audience
 
@@ -300,7 +295,7 @@ The instruction "call them all in the same step" made the prompt agent emit two 
 
 ### All backends run gpt-6.1-terra
 
-Speed decides as long as quality holds. `gpt-6.1-terra` had the fewest turns over 10 seconds to the first token, or tied for the fewest, on every backend, at about the cost of `gpt-5.4-mini`. Search planning stays on `gpt-5.4-mini`, because Search refuses GPT-6 models. So there are two chat deployments, which also stops the agent and the planner sharing a token limit. The figures are in `docs/model-comparison.md`.
+Speed decides as long as quality holds. `gpt-6.1-terra` had the fewest turns over 10 seconds to the first token, or tied for the fewest, on every backend, at about the cost of `gpt-5.4-mini`. Search planning stayed on `gpt-5.4-mini`, because Search refused GPT-6 models then. The newer Search versions accept `gpt-6-luna` (not `gpt-6.1-terra`), and it is deployed but opt-in: see [above](#search-moved-to-the-foundry-iq-versions). The agent and the planner have deployments of their own, so they do not share a token limit. The figures are in `docs/model-comparison.md`.
 
 ### Brake fluid is listed in the brake catalog too
 
