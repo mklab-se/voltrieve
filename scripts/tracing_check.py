@@ -7,7 +7,7 @@
     uv run scripts/tracing_check.py --mark
     uv run scripts/tracing_check.py --search MARKER [MARKER ...] [--hours 4]
 
---mark sends one turn per backend. The marker is in the message and in the car's trim, so it is
+--mark sends one turn per backend (exit 1 unless every one ended with done). The marker is in the message and in the car's trim, so it is
 in the client's line too. It prints the markers and, per backend, `done` or the error code.
 --search counts, per table of the Log Analytics workspace, the rows that hold a marker. Only
 counts leave the query. A hit in a table that logs queries (the search itself) is named apart and
@@ -28,7 +28,7 @@ import sys
 from voltrieve_client import Api, api_token, api_url, cached_token
 
 BACKENDS = ("loop", "prompt", "hosted")
-QUERY_LOG_TABLES = {"LAQueryLogs", "AzureActivity"}  # they hold the text of our own search
+QUERY_LOG_TABLES = {"LAQueryLogs"}  # they hold the text of our own search
 QUESTION = "What is the towing capacity of the car? My reference is {marker}."
 
 
@@ -51,6 +51,7 @@ def search_query(marker: str, hours: int) -> str:
 
 
 def mark() -> int:
+    all_done = True
     token = cached_token(api_token)
     for backend in BACKENDS:
         marker = new_marker()
@@ -66,16 +67,24 @@ def mark() -> int:
             outcome = f"failed {type(exc).__name__}"
         finally:
             api.close()
+        all_done = all_done and outcome == "done"
         print(f"{backend:<8}{marker}  {outcome}")
-    return 0
+    return 0 if all_done else 1
 
 
 def workspace_id(group: str) -> str:
-    return subprocess.run(
+    out = subprocess.run(
         ["az", "monitor", "log-analytics", "workspace", "list", "-g", group,
-         "--query", "[0].customerId", "-o", "tsv"],
+         "--query", "[].customerId", "-o", "json"],
         capture_output=True, text=True, check=True,
-    ).stdout.strip()
+    ).stdout
+    try:
+        ids = json.loads(out)
+    except ValueError:
+        raise UnexpectedAnswer("ValueError") from None
+    if not isinstance(ids, list) or len(ids) != 1 or not isinstance(ids[0], str) or not ids[0]:
+        raise UnexpectedAnswer("not exactly one workspace")
+    return ids[0]
 
 
 def count_tables(workspace: str, marker: str, hours: int) -> dict[str, int]:
@@ -120,6 +129,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.mark:
         return mark()
+    if args.hours < 1:
+        print("refused: --hours is 1 or more", file=sys.stderr)
+        return 2
     if not all(valid_marker(m) for m in args.search):
         print("refused: a marker is letters and digits only", file=sys.stderr)
         return 2

@@ -670,7 +670,7 @@ def fake_az(tables_by_marker):
             marker = next(m for m in tables_by_marker if m in query)
             rows = json.dumps([{"Table": t, "n": n} for t, n in tables_by_marker[marker].items()])
             return subprocess.CompletedProcess(cmd, 0, rows, "")
-        return subprocess.CompletedProcess(cmd, 0, "workspace-guid\n", "")
+        return subprocess.CompletedProcess(cmd, 0, '["workspace-guid"]', "")
 
     return run
 
@@ -719,3 +719,42 @@ def test_an_unexpected_answer_shape_is_an_error_not_no_rows(monkeypatch, capsys)
     monkeypatch.setattr(subprocess, "run", run)
     assert tracing_check.main(["--search", "vtmarkaaa"]) not in (0, 1)
     assert "no rows" not in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("hours", ["0", "-3"])
+def test_an_empty_window_is_refused_before_any_subprocess(monkeypatch, hours):
+    calls = []
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: calls.append(a))
+    assert tracing_check.main(["--search", "vtmarkaaa", "--hours", hours]) == 2
+    assert calls == []
+
+
+@pytest.mark.parametrize("listing,expected", [("[]", 3), ('["a"]', 0), ('["a", "b"]', 3)])
+def test_the_workspace_must_be_exactly_one(monkeypatch, listing, expected):
+    monkeypatch.setenv("AZURE_RESOURCE_GROUP", "rg")
+
+    def run(cmd, **kwargs):
+        out = "[]" if "--analytics-query" in cmd else listing
+        return subprocess.CompletedProcess(cmd, 0, out, "")
+
+    monkeypatch.setattr(subprocess, "run", run)
+    assert tracing_check.main(["--search", "vtmarkaaa"]) == expected
+
+
+def test_mark_exits_one_unless_every_backend_ended_with_done(monkeypatch):
+    class Failing(FakeApi):
+        def turn(self, message, **kwargs):
+            if self.backend == "hosted":
+                return voltrieve_client.Turn(events=[("error", {"code": "boom"})])
+            return super().turn(message, **kwargs)
+
+    monkeypatch.setattr(tracing_check, "Api", Failing)
+    monkeypatch.setattr(tracing_check, "api_url", lambda: "http://api")
+    monkeypatch.setattr(tracing_check, "api_token", lambda: "t")
+    assert tracing_check.main(["--mark"]) == 1
+
+
+def test_a_hit_in_azure_activity_counts(monkeypatch):
+    monkeypatch.setenv("AZURE_RESOURCE_GROUP", "rg")
+    monkeypatch.setattr(subprocess, "run", fake_az({"vtmarkaaa": {"AzureActivity": 1}}))
+    assert tracing_check.main(["--search", "vtmarkaaa"]) == 1
