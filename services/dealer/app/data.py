@@ -84,6 +84,10 @@ class DealerData:
         return list(self._cities)
 
     @property
+    def models(self) -> list[str]:
+        return list(self._opening_stock)
+
+    @property
     def opening_stock(self) -> dict[str, dict[str, int]]:
         """What the store gets when it has no stock, and at a reset."""
         return self._opening_stock

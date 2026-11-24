@@ -5,7 +5,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import AfterValidator, BaseModel, Field, StringConstraints, field_validator
 
-from app.auth import AuthError, Claims
+from app.auth import AuthError, Claims, TokenValidator
 from app.data import DealerData, UnknownArticle, UnknownCity, UnknownModel, today
 from app.logging_setup import correlation_id
 from app.model import (
@@ -40,17 +40,21 @@ REFUSALS = {
 Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
 
 
-async def current_claims(request: Request) -> Claims:
+async def validated(request: Request, validator: TokenValidator) -> Claims:
     header = request.headers.get("Authorization", "")
     scheme, _, token = header.partition(" ")
     if scheme.lower() != "bearer" or not token.strip():
         raise HTTPException(401, "Missing bearer token")
     try:
-        return await request.app.state.validator.validate(header)
+        return await validator.validate(header)
     except AuthError as exc:
         if exc.status_code == 403:  # signed in. Anyone on the internet can get a 401.
             request.app.state.hub.add("refused", None, correlation_id=correlation_id.get())
         raise HTTPException(exc.status_code, exc.detail) from exc
+
+
+async def current_claims(request: Request) -> Claims:
+    return await validated(request, request.app.state.validator)
 
 
 async def ready_store(request: Request) -> Store:

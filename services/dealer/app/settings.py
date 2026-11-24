@@ -15,3 +15,4 @@ class Settings(BaseSettings):
     table_endpoint: str = ""
     table_name: str = "dealer"
     site_client_id: str = ""
+    site_dir: str = "/srv/site"  # the built page

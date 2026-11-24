@@ -18,6 +18,8 @@ from app.logging_setup import configure_logging, correlation_id
 from app.model import StoreUnavailable
 from app.routes import DATA_PATH, PARTS_STOCK_PATH, build_router
 from app.settings import Settings
+from app.site import build_site_router
+from app.staff import build_staff_router
 from app.store import Store, build_store
 from app.telemetry import annotate_span, configure_telemetry
 
@@ -89,6 +91,7 @@ def create_app(
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
+        redirect_slashes=False,
         lifespan=lifespan,
         exception_handlers={
             StoreUnavailable: store_unavailable,
@@ -119,6 +122,8 @@ def create_app(
             response = await call_next(request)
             status = response.status_code
             response.headers["X-Correlation-Id"] = cid
+            if request.url.path.startswith("/staff/"):  # names and addresses
+                response.headers["Cache-Control"] = "no-store"
             return response
         finally:
             logger.info(
@@ -132,6 +137,8 @@ def create_app(
             correlation_id.reset(token)
 
     app.include_router(build_router(data))
+    app.include_router(build_staff_router(data))
+    app.include_router(build_site_router(settings))
     return app
 
 

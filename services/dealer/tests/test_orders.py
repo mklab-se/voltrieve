@@ -73,7 +73,7 @@ async def client(app, auth_header):
         yield c
 
 
-async def make_offer(client, **changes) -> str:
+async def make_offer(client, /, **changes) -> str:
     r = await client.post("/orders/offers", json={**OFFER, **changes})
     assert r.status_code == 201, r.text
     return r.json()["offer"]
