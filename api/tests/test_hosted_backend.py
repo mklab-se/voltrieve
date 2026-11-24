@@ -388,15 +388,24 @@ async def test_a_failed_private_call_logs_the_status_the_error_type_and_the_fram
 
 
 @respx.mock
-async def test_a_failed_stored_call_still_logs_the_body(http, caplog):
-    respx.post(INVOKE_URL).respond(400, text="bad detail")
-
-    async def emit(event):
-        pass
-
+async def test_a_failed_stored_call_logs_the_status_and_not_the_body(http, caplog):
+    # Every request holds the name of the person, and the answer may echo the request.
+    respx.post(INVOKE_URL).mock(side_effect=lambda request: httpx.Response(400, content=request.content))
+    context = ctx(input_="what is the question")
+    context.user = UserContext("oid-anna", "anna@example.com", frozenset(), "Anna A", "web")
     with caplog.at_level("DEBUG"):
-        await make_backend(http).run_turn(ctx(), emit)
-    assert "bad detail" in caplog.text
+        await make_backend(http).run_turn(context, no_emit)
+    assert "HostedAgentError: HTTP 400" in caplog.text
+    assert "Anna A" not in caplog.text and "question" not in caplog.text
+
+
+@respx.mock
+async def test_a_stream_that_breaks_after_a_private_tool_is_logged_as_private(http, caplog):
+    called = ("trace", {"step": "server_tool_called", "component": "tools", "tool": "order", "private": True})
+    respx.post(INVOKE_URL).respond(200, content=sse(called, outcome("SECRET 1")))
+    with caplog.at_level("DEBUG"):
+        assert (await make_backend(http).run_turn(ctx(), no_emit)).status == "failed"
+    assert "The hosted agent call failed: HostedAgentError" in caplog.text and "SECRET 1" not in caplog.text
 
 
 async def no_emit(event):

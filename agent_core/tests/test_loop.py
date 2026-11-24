@@ -543,7 +543,7 @@ async def test_a_private_tool_is_in_no_event_and_no_log(user, events, caplog, ha
         for step in ("server_tool_called", "server_tool_returned")
     )
     assert called == {"step": "server_tool_called", "component": "tools", "detail": "order", "tool": "order",
-                      "iteration": 1}
+                      "iteration": 1, "private": True}
     assert set(returned) == {"step", "component", "detail", "tool", "duration_ms"}
     assert SECRET not in str([e.data for e in events.events])
     assert SECRET not in caplog.text
@@ -633,3 +633,22 @@ async def test_an_unknown_tool_shows_no_arguments(user, events):
 async def test_a_client_tool_does_not_make_the_turn_private(user, events):
     outcome = await run_turn(FakeModel([[FunctionCall("c2", "pick_file", "{}")]]), [], turn(user, [PICK_FILE]), events)
     assert outcome.private is False
+
+
+async def test_the_calls_from_the_first_private_one_say_that_the_turn_is_private(user, events):
+    order = ServerTool("order", "d", SCHEMA, echo, private=True, concurrent=False)
+
+    def call(name, n):
+        return FunctionCall(f"c{n}", name, '{"city": "x"}')
+
+    model = FakeModel([
+        [call("check_stock", 1)], [call("check_stock", 2), call("order", 3)], [call("check_stock", 4)], [TextDelta("ok")]
+    ])
+    given = turn(user)
+    await run_turn(model, [tool(), order], given, events)
+    called = [e.data for e in events.events if e.data.get("step") == "server_tool_called"]
+    # The second check_stock runs before the order, but the model had made both calls by then.
+    assert [(c["tool"], c.get("private")) for c in called] == [
+        ("check_stock", None), ("check_stock", True), ("order", True), ("check_stock", True)
+    ]
+    assert given.private and current_private.get() is False

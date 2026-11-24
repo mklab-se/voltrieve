@@ -130,6 +130,8 @@ async def _record(
 async def _run_server_tool(toolset, call, user, emit, iteration) -> tuple[str, int]:
     private = toolset.is_private(call.name)
     shown = {} if private else {"arguments": call.arguments}
+    if current_private.get():
+        shown["private"] = True  # a host that logs arguments and outputs stops here
     await emit(
         trace(
             "server_tool_called",
@@ -257,6 +259,7 @@ async def _run(model, server_tools, turn, emit, max_iterations) -> TurnOutcome:
                         # An error text from here on may quote the call or its output, so the
                         # rest of the turn is logged as a private one. run_turn resets it.
                         current_private.set(True)
+                        turn.private = True  # for a host that logs an error that escapes
                 elif isinstance(item, OutputItem):
                     output_items.append(item.raw)
                 elif isinstance(item, McpStarted):

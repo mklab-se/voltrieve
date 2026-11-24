@@ -33,17 +33,19 @@ _ADDRESS = re.compile(
     r"(?i:[^\W\d_]*(?:gatan?|v[äa]\u0308?g(?:en)?|torg(?:et)?|gr(?:ä|a\u0308)nd(?:en)?"
     r"|all(?:é|e\u0301)n?|stigen|backen|kajen|esplanaden)"
     r"\s{0,3}(?:nr\.?\s{0,3})?\d{1,4}(?!\d))"
-    r"(?!(?:-\d{1,4})?\s{0,2}(?:km|mil|m|kr|SEK|sek)(?!\w))"
+    r"(?!(?:-\d{1,4})?\s{0,2}(?:km|mil|kr|SEK|sek)(?!\w))"
     r"(?:[A-Za-z](?!\w)|\s[A-Z](?!\w))?(?:-\d{1,4}[A-Za-z]?(?!\w))?"
     r"(?i:,?\s(?:lgh|lägenhet|apt)\.?\s?\d{1,4})?"
     rf"(?:,?\s{{1,2}}{_POSTAL_DIGITS}\s?\d{{2}}(?!\w))?"
 )
 # With its space, so a price or a part number (12500, 529 000, VP-10007) stays readable, and not before
-# a tyre's rim, a unit or a count (245 45 R20, 345 40 Nm, 400 20-inch).
+# a tyre's rim, a unit or a count (245 45 R20, 345 40 Nm, 400 20-inch). A single letter before a name is
+# part of a city (421 30 V Frölunda).
 _POSTAL_CODE = re.compile(
     rf"(?<![\w-])(?<!\d\s){_POSTAL_DIGITS}\s\d{{2}}(?![\w-])(?!\s\d)(?!\s?%)"
-    r"(?!\s(?i:R\d{2}|nm|v|volt|a|w|kw|kwh|km|mil|m|mm|cm|kg|kr|sek|bar|hk|hp|st|pcs"
+    r"(?!\s(?i:R\d{2}|nm|volt|kw|kwh|km|mil|mm|cm|kg|kr|sek|bar|hk|hp|st|pcs"
     r"|inch(?:es)?|tum|percent|procent)(?!\w))"
+    r"(?!\s(?i:[vawm])(?!\w)(?!\s[A-ZÅÄÖ]))"
 )
 
 MAX_ERRORS = 8

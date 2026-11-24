@@ -213,6 +213,8 @@ class _Run:
             elapsed = round((time.perf_counter() - self._start) * 1000, 1)
             event = AgentEvent("trace", {**event.data, "elapsed_ms": elapsed})
         if event.type == "trace":
+            # From the first private tool on, the rest of the request is private.
+            self.private = self.private or event.data.get("private") is True
             self._record(event.data)
         if event.type == "client_tool_calls":
             # Held until the paused turn is stored, so a fast client never beats the store.
@@ -429,7 +431,8 @@ class TurnService:
                 private_tool=job.private_tool,
             )
             outcome = await backend.run_turn(ctx, run.emit)
-            job.private_tool = job.private_tool or outcome.private
+            run.private = run.private or outcome.private
+            job.private_tool = job.private_tool or run.private
             usage = merge_usage(job.usage, outcome.usage)
             if outcome.status == "paused":
                 # No await between releasing the conversation and storing the pause, so a
@@ -479,7 +482,7 @@ class TurnService:
                 # conversation), so check it before its next use.
                 self.store.mark_dirty(conversation_id)
         except Exception:
-            log_exception(logger, "Turn failed", private=job.private)
+            log_exception(logger, "Turn failed", private=run.private)
             if conversation_id:
                 self.store.mark_dirty(conversation_id)
             if run.recorder is not None:
