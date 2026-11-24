@@ -110,7 +110,6 @@ class TableStore:
         return await self._until_done(attempt)
 
     async def save_offer(self, offer: Offer) -> None:
-        await self.purge(offer.created)
         await self._until_done(lambda: self._commit([("create", _row(offer, "offer", offer.id))]))
 
     async def place(self, offer_id: str, customer: str, turn: str, now: datetime) -> tuple[Order, bool]:

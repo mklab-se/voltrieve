@@ -3,15 +3,16 @@
 import asyncio
 import json
 from contextlib import asynccontextmanager
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from test_orders import ADDRESS, NAME, UNAVAILABLE, BrokenStore, Clock, log, make_offer, place
+from test_orders import ADDRESS, NAME, UNAVAILABLE, BrokenStore, Clock, Failing, log, make_offer, place
 
 from app import staff
 from app.hub import QUEUE_SIZE
 from app.main import create_app
+from app.store import MemoryStore
 
 ROUTES = [
     ("GET", "/staff/state"), ("POST", "/staff/stock"), ("POST", "/staff/orders/VO-1001/deliver"),
@@ -134,7 +135,7 @@ async def test_the_stock(app, rep):
 @pytest.mark.parametrize(
     "changes",
     [{"model": "Marker"}, {"city": "Marker"}, {"change": 2}, {"change": 0}, {"change": "1"},
-     {"change": 1.5}, {"change": None}],
+     {"change": True}, {"change": 1.0}, {"change": 1.5}, {"change": None}],
 )  # fmt: skip
 async def test_a_bad_stock_change_is_422(app, rep, changes):
     r = await rep.post("/staff/stock", json={"model": "fjord", "city": "Malmö", "change": 1, **changes})
@@ -198,6 +199,53 @@ async def test_a_reset(app, rep, runa):
     assert state["orders"] == [] and state["stock"]["fjord"]["Malmö"] == 3
     assert [(e["kind"], e["who"]) for e in state["log"]] == [("reset", "Bo Exempel")]
     assert [queue.get_nowait()[0] for _ in range(queue.qsize())] == ["clear", "log", "changed"]
+
+
+async def test_an_entry_that_arrives_during_a_reset_is_kept(settings, validator, staff_validator, staff_token):
+    class Meanwhile(MemoryStore):
+        async def reset(self, stock):
+            app.state.hub.add("order", "Runa", number="VO-1009")
+            await super().reset(stock)
+
+    app = create_app(settings, validator, staff_validator=staff_validator, store=Meanwhile())
+    app.state.hub.add("prices", "Runa")
+    async with client_of(app, staff_token()) as c:
+        assert (await c.post("/staff/reset")).status_code == 204
+    assert [e["kind"] for e in log(app)] == ["order", "reset"]
+
+
+WRITES = [
+    ("POST", "/staff/stock", {"model": "fjord", "city": "Malmö", "change": 1}),
+    ("POST", "/staff/orders/VO-1001/deliver", {"city": "Malmö"}),
+    ("DELETE", "/staff/orders/VO-1001", None),
+    ("POST", "/staff/reset", None),
+]
+
+
+@pytest.mark.parametrize("method, path, body", WRITES)
+async def test_a_write_that_may_have_been_saved_tells_the_pages(app, rep, method, path, body):
+    await rep.get("/staff/state")  # seeds
+    app.state.store = BrokenStore()
+    queue = app.state.hub.subscribe()
+    r = await rep.request(method, path, json=body)
+    assert (r.status_code, r.json()) == (503, {"detail": UNAVAILABLE})
+    items = [queue.get_nowait()[0] for _ in range(queue.qsize())]
+    assert items == (["clear", "changed"] if path.endswith("reset") else ["changed"])
+    assert log(app) == []
+
+
+async def test_a_failing_purge_does_not_close_the_state(settings, validator, staff_validator, staff_token, clock):
+    store = Failing()
+    app = create_app(settings, validator, staff_validator=staff_validator, store=store, clock=clock)
+    async with client_of(app, staff_token()) as c:
+        for _ in range(3):
+            assert (await c.get("/staff/state")).status_code == 200
+        assert store.purges == 1
+        clock.now += timedelta(minutes=5)
+        store.away = False
+        for _ in range(3):
+            assert (await c.get("/staff/state")).status_code == 200
+    assert store.purges >= 4  # each read of the state purges, once it works
 
 
 async def test_each_change_is_one_entry_and_one_changed(app, rep, runa):
@@ -334,6 +382,30 @@ async def test_the_stream_ends_after_30_minutes(app, staff_token, clock, monkeyp
         clock.now += timedelta(seconds=1)
         await asyncio.wait_for(asyncio.shield(stream.task), 5)
         assert followers(app) == 0
+
+
+async def test_the_stream_ends_with_the_token(app, staff_token, clock, monkeypatch):
+    monkeypatch.setattr(staff, "KEEPALIVE_SECONDS", 0.01)
+    clock.now = datetime.now(UTC)
+    token = staff_token(exp=int(clock.now.timestamp()) + 120)
+    async with open_stream(app, token) as stream:
+        clock.now += timedelta(seconds=110)
+        seen = stream.text.count("keepalive")
+        await stream.until(lambda text: text.count("keepalive") > seen + 2)
+        assert not stream.task.done()
+        clock.now += timedelta(seconds=10)
+        await asyncio.wait_for(asyncio.shield(stream.task), 5)
+
+
+async def test_the_stream_does_not_wait_past_its_end(app, staff_token, clock):
+    """With the real keepalive of 15 s."""
+    clock.now = datetime.now(UTC).replace(microsecond=0)  # as exact as the time in a token
+    async with open_stream(app, staff_token(exp=int(clock.now.timestamp()) + 60)) as stream:
+        clock.now += timedelta(seconds=59.9)
+        app.state.hub.changed()  # wakes it, and then it waits for what is left
+        await stream.until(lambda text: "changed" in text)
+        clock.now += timedelta(seconds=1)
+        await asyncio.wait_for(asyncio.shield(stream.task), 5)
 
 
 async def test_the_stream_ends_after_30_minutes_also_when_busy(app, staff_token, clock):

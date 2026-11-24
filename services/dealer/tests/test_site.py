@@ -20,7 +20,8 @@ def dist(tmp_path):
     dist = tmp_path / "dist"
     (dist / "assets" / "deep").mkdir(parents=True)
     (dist / "index.html").write_text("<!doctype html><title>å</title>", encoding="utf-8")
-    for name in ("x.js", "theme.js", "index-B7dK_x-9.js", "index-DiwrgTda.css", "msal-redirect.js", "deep/y.js"):
+    for name in ("x.js", "theme.js", "index-B7dK_x-9.js", "index-DiwrgTda.css", "msal-redirect.js", "deep/y.js",
+                 "photo-B7dK_x-9.png", "index-B7dKåx-9.js", "index.B7dK_x-9.js"):
         (dist / "assets" / name).write_text(f"/* {name} */")
     (dist / "notes.txt").write_text("not for the page")
     (tmp_path / "secret.txt").write_text("secret")
@@ -62,6 +63,9 @@ async def test_the_page(client):
         ("index-B7dK_x-9.js", "text/javascript", LONG),
         ("index-DiwrgTda.css", "text/css", LONG),
         ("deep/y.js", "text/javascript", "no-cache"),
+        ("photo-B7dK_x-9.png", "image/png", "no-cache"),
+        ("index.B7dK_x-9.js", "text/javascript", "no-cache"),
+        ("index-B7dKåx-9.js", "text/javascript", "no-cache"),
     ],
 )
 async def test_an_asset(client, name, kind, cache):

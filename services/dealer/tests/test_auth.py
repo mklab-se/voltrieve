@@ -1,3 +1,5 @@
+import time
+
 import jwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -182,6 +184,7 @@ STAFF = {"scp": "manage_as_user", "name": "Bo Exempel", "preferred_username": "b
 async def test_a_staff_token(staff_validator, make_token):
     claims = await staff_validator.validate(make_token(roles=["Dealer.Manage"], claims=STAFF))
     assert claims.name == "Bo Exempel"
+    assert 0 < claims.expires - time.time() <= 300
 
 
 @pytest.mark.parametrize(

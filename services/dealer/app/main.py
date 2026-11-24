@@ -1,11 +1,8 @@
 import asyncio
 import logging
-import time
-import re
-import uuid
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -13,41 +10,50 @@ from fastapi.responses import JSONResponse
 
 from app.auth import TokenValidator
 from app.data import DealerData
+from app.guard import RequestGuard
 from app.hub import Hub, utc_now
-from app.logging_setup import configure_logging, correlation_id
+from app.logging_setup import configure_logging
 from app.model import StoreUnavailable
 from app.routes import DATA_PATH, PARTS_STOCK_PATH, build_router
 from app.settings import Settings
 from app.site import build_site_router
 from app.staff import build_staff_router
 from app.store import Store, build_store
-from app.telemetry import annotate_span, configure_telemetry
+from app.telemetry import configure_telemetry, instrument_app
 
 logger = logging.getLogger("app.access")
-CORRELATION_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 
-
+PURGE_AGAIN = timedelta(minutes=5)  # after a purge that failed
 UNAVAILABLE = "The dealer system is not available right now."
 
 
-def preparer(store: Store, data: DealerData, clock: Callable[[], datetime]) -> Callable[[], Awaitable[None]]:
-    """Seeds and purges, each until it has worked once. Two at the same time do no harm. Only the seeding is
-    needed for an answer."""
-    seeded = purged = False
+class Keeper:
+    """Seeds and purges the store. Only the seeding is needed for an answer, so a purge that fails is logged
+    and nothing else."""
 
-    async def ready() -> None:
-        nonlocal seeded, purged
-        if not seeded:
-            await store.seed(data.opening_stock)
-            seeded = True
-        if not purged:
-            try:
-                await store.purge(clock())
-                purged = True
-            except StoreUnavailable as exc:
-                logger.warning("The old orders were not removed: %s", type(exc).__name__)
+    def __init__(self, store: Store, data: DealerData, clock: Callable[[], datetime]):
+        self._store, self._data, self._clock = store, data, clock
+        self._seeded = self._purged = False
+        self._failed: datetime | None = None
 
-    return ready
+    async def ready(self) -> None:
+        """Before the first use, until each has worked once. Two at the same time do no harm."""
+        if not self._seeded:
+            await self._store.seed(self._data.opening_stock)
+            self._seeded = True
+        if not self._purged:
+            await self.purge()
+
+    async def purge(self) -> None:
+        now = self._clock()
+        if self._failed and now - self._failed < PURGE_AGAIN:
+            return
+        try:
+            await self._store.purge(now)
+            self._purged, self._failed = True, None
+        except StoreUnavailable as exc:
+            self._failed = now
+            logger.warning("The old orders were not removed: %s", type(exc).__name__)
 
 
 async def store_unavailable(_: Request, __: StoreUnavailable) -> JSONResponse:
@@ -75,11 +81,11 @@ def create_app(
     configure_telemetry(settings.applicationinsights_connection_string)
     data = DealerData.load(DATA_PATH, PARTS_STOCK_PATH)
     store = store or build_store(settings)
-    ready = preparer(store, data, clock)
+    keeper = Keeper(store, data, clock)
 
     async def prepare() -> None:
         try:
-            await ready()
+            await keeper.ready()
         except Exception as exc:  # tried again at the first use
             logger.warning("The store was not ready at startup: %s", type(exc).__name__)
 
@@ -104,7 +110,7 @@ def create_app(
             RequestValidationError: invalid_request,
         },
     )
-    app.state.data, app.state.store, app.state.ready = data, store, ready
+    app.state.data, app.state.store, app.state.keeper = data, store, keeper
     app.state.clock, app.state.hub = clock, Hub(clock)
     app.state.validator = validator or TokenValidator(
         settings.tenant_id, settings.dealer_client_id, "Dealer.Access"
@@ -116,35 +122,12 @@ def create_app(
         required_scope="manage_as_user",
     )
 
-    @app.middleware("http")
-    async def correlation_and_access_log(request: Request, call_next):
-        supplied = request.headers.get("X-Correlation-Id", "")
-        cid = supplied if CORRELATION_ID_PATTERN.fullmatch(supplied) else str(uuid.uuid4())
-        token = correlation_id.set(cid)
-        annotate_span(correlation_id=cid)
-        start = time.perf_counter()
-        status = 500
-        try:
-            response = await call_next(request)
-            status = response.status_code
-            response.headers["X-Correlation-Id"] = cid
-            if request.url.path.startswith("/staff/"):  # names and addresses
-                response.headers["Cache-Control"] = "no-store"
-            return response
-        finally:
-            logger.info(
-                "request",
-                extra={
-                    "path": request.url.path,
-                    "status": status,
-                    "elapsed_ms": round((time.perf_counter() - start) * 1000, 2),
-                },
-            )
-            correlation_id.reset(token)
-
+    app.add_middleware(RequestGuard)
     app.include_router(build_router(data))
     app.include_router(build_staff_router(data))
     app.include_router(build_site_router(settings))
+    if settings.applicationinsights_connection_string:
+        instrument_app(app)
     return app
 
 

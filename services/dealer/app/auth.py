@@ -27,6 +27,7 @@ class Claims:
     app_id: str
     roles: list[str]
     name: str = ""  # of a person, for the log and the page
+    expires: int = 0  # seconds since 1970
 
 
 class TokenValidator:
@@ -144,7 +145,7 @@ class TokenValidator:
         if not isinstance(oid, str) or not oid:
             raise AuthError(401, "Invalid token")
         app_id = payload.get("azp") or payload.get("appid") or ""
-        return Claims(oid, str(app_id), [str(r) for r in roles], _name(payload))
+        return Claims(oid, str(app_id), [str(r) for r in roles], _name(payload), int(payload["exp"]))
 
     def _is_right_kind(self, payload: dict) -> bool:
         if self._required_scope is None:

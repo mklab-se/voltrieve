@@ -15,6 +15,7 @@ from app.data import today
 from app.main import create_app
 from app.model import StoreUnavailable
 from app.store import MemoryStore
+from app.telemetry import instrument_app
 
 ADDRESS = "Marköravägen 7, 753 20 Uppsala"
 NAME = "Ada Markörsson"
@@ -341,7 +342,7 @@ async def test_startup_seeds_and_purges(settings, validator, auth_header, clock)
         clock.now += timedelta(days=30)
         restarted = create_app(settings, validator, store=store, clock=clock)
         async with restarted.router.lifespan_context(restarted):
-            await restarted.state.ready()
+            await restarted.state.keeper.ready()
             assert order.status_code == 201 and await store.orders() == []
             assert (await store.stock())["fjord"]["Malmö"] == 3
 
@@ -360,31 +361,51 @@ async def test_a_store_that_is_away_at_startup_is_tried_again(settings, validato
     assert "StoreUnavailable" in capsys.readouterr().out
 
 
-async def test_a_failing_purge_closes_neither_the_stock_nor_the_terms(settings, validator, auth_header, capsys):
-    class NoPurge(MemoryStore):
-        away, purges, seeds = True, 0, 0
+class Failing(MemoryStore):
+    """A store that cannot purge at first."""
 
-        async def seed(self, stock):
-            self.seeds += 1
-            await super().seed(stock)
+    away, purges, seeds = True, 0, 0
 
-        async def purge(self, now):
-            self.purges += 1
-            if self.away:
-                raise StoreUnavailable("the store gave no answer")
-            await super().purge(now)
+    async def seed(self, stock):
+        self.seeds += 1
+        await super().seed(stock)
 
-    store = NoPurge()
-    app = create_app(settings, validator, store=store)
+    async def purge(self, now):
+        self.purges += 1
+        if self.away:
+            raise StoreUnavailable("the store gave no answer")
+        await super().purge(now)
+
+
+async def test_a_failing_purge_closes_nothing(settings, validator, auth_header, clock, capsys):
+    store = Failing()
+    app = create_app(settings, validator, store=store, clock=clock)
     async with client_of(app, auth_header) as c:
         assert (await c.get("/stock")).status_code == 200
         assert (await c.get("/orders/terms", params={"model": "fjord"})).status_code == 200
-        assert (store.seeds, store.purges) == (1, 2)  # tried again until it works, and the seed is done
+        assert (await place(c, await make_offer(c))).status_code == 201
+        assert (store.seeds, store.purges) == (1, 1)
         assert "The old orders were not removed: StoreUnavailable" in capsys.readouterr().out
+        clock.now += timedelta(minutes=5) - timedelta(seconds=1)
+        await c.get("/stock")
+        assert store.purges == 1  # not tried again yet
+        clock.now += timedelta(seconds=1)
+        await c.get("/stock")
+        await c.get("/stock")
+        assert store.purges == 2
         store.away = False
+        clock.now += timedelta(minutes=5)
         for _ in range(2):
             assert (await c.get("/stock")).status_code == 200
-        assert (store.seeds, store.purges) == (1, 3)
+        assert (store.seeds, store.purges) == (1, 3)  # it worked, so a read of the stock does not purge again
+
+
+async def test_the_next_offer_removes_the_expired_ones(app, client, clock):
+    old = await make_offer(client)
+    clock.now += timedelta(minutes=30)
+    await make_offer(client)
+    clock.now -= timedelta(minutes=30)
+    assert (await place(client, old)).status_code == 404  # gone, not just expired
 
 
 async def test_the_lifespan_closes_the_store(settings, validator):
@@ -406,7 +427,7 @@ async def test_nothing_personal_reaches_a_log_line_or_a_span(settings, validator
     provider = TracerProvider()
     provider.add_span_processor(SimpleSpanProcessor(exporter))
     app = create_app(settings, validator, clock=clock)
-    FastAPIInstrumentor.instrument_app(app, tracer_provider=provider)
+    instrument_app(app, tracer_provider=provider)
     try:
         async with client_of(app, auth_header) as c:
             await c.get("/orders/terms", params={"model": "fjord"})

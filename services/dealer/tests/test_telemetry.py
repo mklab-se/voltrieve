@@ -27,8 +27,28 @@ def test_app_starts_with_and_without_connection_string(monkeypatch, settings, va
     create_app(settings, validator)
     assert calls == []
     with_telemetry = Settings(applicationinsights_connection_string="InstrumentationKey=k")
-    create_app(with_telemetry, validator)
-    assert calls == [{"connection_string": "InstrumentationKey=k", "enable_live_metrics": False}]
+    app = create_app(with_telemetry, validator)
+    FastAPIInstrumentor.uninstrument_app(app)
+    assert calls == [
+        {
+            "connection_string": "InstrumentationKey=k",
+            "enable_live_metrics": False,
+            "instrumentation_options": {"fastapi": {"enabled": False}},
+        }
+    ]
+
+
+def test_the_app_is_instrumented_with_a_connection_string_only(monkeypatch, settings, validator):
+    """By us: the distro replaces fastapi.FastAPI, which is imported by then, and cannot leave out spans."""
+    monkeypatch.setattr("azure.monitor.opentelemetry.configure_azure_monitor", lambda **_: None)
+    apps = []
+    monkeypatch.setattr(
+        "app.telemetry.FastAPIInstrumentor.instrument_app", lambda app, **options: apps.append((app, options))
+    )
+    create_app(settings, validator)
+    assert apps == []
+    app = create_app(Settings(applicationinsights_connection_string="InstrumentationKey=k"), validator)
+    assert apps == [(app, {"exclude_spans": ["receive", "send"]})]
 
 
 async def test_inbound_traceparent_is_honoured_and_correlation_id_recorded(settings, validator):
@@ -36,8 +56,7 @@ async def test_inbound_traceparent_is_honoured_and_correlation_id_recorded(setti
     provider = TracerProvider()
     provider.add_span_processor(SimpleSpanProcessor(exporter))
     app = create_app(settings, validator)
-    # What the Azure Monitor distro does to FastAPI apps, with an in-memory exporter.
-    FastAPIInstrumentor.instrument_app(app, tracer_provider=provider)
+    telemetry.instrument_app(app, tracer_provider=provider)
     try:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
             r = await c.get(
@@ -49,6 +68,35 @@ async def test_inbound_traceparent_is_honoured_and_correlation_id_recorded(setti
     spans = [s for s in exporter.get_finished_spans() if s.attributes.get("correlation_id")]
     assert spans and all(f"{s.context.trace_id:032x}" == TRACE_ID for s in spans)
     assert spans[0].attributes["correlation_id"] == "cid-7"
+
+
+async def test_a_request_is_one_span_however_much_it_sends(settings, validator):
+    from fastapi.responses import StreamingResponse
+
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    app = create_app(settings, validator)
+
+    @app.post("/parts")
+    async def parts(body: dict):
+        return StreamingResponse(iter(["part"] * 50))
+
+    @app.get("/broken")
+    async def broken():
+        raise RuntimeError("Markörgatan 7")
+
+    telemetry.instrument_app(app, tracer_provider=provider)
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+            assert (await c.post("/parts", json={})).text == "part" * 50
+            assert (await c.get("/broken")).status_code == 500
+            assert (await c.post("/parts", content=b"x" * 70_000)).status_code == 413
+    finally:
+        FastAPIInstrumentor.uninstrument_app(app)
+    spans = exporter.get_finished_spans()
+    assert [span.name for span in spans] == ["POST /parts", "GET /broken", "POST /parts"]
+    assert "Mark" not in "".join(span.to_json() for span in spans)
 
 
 async def test_logs_keep_the_correlation_id(settings, validator, capsys):

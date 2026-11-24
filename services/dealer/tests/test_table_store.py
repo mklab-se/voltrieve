@@ -37,6 +37,7 @@ async def store(table):
 def calls(store):
     return {
         "seed": lambda: store.seed(STOCK),
+        "purge": lambda: store.purge(NOW),
         "stock": lambda: store.stock(),
         "change_stock": lambda: store.change_stock("spark", "Malmö", 1),
         "save_offer": lambda: store.save_offer(an_offer(address=MARKER)),
@@ -45,7 +46,6 @@ def calls(store):
         "deliver": lambda: store.deliver("VO-1001", "Malmö", "Bo", NOW),
         "delete": lambda: store.delete("VO-1001"),
         "reset": lambda: store.reset(STOCK),
-        "purge": lambda: store.purge(NOW),
     }
 
 

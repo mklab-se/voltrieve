@@ -2,23 +2,23 @@
 
 import asyncio
 import json
-from collections.abc import AsyncIterator, Callable
-from datetime import datetime, timedelta
+from collections.abc import AsyncIterator, Awaitable, Callable
+from datetime import UTC, datetime, timedelta
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from app.auth import Claims
 from app.data import DealerData
 from app.hub import Hub
 from app.logging_setup import correlation_id
-from app.model import AlreadyDelivered, NotFound, Order, OutOfStock
+from app.model import AlreadyDelivered, NotFound, Order, OutOfStock, StoreUnavailable
 from app.routes import ready_store, validated
 
 KEEPALIVE_SECONDS = 15.0
-STREAM_TIME = timedelta(minutes=30)  # then the page comes back with a fresh token
+STREAM_TIME = timedelta(minutes=30)  # or as long as the token: the page comes back with a fresh one
 NO_NAME = "Representative"
 
 
@@ -34,6 +34,13 @@ class StockChange(BaseModel):
     city: str
     change: Literal[1, -1]
 
+    @field_validator("change", mode="before")
+    @classmethod
+    def whole_number(cls, value: object) -> object:
+        if type(value) is not int:  # true and 1.0 are equal to 1
+            raise ValueError("change must be 1 or -1")
+        return value
+
 
 class Delivery(BaseModel):
     city: str
@@ -45,15 +52,24 @@ def order_json(order: Order) -> dict:
     }
 
 
-async def follow(hub: Hub, clock: Callable[[], datetime]) -> AsyncIterator[str]:
+async def writing[T](request: Request, write: Awaitable[T]) -> T:
+    """A write that failed may have been saved, so the pages look again."""
+    try:
+        return await write
+    except StoreUnavailable:
+        request.app.state.hub.changed()
+        raise
+
+
+async def follow(hub: Hub, clock: Callable[[], datetime], expires: int) -> AsyncIterator[str]:
     """What happens from now on, until the time is up or the hub dropped a reader that was too slow."""
-    end = clock() + STREAM_TIME
+    end = min(clock() + STREAM_TIME, datetime.fromtimestamp(expires, UTC))
     queue = hub.subscribe()
     try:
         yield ": open\n\n"
-        while clock() < end and hub.subscribed(queue):
+        while (left := (end - clock()).total_seconds()) > 0 and hub.subscribed(queue):
             try:
-                name, data = await asyncio.wait_for(queue.get(), KEEPALIVE_SECONDS)
+                name, data = await asyncio.wait_for(queue.get(), min(left, KEEPALIVE_SECONDS))
             except TimeoutError:
                 yield ": keepalive\n\n"
             else:
@@ -81,7 +97,7 @@ def build_staff_router(data: DealerData) -> APIRouter:
     @router.get("/state")
     async def state(request: Request) -> dict:
         store = await ready_store(request)
-        await store.purge(request.app.state.clock())
+        await request.app.state.keeper.purge()
         rows = data.stock_rows(await store.stock(), None, None)
         stock: dict[str, dict[str, int]] = {}
         for row in rows:
@@ -101,7 +117,7 @@ def build_staff_router(data: DealerData) -> APIRouter:
         check(body.model, body.city)
         store = await ready_store(request)
         try:
-            left = await store.change_stock(body.model, body.city, body.change)
+            left = await writing(request, store.change_stock(body.model, body.city, body.change))
         except OutOfStock:
             raise HTTPException(409, f"There is none in stock in {body.city}.") from None
         except NotFound:
@@ -115,7 +131,7 @@ def build_staff_router(data: DealerData) -> APIRouter:
         store = await ready_store(request)
         by = claims.name or NO_NAME
         try:
-            order = await store.deliver(number, body.city, by, request.app.state.clock())
+            order = await writing(request, store.deliver(number, body.city, by, request.app.state.clock()))
         except AlreadyDelivered:
             raise HTTPException(409, "This order is already delivered.") from None
         except OutOfStock:
@@ -129,7 +145,7 @@ def build_staff_router(data: DealerData) -> APIRouter:
     async def delete(request: Request, number: str, claims: Representative) -> None:
         store = await ready_store(request)
         try:
-            order = await store.delete(number)
+            order = await writing(request, store.delete(number))
         except NotFound:
             raise HTTPException(404, "Unknown order.") from None
         done(request, "deleted", claims, model=order.model, number=order.number)
@@ -137,15 +153,16 @@ def build_staff_router(data: DealerData) -> APIRouter:
     @router.post("/reset", status_code=204)
     async def reset(request: Request, claims: Representative) -> None:
         store = await ready_store(request)
-        await store.reset(data.opening_stock)
-        request.app.state.hub.clear()
+        request.app.state.hub.clear()  # first, so that what arrives meanwhile is kept
+        await writing(request, store.reset(data.opening_stock))
         done(request, "reset", claims)
 
     @router.get("/events")
-    async def events(request: Request) -> StreamingResponse:
-        state = request.app.state
+    async def events(request: Request, claims: Representative) -> StreamingResponse:
         return StreamingResponse(
-            follow(state.hub, state.clock), media_type="text/event-stream", headers={"X-Accel-Buffering": "no"}
+            follow(request.app.state.hub, request.app.state.clock, claims.expires),
+            media_type="text/event-stream",
+            headers={"X-Accel-Buffering": "no"},
         )
 
     return router

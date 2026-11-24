@@ -58,7 +58,7 @@ async def current_claims(request: Request) -> Claims:
 
 
 async def ready_store(request: Request) -> Store:
-    await request.app.state.ready()
+    await request.app.state.keeper.ready()
     return request.app.state.store
 
 
@@ -193,6 +193,7 @@ def build_router(data: DealerData) -> APIRouter:
             **body.model_dump(),
         )
         store = await ready_store(request)
+        await request.app.state.keeper.purge()
         await store.save_offer(offer)
         note(request, "offer", model=offer.model, client=offer.client)
         return {

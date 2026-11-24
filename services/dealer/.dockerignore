@@ -5,3 +5,4 @@ tests
 *.pyc
 site/node_modules
 site/dist
+site/.env*

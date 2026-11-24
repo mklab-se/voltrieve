@@ -227,14 +227,6 @@ async def test_an_offer_expires_after_30_minutes(store):
     assert await store.place(placed.id, "customer-1", "turn-2", half_past) == (order, False)
 
 
-async def test_the_next_offer_removes_the_expired_ones(store):
-    old = an_offer()
-    await store.save_offer(old)
-    await store.save_offer(an_offer(created=NOW + timedelta(minutes=30)))
-    with pytest.raises(NotFound):  # gone, not just expired
-        await store.place(old.id, "customer-1", "turn-2", NOW)
-
-
 async def test_delivery_takes_one_car_from_the_city(store):
     _, order = await an_order(store)
     later = NOW + timedelta(hours=1)

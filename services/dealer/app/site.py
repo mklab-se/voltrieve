@@ -21,7 +21,7 @@ HEADERS = {
 }
 FOREVER = {**HEADERS, "Cache-Control": "public, max-age=31536000, immutable"}
 # The build puts a hash in a name, as in index-B7dK_x-9.js. A word is not a hash.
-HASHED = re.compile(r".+-(?=[\w-]*[A-Z0-9])[\w-]{8}\.\w+")
+HASHED = re.compile(r".+-(?=[a-z_-]*[A-Z0-9])[A-Za-z0-9_-]{8}\.(js|css)")
 TYPES = {
     ".html": "text/html; charset=utf-8",
     ".js": "text/javascript; charset=utf-8",

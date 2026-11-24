@@ -32,8 +32,7 @@ class Store(Protocol):
     async def change_stock(self, model: str, city: str, change: int) -> int:
         """The new number. Raises NotFound or OutOfStock."""
 
-    async def save_offer(self, offer: Offer) -> None:
-        """Also purges, as of the time the offer was made."""
+    async def save_offer(self, offer: Offer) -> None: ...
 
     async def place(self, offer_id: str, customer: str, turn: str, now: datetime) -> tuple[Order, bool]:
         """The order, and whether it is new. Raises NotFound, SameTurn or OfferExpired."""
@@ -79,7 +78,6 @@ class MemoryStore:
         return self._stock[model][city]
 
     async def save_offer(self, offer: Offer) -> None:
-        await self.purge(offer.created)
         self._offers[offer.id] = offer
 
     async def place(self, offer_id: str, customer: str, turn: str, now: datetime) -> tuple[Order, bool]:
