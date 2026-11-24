@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import traceback
@@ -10,6 +11,8 @@ from voltrieve_insights import conversations
 from voltrieve_insights.groups import (
     BATCH,
     MAX_NAME,
+    MAX_OUTPUT,
+    MAX_PREVIOUS,
     MAX_SENT,
     SCHEMA,
     SYSTEM,
@@ -18,7 +21,7 @@ from voltrieve_insights.groups import (
     PersonalDataError,
     group,
 )
-from voltrieve_insights.labels import Labelled
+from voltrieve_insights.labels import Labelled, Model, ModelError
 
 LANGUAGE = "https://language.test"
 URL_PATH = "/language/:analyze-text"
@@ -41,8 +44,9 @@ class FakeModel:
         self.answer = answer
         self.calls = []
 
-    async def ask(self, system, data, schema):
+    async def ask(self, system, data, schema, max_output=2_000):
         body = json.loads(data)
+        self.max_output = max_output
         self.calls.append((system, body, schema))
         return {"groups": self.answer(len(self.calls) - 1, body)}
 
@@ -355,3 +359,138 @@ async def test_a_failed_check_fails_the_run(mock, pii):
     model = FakeModel(lambda n, b: [one("Fine", [0])])
     with pytest.raises(PersonalDataError):
         await group(model, pii, [item("a")], {})
+
+
+# --- fix round 1 ---
+
+
+def test_output_limit_fits_300_intents():
+    assert MAX_OUTPUT == 16_000
+
+
+async def test_big_limit_and_topic_are_sent():
+    model = FakeModel(lambda n, b: [one("Fine", [0])])
+    await group(model, FakePii(), [item("a", "fault")], {})
+    assert model.max_output == MAX_OUTPUT
+    assert model.calls[0][1]["topic"] == "fault"
+    assert "topic" in SYSTEM
+
+
+async def test_normalised_text_is_judged_sent_and_kept():
+    items = [item("a"), item("b"), item("c")]
+    model = FakeModel(lambda n, b: [one("An\u200bna Svens\u202eson", [0]), one("\uff28ome  charging", [1]), one("Ok", [2])])
+    pii = FakePii(bad={"Anna Svensson"})
+    out = await group(model, pii, items, {})
+    assert sorted(n for batch in pii.asked for n in batch) == ["Anna Svensson", "Home charging", "Ok"]
+    assert [name for _, name in out] == [UNNAMED, "Home charging", "Ok"]
+
+
+async def test_zero_width_alone_and_other_bad_characters_are_unnamed():
+    items = [item("a"), item("b"), item("c"), item("d")]
+    model = FakeModel(lambda n, b: [one("\u200b", [0]), one("Bad\x00name", [1]), one("Lone\ud800", [2]), one("Fine", [3])])
+    pii = FakePii()
+    out = await group(model, pii, items, {})
+    assert [name for _, name in out] == [UNNAMED, UNNAMED, UNNAMED, "Fine"]
+    assert [n for batch in pii.asked for n in batch] == ["Fine"]
+
+
+async def test_surrogate_is_in_no_repr_or_traceback():
+    model = FakeModel(lambda n, b: [one("Lone\ud800" + SECRET, [0])])
+    out = await group(model, FakePii(), [item("a")], {})
+    assert out[0][1] == UNNAMED
+    assert "\ud800" not in repr(out) and SECRET not in repr(out)
+    fine = FakeModel(lambda n, b: [one("Fine", [0])])
+    with pytest.raises(PersonalDataError) as e:
+        await group(fine, FailingPii(), [item("a\ud800")], {})
+    assert "\ud800" not in "".join(traceback.format_exception(e.value))
+
+
+async def test_failure_cancels_other_topics_and_nothing_is_sent_after():
+    first = asyncio.Event()
+
+    class Model2:
+        def __init__(self):
+            self.calls = []
+
+        async def ask(self, system, data, schema, max_output=2_000):
+            body = json.loads(data)
+            self.calls.append(body["topic"])
+            if body["topic"] == "fault":
+                raise ModelError("fixed")
+            await asyncio.sleep(0.05)
+            first.set()
+            return {"groups": [one("G", [0])]}
+
+    model = Model2()
+    items = [item("a", "fault")] + [item(f"i{i}", "charging") for i in range(MAX_SENT + 1)]
+    with pytest.raises(ModelError):
+        await group(model, FakePii(), items, {})
+    await asyncio.sleep(0.15)
+    assert not first.is_set()
+    assert model.calls.count("charging") == 1
+
+
+async def test_case_and_space_variants_merge_with_known_spelling():
+    items = [item("a"), item("b"), item("c"), item("d")]
+    model = FakeModel(lambda n, b: [one("home  CHARGING", [0]), one("Home Charging", [1]), one("New one", [2]), one("new  ONE", [3])])
+    out = await group(model, FakePii(), items, {"charging": ["Home charging"]})
+    assert [name for _, name in out] == ["Home charging", "Home charging", "New one", "New one"]
+
+
+async def test_case_variant_of_unnamed_becomes_constant():
+    model = FakeModel(lambda n, b: [one("Unnamed  Group", [0]), one(UNNAMED, [1])])
+    pii = FakePii()
+    out = await group(model, pii, [item("a"), item("b")], {})
+    assert [name for _, name in out] == [UNNAMED, UNNAMED]
+    assert pii.asked == []
+
+
+async def test_previous_names_drop_other_and_unnamed_and_are_capped():
+    previous = ["Other", UNNAMED.upper(), "OTHER"] + [f"Name {chr(65 + i // 26)}{chr(65 + i % 26)}" for i in range(80)]
+    model = FakeModel(lambda n, b: [one("Fine", [0])])
+    await group(model, FakePii(), [item("a")], {"charging": previous})
+    sent_names = model.calls[0][1]["previous_names"]
+    assert len(sent_names) == MAX_PREVIOUS == 50
+    assert sent_names[0] == "Name AA"
+    assert not {"Other", "OTHER", UNNAMED.upper()} & set(sent_names)
+
+
+# real Model, mock transport
+
+
+@pytest.fixture
+async def real(mock):
+    async with httpx.AsyncClient() as http:
+        yield Model(http, "https://models.test", lambda: "made-up-token")
+
+
+def completion(content, finish="stop"):
+    return httpx.Response(
+        200, json={"choices": [{"finish_reason": finish, "message": {"role": "assistant", "content": content}}]}
+    )
+
+
+@pytest.mark.parametrize("members", ["[true]", "[1.0]", '["0"]'])
+async def test_real_model_rejects_bool_float_and_string_indexes(members):
+    with respx.mock(base_url="https://models.test") as router:
+        router.post("/openai/v1/chat/completions").mock(
+            return_value=completion('{"groups":[{"name":"G","members":' + members + "}]}")
+        )
+        async with httpx.AsyncClient() as http:
+            real_model = Model(http, "https://models.test", lambda: "made-up-token")
+            with pytest.raises(ModelError) as e:
+                await group(real_model, FakePii(), [item("a")], {})
+    assert e.value.__cause__ is None
+
+
+async def test_real_model_cut_off_by_token_limit_raises_fixed_error():
+    with respx.mock(base_url="https://models.test") as router:
+        route = router.post("/openai/v1/chat/completions").mock(
+            return_value=completion('{"groups":[{"name":"G","members":[0]}]}', finish="length")
+        )
+        async with httpx.AsyncClient() as http:
+            real_model = Model(http, "https://models.test", lambda: "made-up-token")
+            with pytest.raises(ModelError) as e:
+                await group(real_model, FakePii(), [item("a")], {})
+    assert str(e.value) == "the model gave no answer that fits"
+    assert json.loads(route.calls.last.request.content)["max_completion_tokens"] == MAX_OUTPUT
