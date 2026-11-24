@@ -99,6 +99,11 @@ def order_from(offer: Offer, number: int, turn: str, now: datetime) -> Order:
     )
 
 
+def placed(offer: Offer, number: str) -> Offer:
+    """It only points at the order now. The name and the address are in the order."""
+    return replace(offer, order=number, name="", address="")
+
+
 def delivered(order: Order, in_stock: int, city: str, by: str, now: datetime) -> Order:
     if order.status == "delivered":
         raise AlreadyDelivered

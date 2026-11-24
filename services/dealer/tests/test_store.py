@@ -325,6 +325,17 @@ async def test_an_offer_goes_with_its_order(store):
     assert await store.orders() == []
 
 
+async def test_a_placed_offer_has_no_name_and_no_address(store):
+    """It only points at the order, so the customer's data is in one row."""
+    offer, order = await an_order(store)
+    if isinstance(store, MemoryStore):
+        kept = vars(store._offers[offer.id])
+    else:
+        kept = store._client.rows[f"offer|{offer.id}"][0]
+    assert (kept["name"], kept["address"], kept["order"]) == ("", "", order.number)
+    assert (await store.orders())[0].address == offer.address
+
+
 async def test_reset_restores_the_stock_and_keeps_the_numbering(store):
     offer, order = await an_order(store)
     unplaced = an_offer()

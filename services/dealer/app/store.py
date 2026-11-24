@@ -1,7 +1,6 @@
 """Stock, offers and orders. The memory store is for tests and local work."""
 
 from copy import deepcopy
-from dataclasses import replace
 from datetime import datetime
 from typing import Protocol
 
@@ -15,6 +14,7 @@ from app.model import (
     offer_is_stale,
     order_expired,
     order_from,
+    placed,
     stock_after,
 )
 from app.settings import Settings
@@ -91,7 +91,7 @@ class MemoryStore:
         order = order_from(offer, self._next, turn, now)
         self._next += 1
         self._orders[order.number] = order
-        self._offers[offer.id] = replace(offer, order=order.number)
+        self._offers[offer.id] = placed(offer, order.number)
         return order, True
 
     async def orders(self) -> list[Order]:

@@ -26,6 +26,7 @@ from app.model import (
     offer_is_stale,
     order_expired,
     order_from,
+    placed,
     stock_after,
 )
 
@@ -93,8 +94,9 @@ class TableStore:
             order = order_from(offer, number, turn, now)
             counting = _update(counter, next=number + 1) if counter else ("create", _new(COUNTER, next=number + 1))
             order_row = {**_row(order, "order", order.number), "offer": offer.id}
-            placed = await self._commit([counting, ("create", order_row), _update(offer_row, order=order.number)])
-            return (order, True) if placed else None
+            offer_update = _update(offer_row, **_row(placed(offer, order.number)))
+            saved = await self._commit([counting, ("create", order_row), offer_update])
+            return (order, True) if saved else None
 
         return await self._until_done(attempt)
 
