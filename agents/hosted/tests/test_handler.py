@@ -327,3 +327,26 @@ def test_without_it_the_host_starts_without_telemetry(monkeypatch):
 def test_an_empty_connection_string_is_no_connection_string(monkeypatch):
     monkeypatch.setenv("VOLTRIEVE_TELEMETRY_CONNECTION_STRING", "  ")
     assert host_arguments(monkeypatch)["applicationinsights_connection_string"] is None
+
+
+JUNK = "not a connection string"
+OURS = "InstrumentationKey=00000000-0000-0000-0000-000000000000"
+
+
+def test_our_string_wins_over_a_broken_one_the_platform_left(monkeypatch):
+    from azure.monitor.opentelemetry.exporter._connection_string_parser import ConnectionStringParser
+
+    monkeypatch.setenv("APPLICATIONINSIGHTS_CONNECTION_STRING", JUNK)
+    monkeypatch.setenv("VOLTRIEVE_TELEMETRY_CONNECTION_STRING", OURS)
+    host_arguments(monkeypatch)
+    parser = ConnectionStringParser(OURS)
+    assert parser.instrumentation_key == "00000000-0000-0000-0000-000000000000"
+
+
+def test_without_our_string_a_broken_one_is_removed(monkeypatch):
+    import os
+
+    monkeypatch.setenv("APPLICATIONINSIGHTS_CONNECTION_STRING", JUNK)
+    monkeypatch.delenv("VOLTRIEVE_TELEMETRY_CONNECTION_STRING", raising=False)
+    host_arguments(monkeypatch)
+    assert "APPLICATIONINSIGHTS_CONNECTION_STRING" not in os.environ

@@ -274,6 +274,14 @@ def create_host():
     from azure.ai.agentserver.invocations import InvocationAgentServerHost
 
     connection_string = os.environ.get("VOLTRIEVE_TELEMETRY_CONNECTION_STRING", "").strip() or None
+    # The Azure Monitor exporter also parses APPLICATIONINSIGHTS_CONNECTION_STRING from the
+    # environment, and a value the platform left there that does not parse fails the whole
+    # exporter. The platform reserves the name in the definition, not in our process, so our
+    # string takes its place, or the leftover goes and the host starts without telemetry.
+    if connection_string:
+        os.environ["APPLICATIONINSIGHTS_CONNECTION_STRING"] = connection_string
+    else:
+        os.environ.pop("APPLICATIONINSIGHTS_CONNECTION_STRING", None)
     host = InvocationAgentServerHost(applicationinsights_connection_string=connection_string)
     if os.environ.get("ALLOW_ANY_CALLER", "").lower() == "true":
         logger.critical("ALLOW_ANY_CALLER=true: ANY caller may invoke this agent. Local use only.")
