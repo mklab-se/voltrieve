@@ -51,8 +51,8 @@ The name is limited to 22 characters and appears in resource names. Optional val
 | `AZURE_SEARCH_LOCATION` | `francecentral` | Search region |
 | `PLANNING_MODEL_NAME` | `gpt-5.4-mini` | The model that plans Search queries. The only other value is `gpt-6-luna`, which is opt-in and follows [its own order](#order-for-an-update-with-the-new-search-values) |
 | `SEARCH_SERVERLESS` | `off` | A Serverless search service next to the Basic one. `off`: not deployed. `standby`: deployed, nothing uses it. `active`: the API and agents use it. Basic stays in all three, and going back to `off` does not delete a deployed service |
-| `INSIGHTS_SCHEDULE` | `off` | The usage insights job. `off`: it starts by hand only. `on`: every night at 02:30 UTC |
-| `INSIGHTS_NOTICE_DATE` | empty | The first day the notice was live in the car and on the website, as `YYYY-MM-DD`. Real chats started before it are never read. Empty: no real chat is read |
+| `INSIGHTS_SCHEDULE` | `off` | The usage insights job. `off`: it starts by hand only. `on`: every night at 02:30 UTC, once the job has its image |
+| `INSIGHTS_NOTICE_DATE` | empty | The first full UTC day the notice was live in the car and on the website, as `YYYY-MM-DD`: the day after it went live. Real chats started before it are never read. Empty: no real chat is read |
 | `VOLTRIEVE_VERIFIED_DOMAIN` | the tenant's default domain | Domain for the tester account |
 
 The Basic service is in `AZURE_SEARCH_LOCATION`. A Serverless service is in `serverlessSearchLocation`, which defaults to Sweden Central.
@@ -128,7 +128,7 @@ Run this after `azd up`, from the repository root, as the deployer:
 scripts/deploy-insights.sh
 ```
 
-It builds the image of the usage insights job with `az acr build`, stores its name as `INSIGHTS_IMAGE` in the azd environment and gives it to the job. A later `azd provision` reads `INSIGHTS_IMAGE`, so it keeps the image. Before the first deploy the job has a public sample image, which only prints a line. The script starts no run and changes no schedule.
+It builds the image of the usage insights job with `az acr build`, gives it to the job and stores its name as `INSIGHTS_IMAGE` in the azd environment. A later `azd provision` reads `INSIGHTS_IMAGE`, so it keeps the image. Before the first deploy the job has a public sample image, which only prints a line and is never on a schedule. The script starts no run and changes no schedule.
 
 ```mermaid
 flowchart LR
@@ -150,18 +150,24 @@ az containerapp job start -n "$(azd env get-value INSIGHTS_JOB_NAME)" -g "$(azd 
 az containerapp job execution list -n "$(azd env get-value INSIGHTS_JOB_NAME)" -g "$(azd env get-value AZURE_RESOURCE_GROUP)" -o table
 ```
 
-A run prints one line a step, with counts. One that fails prints `failed: <step>: <error type>`, saves nothing and ends with exit code 1.
+A run prints one line a step, with counts, and a count of 1 to 4 as `under 5`. One that fails prints `failed: <step>: <error type>` and ends with exit code 1. It saves nothing, with one exception: a failure at `save` may have been saved, whole, when only the answer was lost.
 
-An older week, for made up conversations only, is a run with `--window-end` and the last day of the week. It reads no real chat and writes no real row. Save the job's template, add `args: ["--window-end", "2026-11-22"]` to the container in it, and start the job with that file:
+An older week, for made up conversations only, is a run with `--window-end` and the last day of the week. It reads no real chat and writes no real row. Save the job's template outside the repository, add `args: ["--window-end", "2026-11-22"]` to the container in it, and start the job with that file:
 
 ```sh
+week="$(mktemp -d)/insights-week.yaml"
 az containerapp job show -n "$(azd env get-value INSIGHTS_JOB_NAME)" -g "$(azd env get-value AZURE_RESOURCE_GROUP)" \
-  --query properties.template -o yaml > insights-week.yaml
-az containerapp job start -n "$(azd env get-value INSIGHTS_JOB_NAME)" -g "$(azd env get-value AZURE_RESOURCE_GROUP)" \
-  --yaml insights-week.yaml
+  --query properties.template -o yaml > "$week"
 ```
 
-Run older weeks before newer ones: the page shows the latest run. To read real chats, the notice has to be live first. Then set both values and provision:
+Edit the file, then:
+
+```sh
+az containerapp job start -n "$(azd env get-value INSIGHTS_JOB_NAME)" -g "$(azd env get-value AZURE_RESOURCE_GROUP)" \
+  --yaml "$week"
+```
+
+Run older weeks before newer ones: the page shows the latest run. The workbook takes the latest window, whichever run was last. To read real chats, the notice has to be live first. Then set both values and provision:
 
 ```sh
 azd env set INSIGHTS_NOTICE_DATE 2026-12-01

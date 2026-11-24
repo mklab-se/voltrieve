@@ -204,7 +204,7 @@ async def _topic(model: Model, topic: str, intents: list[str], previous: list[st
     return named, refused
 
 
-async def _all(coroutines: list) -> list:
+async def run_all(coroutines: list) -> list:
     """Run them together. At the first failure the rest are cancelled and awaited, so nothing is sent
     after it, and that failure is raised as it is."""
     tasks = [asyncio.ensure_future(c) for c in coroutines]
@@ -237,7 +237,7 @@ async def group(
         if labelled.intent is not None:
             by_topic.setdefault(labelled.topic, []).append(position)
     topics = list(by_topic)
-    both = await _all(
+    both = await run_all(
         [_topic(model, t, [items[p].intent for p in by_topic[t]], previous.get(t, [])) for t in topics]  # type: ignore[misc]
     )
     results = [named for named, _ in both]

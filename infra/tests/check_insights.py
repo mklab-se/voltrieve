@@ -47,6 +47,24 @@ def of(kind):
     return [r for r in resources if r["type"] == kind]
 
 
+# no other role by another way: none in main.bicep itself, AcrPull alone where the identity is made,
+# and one custom role. No module but those two takes the principal, as checked above.
+assignment = "Microsoft.Authorization/roleAssignments"
+top = [r for r in template["resources"].values() if r["type"] == assignment]
+assert top == [], "main.bicep assigns a role itself"
+(pulls,) = [r for r in listed("insightsIdentity") if r["type"] == assignment]
+assert "acrPullRoleId" in pulls["properties"]["roleDefinitionId"]
+assert pulls["scope"].startswith("[resourceId('Microsoft.ContainerRegistry/registries'"), pulls["scope"]
+assert (
+    modules["insightsIdentity"]["properties"]["template"]["variables"]["acrPullRoleId"]
+    == "7f951dda-4ed3-4680-a7ca-43fe172d538d"
+)
+assert len([r for r in listed("insightsRole") if r["type"] == assignment]) == 1
+for name in modules:  # nor by the name of the identity, or by its output
+    if name not in ("insightsIdentity", "insightsRole", "insights"):
+        text = json.dumps(modules[name])
+        assert "id-insights" not in text and "insightsIdentity" not in text, name
+
 # two roles on the job: save to this rule, read this table. The API gets the second one only.
 assert variables["monitoringMetricsPublisher"] == "3913510d-42f4-4e42-8a64-420c390055eb"
 assert variables["logAnalyticsDataReader"] == "3b03c2da-16b3-4a49-8834-0f8130efdd3b"
@@ -95,7 +113,12 @@ assert flow["transformKql"] == "source" and "streamName" in flow["outputStream"]
 (job,) = of("Microsoft.App/jobs")
 assert job["identity"]["type"] == "UserAssigned" and len(job["identity"]["userAssignedIdentities"]) == 1
 settings = job["properties"]["configuration"]
-assert settings["triggerType"] == "[if(equals(parameters('schedule'), 'off'), 'Manual', 'Schedule')]"
+# the public sample never runs on a schedule: that identity reads everyone's chats
+assert variables["byHand"] == "[or(equals(parameters('schedule'), 'off'), empty(parameters('image')))]"
+assert settings["triggerType"] == "[if(variables('byHand'), 'Manual', 'Schedule')]", settings["triggerType"]
+when = "if(variables('byHand'), "
+assert settings["manualTriggerConfig"].startswith(f"[{when}createObject("), settings["manualTriggerConfig"]
+assert settings["scheduleTriggerConfig"].startswith(f"[{when}null(), createObject("), settings["scheduleTriggerConfig"]
 assert "'30 2 * * *'" in settings["scheduleTriggerConfig"]
 assert settings["replicaTimeout"] == 1800 and settings["replicaRetryLimit"] == 0
 assert "secrets" not in settings

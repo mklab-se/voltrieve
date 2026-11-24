@@ -4,8 +4,8 @@
 #   scripts/deploy-insights.sh
 #
 # 1. az acr build           the linux/amd64 image, with a unique tag (repository root as context)
-# 2. azd env set            INSIGHTS_IMAGE, so a later `azd provision` keeps this image
-# 3. az containerapp job    the job runs this image from its next start
+# 2. az containerapp job    the job runs this image from its next start
+# 3. azd env set            INSIGHTS_IMAGE, so a later `azd provision` keeps this image
 # It starts no run and changes no schedule. Run it after `azd provision`, from the repository root,
 # signed in with az and azd as the deployer. It needs no secrets.
 set -eu
@@ -25,7 +25,7 @@ image="$AZURE_CONTAINER_REGISTRY_ENDPOINT/$repository:$tag"
 
 az acr build -r "$AZURE_CONTAINER_REGISTRY_NAME" -t "$repository:$tag" --platform linux/amd64 \
   -f services/insights/Dockerfile .
-azd env set INSIGHTS_IMAGE "$image"
 az containerapp job update -n "$INSIGHTS_JOB_NAME" -g "$AZURE_RESOURCE_GROUP" --image "$image" --output none
+azd env set INSIGHTS_IMAGE "$image"
 
 echo "Insights job deployed: $INSIGHTS_JOB_NAME runs $image from its next start"

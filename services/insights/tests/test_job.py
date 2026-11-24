@@ -391,7 +391,7 @@ def test_up_to_a_tenth_refused_is_skipped(world, capfd):
     assert job.main([]) == 0
     assert [r["Conversations"] for r in world.rows if r["Cut"] == "all"] == [20]  # 18, rounded
     out, err = capfd.readouterr()
-    assert "2 refused" in out and SECRET not in out + err
+    assert "label: 18 labelled, under 5 refused" in out.splitlines() and SECRET not in out + err
 
 
 def test_more_than_a_tenth_refused_fails_the_run(world, capfd):
@@ -402,13 +402,62 @@ def test_more_than_a_tenth_refused_fails_the_run(world, capfd):
     assert capfd.readouterr().out.splitlines()[-1] == "failed: label: TooManyRefused"
 
 
+def refuse_asking(word):
+    def labels(data):
+        if word in data:
+            return httpx.Response(400, json={"error": {"code": "content_filter"}})
+        return GOOD
+
+    return labels
+
+
+@pytest.mark.parametrize("refused_seeded", [False, True])
+def test_a_refused_source_fails_the_run_however_many_the_other_has(world, capfd, refused_seeded):
+    world.add(8, seeded=refused_seeded, text="Please refuse this")
+    world.add(80, seeded=not refused_seeded, said_by="many-")
+    world.labels = refuse_asking("refuse this")
+    assert job.main([]) == 1
+    assert world.uploads == []
+    assert capfd.readouterr().out.splitlines()[-1] == "failed: label: TooManyRefused"
+
+
+def test_a_tenth_of_each_source_refused_is_skipped(world):
+    for seeded, said_by in ((False, "a-"), (True, "b-")):
+        world.add(2, seeded=seeded, said_by=said_by, text="Please refuse this")
+        world.add(18, seeded=seeded, said_by=said_by)
+    world.labels = refuse_asking("refuse this")
+    assert job.main([]) == 0
+
+
+@pytest.mark.parametrize("count, shown", [(0, "0"), (1, "under 5"), (4, "under 5"), (5, "5"), (12, "12")])
+def test_a_small_count_is_never_logged(world, capfd, count, shown):
+    world.add(count)
+    assert job.main([]) == 0
+    lines = capfd.readouterr().out.splitlines()
+    for line in (
+        f"list: {shown}",
+        f"select: {shown} real, 0 seeded",
+        f"sample: {shown} real, 0 seeded",
+        f"read: {shown} with user text",
+        f"label: {shown} labelled, 0 refused",
+        f"group: {shown} in a group, 0 calls refused",
+    ):
+        assert line in lines
+
+
+def test_previous_names_are_not_counted_when_few(world, capfd):
+    world.names["real"] = [["charging", "Home charging"]]
+    assert job.main([]) == 0
+    assert "previous names: under 5 real, 0 seeded" in capfd.readouterr().out.splitlines()
+
+
 def test_a_refused_group_is_counted_and_does_not_fail_the_run(world, capfd):
     world.add(6)
     world.broken["group"] = httpx.Response(400, json={"error": {"code": "content_filter"}})
     assert job.main([]) == 0
     assert "group" not in world.cuts("real") and "topic" in world.cuts("real")
     (line,) = [line for line in capfd.readouterr().out.splitlines() if line.startswith("group:")]
-    assert line == "group: 0 in a group, 1 calls refused"
+    assert line == "group: 0 in a group, under 5 calls refused"
 
 
 def test_texts_are_read_and_labelled_eight_at_a_time(world):
@@ -444,6 +493,43 @@ def test_the_run_ends_itself_at_the_deadline(world, monkeypatch, capfd):
     assert world.uploads == []
     out, err = capfd.readouterr()
     assert out.splitlines()[-1] == "failed: read: TimeoutError" and err == ""
+
+
+def test_a_slow_close_after_the_upload_is_no_failure(world, monkeypatch, capfd):
+    monkeypatch.setattr(job, "DEADLINE", 0.3)
+    closed = httpx.AsyncClient.__aexit__
+
+    async def slow(self, *args):
+        if world.uploads:
+            await asyncio.sleep(0.4)
+        await closed(self, *args)
+
+    monkeypatch.setattr(httpx.AsyncClient, "__aexit__", slow)
+    assert job.main([]) == 0
+    out, err = capfd.readouterr()
+    assert len(world.uploads) == 1 and out.splitlines()[-1].startswith("save: ") and err == ""
+
+
+@pytest.mark.parametrize("error", [OSError, asyncio.CancelledError])
+def test_a_close_that_fails_after_the_upload_is_no_failure(world, monkeypatch, capfd, error):
+    async def fails(self, *args):
+        raise error(SECRET)
+
+    monkeypatch.setattr(httpx.AsyncClient, "__aexit__", fails)
+    assert job.main([]) == 0
+    out, err = capfd.readouterr()
+    assert len(world.uploads) == 1 and "failed" not in out and SECRET not in out + err
+
+
+def test_a_slow_upload_is_still_ended_by_the_deadline(world, monkeypatch, capfd):
+    monkeypatch.setattr(job, "DEADLINE", 0.3)
+
+    async def never(request):
+        await asyncio.sleep(60)
+
+    world.router.post(url__startswith=f"{INGESTION}/dataCollectionRules/dcr-1/streams/").mock(side_effect=never)
+    assert job.main([]) == 1
+    assert capfd.readouterr().out.splitlines()[-1] == "failed: save: TimeoutError"
 
 
 def test_a_token_that_cannot_be_had_fails_without_a_word_of_why(world, monkeypatch, capfd):

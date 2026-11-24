@@ -18,13 +18,15 @@ param foundryProjectEndpoint string
 param foundryOpenAiEndpoint string
 param languageEndpoint string
 param modelDeployment string
-@description('off: the job starts by hand only. on: every night at 02:30 UTC.')
+@description('off: the job starts by hand only. on: every night at 02:30 UTC, once there is an image.')
 @allowed(['off', 'on'])
 param schedule string = 'off'
-@description('The first day the notice was live, as YYYY-MM-DD. Real conversations started before it are never read. Empty: none is read.')
+@description('The first full UTC day the notice was live, as YYYY-MM-DD. Real conversations started before it are never read. Empty: none is read.')
 param noticeDate string = ''
 
 var placeholderImage = 'mcr.microsoft.com/k8se/quickstart-jobs:latest'
+// The public sample is never on a schedule: the identity it would run with reads everyone's chats.
+var byHand = schedule == 'off' || empty(image)
 var tableName = 'VoltrieveInsights_CL'
 var streamName = 'Custom-${tableName}'
 var monitoringMetricsPublisher = '3913510d-42f4-4e42-8a64-420c390055eb'
@@ -141,9 +143,9 @@ resource job 'Microsoft.App/jobs@2026-07-01' = {
   properties: {
     environmentId: environmentId
     configuration: {
-      triggerType: schedule == 'off' ? 'Manual' : 'Schedule'
-      manualTriggerConfig: schedule == 'off' ? { parallelism: 1, replicaCompletionCount: 1 } : null
-      scheduleTriggerConfig: schedule == 'off' ? null : {
+      triggerType: byHand ? 'Manual' : 'Schedule'
+      manualTriggerConfig: byHand ? { parallelism: 1, replicaCompletionCount: 1 } : null
+      scheduleTriggerConfig: byHand ? null : {
         cronExpression: '30 2 * * *'
         parallelism: 1
         replicaCompletionCount: 1

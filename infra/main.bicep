@@ -40,10 +40,10 @@ param dealerExists bool = false
 @description('Principal id of the hosted agent identity (HOSTED_AGENT_PRINCIPAL_ID, set by agents/hosted/deploy.py). Empty until the hosted agent exists.')
 param hostedAgentPrincipalId string = ''
 param hostedAgentName string = 'voltrieve-hosted'
-@description('The nightly usage insights (INSIGHTS_SCHEDULE). off: the job starts by hand only. on: every night at 02:30 UTC.')
+@description('The nightly usage insights (INSIGHTS_SCHEDULE). off: the job starts by hand only. on: every night at 02:30 UTC, once INSIGHTS_IMAGE is set.')
 @allowed(['off', 'on'])
 param insightsSchedule string = 'off'
-@description('The first day the notice about the insights was live, as YYYY-MM-DD (INSIGHTS_NOTICE_DATE). Earlier conversations are never read. Empty: no real conversation is read.')
+@description('The first full UTC day the notice about the insights was live, as YYYY-MM-DD (INSIGHTS_NOTICE_DATE). Earlier conversations are never read. Empty: no real conversation is read.')
 param insightsNoticeDate string = ''
 @description('The deployed image of the insights job (INSIGHTS_IMAGE, set by scripts/deploy-insights.sh). Empty until it has been deployed.')
 param insightsImage string = ''

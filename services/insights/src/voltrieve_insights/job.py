@@ -2,8 +2,9 @@
 
     python -m voltrieve_insights.job [--window-end YYYY-MM-DD]
 
-It fails closed. Every step has to work before the one upload at the end, and a run that fails saves
-nothing and ends with exit code 1. It prints one line a step, with counts, and for a failure the step and
+It fails closed. Every step has to work before the one upload at the end, and a run that fails before it
+saves nothing. One that fails at `save` may have been saved, whole, when only the answer was lost. A failed
+run ends with exit code 1. It prints one line a step, with counts, and for a failure the step and
 the type of the error. It never prints a message, a traceback or a line of a library: they could hold text.
 
 --window-end is the last day, included, of a week to run for made up conversations only. Such a run
@@ -26,7 +27,7 @@ import httpx
 from azure.identity import DefaultAzureCredential, ManagedIdentityCredential, get_bearer_token_provider
 
 from voltrieve_insights.conversations import PARALLEL, Conversation, list_raw, read_text, sample, select, window
-from voltrieve_insights.groups import PersonalData, _all, group
+from voltrieve_insights.groups import PersonalData, group, run_all
 from voltrieve_insights.labels import DEPLOYMENT, TOKEN_SCOPE, Labelled, Model, Refused, label
 from voltrieve_insights.quiet import hush
 from voltrieve_insights.store import (
@@ -44,7 +45,7 @@ PROJECT_SCOPE = "https://ai.azure.com/.default"
 DEADLINE = 25 * 60  # seconds: the platform stops the job after 30 minutes
 TIMEOUT = 60.0  # seconds, for one try of a request
 CAP = 2_000  # conversations of each source
-MAX_REFUSED = 10  # percent of the conversations sent to be labelled
+MAX_REFUSED = 10  # percent of the conversations of one source that were sent to be labelled
 _DAY = re.compile(r"\d{4}-\d{2}-\d{2}", re.ASCII)
 
 
@@ -137,6 +138,7 @@ class Progress:
 
     def __init__(self) -> None:
         self.step = "settings"
+        self.saved = False  # whether the upload is done, and nothing after it can undo it
 
     def start(self, step: str) -> None:
         self.step = step
@@ -153,11 +155,29 @@ async def _eight[T, R](work: Callable[[T], Awaitable[R]], items: list[T]) -> lis
         async with gate:
             return await work(item)
 
-    return await _all([one(item) for item in items])
+    return await run_all([one(item) for item in items])
 
 
-def _counts(by_source: Mapping[str, list]) -> str:
-    return ", ".join(f"{len(found)} {source}" for source, found in by_source.items())
+def _shown(count: int) -> str:
+    """A count as the log may hold it: an exact small one is close to pointing at somebody."""
+    return f"under {MIN_PEOPLE}" if 0 < count < MIN_PEOPLE else str(count)
+
+
+def _counts(by_source: Mapping[str, int]) -> str:
+    return ", ".join(f"{_shown(count)} {source}" for source, count in by_source.items())
+
+
+def _lengths(by_source: Mapping[str, list]) -> dict[str, int]:
+    return {source: len(found) for source, found in by_source.items()}
+
+
+def _check_refused(sent: list[bool], answered: list[bool]) -> None:
+    """Each source on its own (a bool is one conversation, true when made up). Counted together, many
+    made up conversations would hide that the real ones were refused, and the other way around."""
+    for seeded in (False, True):
+        refused = sent.count(seeded) - answered.count(seeded)
+        if refused * 100 > sent.count(seeded) * MAX_REFUSED:
+            raise TooManyRefused
 
 
 async def _run(settings: Settings, now: datetime, window_end: date | None, progress: Progress) -> None:
@@ -174,11 +194,11 @@ async def _run(settings: Settings, now: datetime, window_end: date | None, progr
         return httpx.AsyncClient(base_url=base, auth=Bearer(token(scope)), timeout=TIMEOUT)
 
     async with (
-        asyncio.timeout(DEADLINE),
         client(PROJECT_SCOPE, settings.project) as project,
         client(QUERY_SCOPE) as logs,
         client(INGESTION_SCOPE) as ingestion,
         httpx.AsyncClient(timeout=TIMEOUT) as plain,
+        asyncio.timeout(DEADLINE),  # innermost: it ends with the upload, before the clients close
     ):
         ai = token(TOKEN_SCOPE)
         model = Model(plain, settings.models, ai, settings.deployment)
@@ -186,18 +206,18 @@ async def _run(settings: Settings, now: datetime, window_end: date | None, progr
 
         progress.start("list")
         raw = [item async for item in list_raw(project, datetime.combine(first, time(), UTC))]
-        progress.done(f"{len(raw)}")
+        progress.done(_shown(len(raw)))
 
         progress.start("select")
         chosen = select(raw, first, last, notice)
         picked = {source: [c for c in chosen if c.seeded == (source == SEEDED)] for source in sources}
-        progress.done(_counts(picked))
+        progress.done(_counts(_lengths(picked)))
 
         progress.start("sample")
         sampled = {source: sample(found, settings.cap) for source, found in picked.items()}
         shares = {source: share for source, (_, share) in sampled.items()}
         picked = {source: found for source, (found, _) in sampled.items()}
-        progress.done(_counts(picked))
+        progress.done(_counts(_lengths(picked)))
 
         progress.start("read")
         everything = [c for found in picked.values() for c in found]
@@ -207,7 +227,7 @@ async def _run(settings: Settings, now: datetime, window_end: date | None, progr
             for c, (messages, registrations) in zip(everything, texts, strict=True)
             if any(role == "user" for role, _ in messages)
         ]
-        progress.done(f"{len(with_text)} with user text of {len(everything)}")
+        progress.done(f"{_shown(len(with_text))} with user text")
 
         progress.start("label")
 
@@ -218,24 +238,22 @@ async def _run(settings: Settings, now: datetime, window_end: date | None, progr
                 return None
 
         labelled = [found for found in await _eight(one, with_text) if found is not None]
-        refused = len(with_text) - len(labelled)
-        if refused * 100 > len(with_text) * MAX_REFUSED:
-            raise TooManyRefused
-        progress.done(f"{len(labelled)} labelled, {refused} refused")
+        _check_refused([c.seeded for c, _, _ in with_text], [item.seeded for item in labelled])
+        progress.done(f"{_shown(len(labelled))} labelled, {_shown(len(with_text) - len(labelled))} refused")
 
         progress.start("previous names")
         previous = {source: await previous_names(logs, settings.workspace, source) for source in sources}
-        progress.done(", ".join(f"{sum(map(len, names.values()))} {source}" for source, names in previous.items()))
+        progress.done(_counts({source: sum(map(len, names.values())) for source, names in previous.items()}))
 
         progress.start("group")
         refused_groups: list[int] = []  # calls, for each source
         by_source = {source: [item for item in labelled if item.seeded == (source == SEEDED)] for source in sources}
-        results = await _all(
+        results = await run_all(
             [group(model, pii, by_source[source], previous[source], refused=refused_groups) for source in sources]
         )
         grouped = dict(zip(sources, results, strict=True))
         named = sum(name is not None for items in results for _, name in items)
-        progress.done(f"{named} in a group, {sum(refused_groups)} calls refused")
+        progress.done(f"{_shown(named)} in a group, {_shown(sum(refused_groups))} calls refused")
 
         progress.start("totals")
         rows = []
@@ -246,6 +264,7 @@ async def _run(settings: Settings, now: datetime, window_end: date | None, progr
 
         progress.start("save")
         await save(ingestion, settings.ingestion, settings.rule, rows)
+        progress.saved = True
         progress.done(f"{len(rows)} rows, {model.input_tokens} tokens in, {model.output_tokens} out")
 
 
@@ -274,7 +293,7 @@ def main(argv: list[str] | None = None) -> int:
         asyncio.run(_run(read_settings(os.environ), _now(), window_end, progress))
     except BaseException as error:  # its message and its causes may hold text
         failed = type(error).__name__
-    if failed is None:
+    if failed is None or progress.saved:  # a close that fails after the upload is no failed run
         return 0
     print(f"failed: {progress.step}: {failed}", flush=True)
     return 1
