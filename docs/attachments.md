@@ -228,10 +228,11 @@ The numbers under "Why the photo goes straight to the model" come from the spike
 | Prompt agent | 84 of 84 | 12 of 12 | 1.9 s | 7 of 120 | 3.94 |
 | Hosted agent | 84 of 84 | 12 of 12 | 6.2 s | 10 of 120 | 2.45 |
 
+- This run was made while `gpt-6-luna` planned the searches, which adds about half a second per search. Each backend has 117 chat turns and 3 refused uploads.
 - Three of the 252 verdicts (two on the prompt agent, one on the own loop) were marked unclear by the judge, because the answer added "provided no other restrictions apply". They were read by hand and are right. No verdict was wrong, no part number was invented.
 - 19 of the 21 turns over 10 s are lamp and "which part" questions, which search the catalog. The other two are one drawn sign asked about as a broken part on the hosted agent, and one fee question on the own loop. Half of the lamp turns also searched the documents, which the suite counts as not right. The part number is right in all of them.
 - The undamaged car, a drawn sign asked about as a broken part, "which part is this?" and a car photo asked about parking: right in every run. The blurred photo was refused at upload in 9 of 9.
-- The first 20 photo turns cost about 0.11 USD, the whole run of 351 turns about 1.10 USD. The API used at most 310 MB of its 1 GiB in the first 20 ([`photos-first-20.txt`](https://github.com/mklab-se/voltrieve/blob/main/docs/evidence/photos-first-20.txt)).
+- The first 20 photo turns, with `gpt-5.4-mini` planning, cost about 0.11 USD, the whole run of 351 turns about 1.10 USD. The API used at most 310 MB of its 1 GiB in the first 20 ([`photos-first-20.txt`](https://github.com/mklab-se/voltrieve/blob/main/docs/evidence/photos-first-20.txt)).
 
 **Turns without attachments**, the routing suite before and after, 45 questions per backend: first text 4.7 s before and 4.5 s after on the own loop, 4.2 s and 3.9 s on the prompt agent, 9.1 s and 8.7 s on the hosted agent. Right sources: 134 of 135 before and 132 of 135 after. All three misses after are parts questions that also searched the documents. Part numbers: 43 of 43 on every backend, before and after ([`search-versions.txt`](https://github.com/mklab-se/voltrieve/blob/main/docs/evidence/search-versions.txt)).
 

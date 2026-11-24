@@ -480,7 +480,7 @@ Issue #12 as it is written. That issue is the specification.
       *Tested in `clients/car`.*
 - [x] A sign photo gets the right answer for the drawn signs and times, on all three backends, and
       the numbers are in the evidence.
-      *Live, 252 of 252: `docs/evidence/photos-routing.txt`.*
+      *Live, 249 of 252 by the script, and the other 3 read by hand and right: `docs/evidence/photos-routing.txt`.*
 - [x] A blurred photo is rejected and Runa asks for a new one.
       *Live, refused in 9 of 9 at upload. The texts are tested in the clients.*
 - [x] A photo of a broken lamp on the website names the right part and side, on all three backends.

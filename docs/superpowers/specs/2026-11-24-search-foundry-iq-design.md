@@ -213,11 +213,9 @@ Prices for search are from the Azure retail prices API for Sweden Central, read 
 
 ## 12. Not verified
 
-- Any write or retrieve with `2026-11-01-preview`. Only reads were done, all 200.
+*Updated 2026-11-24 after the live runs, `docs/evidence/search-versions.txt`. Verified since: writes and retrieves with the new versions on both services, `maxOutputSize`, planning through the Responses call with these roles on both services, and on Serverless creation, MCP, managed identity, a cold start (2.9 s after 14 idle minutes, one try) and compute use (at least 0.42 CU hours). The MCP endpoint still returns extracted chunks, as the prompt agent's part numbers and file names show.*
+
 - That a base planned by GPT-6 refuses or accepts an older client.
-- That the MCP endpoint stays extractive on the new version.
-- That the Responses call works with the roles given, on either service.
-- `maxOutputSize` on the new version.
-- Serverless: creation, MCP, managed identity, cold start, CU use.
-- `2026-11-01` for a write of the Basic service in France Central. A what-if of the whole template with it succeeded, with Serverless off and in standby, and showed no deletion.
+- A rollback of the Serverless service or of the Search versions.
+- The price of Serverless on an invoice.
 - The price of `gpt-6-luna`: taken from the table in the repository, not read again.

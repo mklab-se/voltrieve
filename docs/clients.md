@@ -30,7 +30,7 @@ flowchart LR
 
 All four clients are built in this repository: the car, the website, the operations dashboard and the CLI. This page was checked against the code of the car on 2026-11-24. The pictures on it were taken with mock servers, so the answers and the numbers in them are mock data.
 
-Run live on 2026-11-24, from scripts against the deployed API: photo turns with the car's and the website's context on all three backends ([Photos and attachments](attachments.md#measured)), and the car's five tools on all three backends, 18 of 18. The three sites are deployed and show their sign-in page.
+Run live on 2026-11-24, from scripts against the deployed API: photo turns with the car's and the website's context on all three backends ([Photos and attachments](attachments.md#measured)), and the car's five tools on all three backends, 18 of 18. The three sites are deployed and show their sign-in page (looked at by hand).
 
 Not verified:
 

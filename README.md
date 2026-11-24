@@ -27,7 +27,7 @@ Most agent samples stop at "it answers". This one answers the questions you meet
 | **Can a client send a photo, and where does it go?** | Straight into the model call, as an unstored turn. The conversation keeps the text only. Foundry's tracing also records the text of prompt and hosted turns, [an open decision](docs/decisions.md#open-the-product-owner-decides-what-foundrys-tracing-may-record). A new kind of attachment is one handler. | [Photos and attachments](docs/attachments.md) |
 | **How does the agent decide to use RAG?** | No classifier exists. The model decides in its first call, from words you control. | [The journey of a prompt](docs/prompt-journey.md) |
 | **Can it use several knowledge bases without calling them in vain?** | Yes: all three reached the right bases in every run. Two of them run the searches at the same time. | [Two knowledge bases](docs/why-foundry.md#6-two-knowledge-bases-who-chooses-and-who-runs-them-together) |
-| **Which model should I use?** | Newer isn't always better. `gpt-6.1-terra` runs all three backends, with 1 of 48 turns over 10 s to first token on the own loop. `gpt-6-luna` costs about a third of `gpt-5.4-mini`. Search plans its queries with `gpt-5.4-mini`, and `gpt-6-luna` is opt-in (`PLANNING_MODEL_NAME`), not measured as the planner yet. | [Choosing a model](docs/model-comparison.md) |
+| **Which model should I use?** | Newer isn't always better. `gpt-6.1-terra` runs all three backends, with 1 of 48 turns over 10 s to first token on the own loop. `gpt-6-luna` costs about a third of `gpt-5.4-mini`. Search plans its queries with `gpt-5.4-mini`, and `gpt-6-luna` is opt-in (`PLANNING_MODEL_NAME`): the same answers and cheaper planning, but about half a second slower per search. | [Choosing a model](docs/model-comparison.md) |
 | **I need curated answers without slowing everything down.** | Pick the answer in the model call you already make, then skip the second one. Curated questions took under 2 s on two of the three, and other questions showed no measurable delay. | [Curated answers](docs/prompt-journey.md#curated-answers) |
 
 ## Who it is for: one client for each audience
@@ -166,7 +166,7 @@ Tear down with `azd down --purge`. App registrations and the tester are not remo
 
 ## Costs
 
-Idle, about 80 USD a month plus a small amount for Log Analytics: Search Basic is about 75 USD and Container Registry Basic about 5 USD. Container Apps scale to zero, the three Static Web Apps (website, car and dashboard) are on the Free tier, models bill per token, and the hosted agent bills per active session. A Serverless search service can stand next to Basic. It is off by default. In the dev environment it is on, at about 0.11 USD for a night of test runs ([Deployment](docs/deploy.md#idle-cost)).
+Idle, about 80 USD a month plus a small amount for Log Analytics: Search Basic is about 75 USD and Container Registry Basic about 5 USD. Container Apps scale to zero, the three Static Web Apps (website, car and dashboard) are on the Free tier, models bill per token, and the hosted agent bills per active session. A Serverless search service can stand next to Basic. It is off by default. In the dev environment it is on, at about 0.11 USD by the diagnostic metric for a night of test runs, not by an invoice ([Deployment](docs/deploy.md#idle-cost)).
 
 ## Status
 
@@ -176,7 +176,7 @@ Run live on 2026-11-24, from scripts and not from a signed in browser:
 
 - A photo on all three backends: 252 parking questions with no wrong verdict, and 36 of 36 part numbers right for a broken lamp ([Photos and attachments](docs/attachments.md#measured)).
 - The car's five tools on all three backends, 18 of 18 (`docs/evidence/car-tools.txt`).
-- The three sites are deployed and show their sign-in page.
+- The three sites are deployed and show their sign-in page (looked at by hand, no evidence file).
 - Search on the newest data plane version, on Basic and on Serverless, with two planners: 135 of 135 routing turns right on Serverless (`docs/evidence/search-versions.txt`).
 
 Verified live:
@@ -191,7 +191,7 @@ Verified live:
 - Where a photo turn leaves its text and its photo, on 2026-11-24: the photo nowhere we looked, the text of prompt and hosted turns in Foundry's tracing (`docs/evidence/photos-privacy.txt`). That breaks a rule, and [the decision is open](docs/decisions.md#open-the-product-owner-decides-what-foundrys-tracing-may-record).
 - The authorization denied path, on the loop backend, against real Foundry with a fake token validator.
 
-Offline tests pass: `agent_core` 167, `api` 459, `agents/hosted` 40, `search` 62, `services/dealer` 42, `clients/cli` 62, `clients/web` 172, `clients/dashboard` 25, `clients/car` 426, `tests/photos` 228, `tests/contract` 74 and `infra/scripts/entra` 41, plus the Bicep and script checks. Every suite runs in [CI](.github/workflows/tests.yml).
+Offline tests pass: `agent_core` 167, `api` 459, `agents/hosted` 40, `search` 62, `services/dealer` 42, `clients/cli` 62, `clients/web` 172, `clients/dashboard` 25, `clients/car` 426, `tests/photos` 228, `tests/contract` 74 and `infra/scripts/entra` 41, plus the 123 of `data/generator` in CI (they need a browser), the Bicep and script checks. Every suite runs in [CI](.github/workflows/tests.yml).
 
 Not verified:
 
