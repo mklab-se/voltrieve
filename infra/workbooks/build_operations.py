@@ -44,7 +44,8 @@ def text(markdown: str) -> dict:
 
 
 def query(title: str, kql: str, visualization: str, width: str = "100", size: int = 0,
-          time_context: dict | None = None, **extra) -> dict:
+          time_context: dict | None = None, resource_type: str = "microsoft.insights/components",
+          resource_id: str | None = None, **extra) -> dict:
     timing = {"timeContext": time_context} if time_context else {"timeContextFromParameter": "TimeRange"}
     content = {
         "version": "KqlItem/1.0",
@@ -53,10 +54,12 @@ def query(title: str, kql: str, visualization: str, width: str = "100", size: in
         "title": title,
         **timing,
         "queryType": 0,
-        "resourceType": "microsoft.insights/components",
+        "resourceType": resource_type,
         "visualization": visualization,
         **extra,
     }
+    if resource_id:
+        content["crossComponentResources"] = [resource_id]
     return {"type": 3, "content": content, "customWidth": width}
 
 
@@ -81,6 +84,87 @@ def parameters() -> dict:
          "jsonData": json.dumps([{"value": v, "label": label} for v, label in (
              ("all", "All backends"), ("loop", "Own loop"), ("prompt", "Prompt agent"), ("hosted", "Hosted agent"))])},
     ]}}
+
+
+WORKSPACE = "microsoft.operationalinsights/workspaces"
+WORKSPACE_ID = "__WORKSPACE_ID__"
+YEAR = {"durationMs": 31622400000}  # the nightly rows are filtered by WindowEnd below, not by the time range
+
+# The nightly rows of one source. A job may run again for the same WindowEnd, so every query takes the
+# latest Run of the latest WindowEnd (or of each WindowEnd). Missing counts mean "under five people or
+# held back", never zero.
+INSIGHTS = 'let ins = VoltrieveInsights_CL | where Source == "{Source}";\n'
+LATEST = INSIGHTS + """let last_end = toscalar(ins | summarize max(WindowEnd));
+let last_run = toscalar(ins | where WindowEnd == last_end | summarize max(Run));
+let latest = ins | where WindowEnd == last_end and Run == last_run;
+"""
+
+
+def ask_query(title: str, kql: str, visualization: str, width: str = "100", **extra) -> dict:
+    extra.setdefault("noDataMessage", "Not enough people yet.")
+    return query(title, kql, visualization, width, time_context=YEAR, resource_type=WORKSPACE,
+                 resource_id=WORKSPACE_ID, **extra)
+
+
+def ask_section() -> list[dict]:
+    return [
+        text("## What people ask\n"
+             "Only topics shared by at least five people are shown. Counts are rounded to five. A missing "
+             "number means under five people or held back, not zero. Real and made up are never added: the "
+             "**Source** below picks one of them, and every item here follows it."),
+        {"type": 9, "content": {"version": "KqlParameterItem/1.0", "parameters": [
+            {"id": "source", "version": "KqlParameterItem/1.0", "name": "Source", "label": "Source",
+             "type": 2, "isRequired": True, "value": "real",
+             "jsonData": json.dumps([{"value": "real", "label": "Real"}, {"value": "seeded", "label": "Made up"}])},
+        ]}},
+        tiles("The latest run", LATEST + """latest
+| summarize people = max(iff(Cut == "all", People, int(null))),
+    conversations = max(iff(Cut == "all", Conversations, int(null))),
+    share = max(SampleShare), run = max(Run)
+| project pack = pack_array(
+    pack("metric", "People", "value", todouble(people), "note", "about, rounded to five"),
+    pack("metric", "Conversations", "value", todouble(conversations), "note", "about, rounded to five"),
+    pack("metric", "Share sampled (%)", "value", round(100.0 * share, 0), "note", "of the conversations"),
+    pack("metric", "Last run (days ago)", "value", todouble(datetime_diff("day", now(), run)),
+        "note", format_datetime(run, "yyyy-MM-dd")))
+| mv-expand pack
+| project metric = tostring(pack.metric), value = todouble(pack.value), note = tostring(pack.note)""",
+              time_context=YEAR, resource_type=WORKSPACE, resource_id=WORKSPACE_ID),
+        ask_query("Topics of the latest window (people)", LATEST + """latest
+| where Cut == "topic"
+| project Topic, People
+| order by People desc""", "barchart", "50"),
+        ask_query("Groups of the latest window", LATEST + """latest
+| where Cut == "group"
+| project GroupName, Conversations, People
+| order by People desc""", "table", "50"),
+        ask_query("Topics per car model", LATEST + """latest
+| where Cut == "topic_model"
+| project CarModel, Topic, People
+| order by CarModel asc, People desc""", "table", "50"),
+        ask_query("Per client", LATEST + """latest
+| where Cut == "client"
+| project Client, Conversations, People
+| order by People desc""", "table", "50"),
+        ask_query("Weekly trend per topic, 12 weeks (latest run of the latest window in each week)", INSIGHTS + """let topics = ins
+| where Cut == "topic" and WindowEnd >= startofweek(now()) - 12 * 7d;
+let runs = topics | summarize Run = max(Run) by WindowEnd;
+let ends = topics | summarize WindowEnd = max(WindowEnd) by Week = startofweek(WindowEnd);
+topics
+| join kind=inner runs on WindowEnd, Run
+| join kind=inner ends on WindowEnd
+| summarize People = max(People) by Week, Topic
+| order by Week asc""", "timechart", "100"),
+        ask_query("Missing nights: days of the last 30 with no run, where a night's window ends the day before yesterday",
+                  INSIGHTS + """let runs = ins | where Cut == "run";
+let first_end = toscalar(runs | summarize min(WindowEnd));
+let seen = runs | distinct WindowEnd;
+range Day from startofday(now()) - 31d to startofday(now()) - 2d step 1d
+| where Day >= first_end
+| join kind=leftanti seen on $left.Day == $right.WindowEnd
+| project Date = format_datetime(Day, "yyyy-MM-dd")
+| order by Date desc""", "table", "100", noDataMessage="No night is missing."),
+    ]
 
 
 def workbook() -> dict:
@@ -184,6 +268,7 @@ def workbook() -> dict:
     with_photo = countif(content contains "data:image" or content contains "base64"),
     longest_row = max(strlen(content)), latest = max(timestamp) by stored_in
 | order by stored_in asc""", "table", "100", noDataMessage="No rows from Foundry's tracing in this time range."),
+        *ask_section(),
     ]
     return {
         "version": "Notebook/1.0",

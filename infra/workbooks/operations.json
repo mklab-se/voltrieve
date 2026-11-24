@@ -377,6 +377,193 @@
     "noDataMessage": "No rows from Foundry's tracing in this time range."
    },
    "customWidth": "100"
+  },
+  {
+   "type": 1,
+   "content": {
+    "json": "## What people ask\nOnly topics shared by at least five people are shown. Counts are rounded to five. A missing number means under five people or held back, not zero. Real and made up are never added: the **Source** below picks one of them, and every item here follows it."
+   }
+  },
+  {
+   "type": 9,
+   "content": {
+    "version": "KqlParameterItem/1.0",
+    "parameters": [
+     {
+      "id": "source",
+      "version": "KqlParameterItem/1.0",
+      "name": "Source",
+      "label": "Source",
+      "type": 2,
+      "isRequired": true,
+      "value": "real",
+      "jsonData": "[{\"value\": \"real\", \"label\": \"Real\"}, {\"value\": \"seeded\", \"label\": \"Made up\"}]"
+     }
+    ]
+   }
+  },
+  {
+   "type": 3,
+   "content": {
+    "version": "KqlItem/1.0",
+    "query": "let ins = VoltrieveInsights_CL | where Source == \"{Source}\";\nlet last_end = toscalar(ins | summarize max(WindowEnd));\nlet last_run = toscalar(ins | where WindowEnd == last_end | summarize max(Run));\nlet latest = ins | where WindowEnd == last_end and Run == last_run;\nlatest\n| summarize people = max(iff(Cut == \"all\", People, int(null))),\n    conversations = max(iff(Cut == \"all\", Conversations, int(null))),\n    share = max(SampleShare), run = max(Run)\n| project pack = pack_array(\n    pack(\"metric\", \"People\", \"value\", todouble(people), \"note\", \"about, rounded to five\"),\n    pack(\"metric\", \"Conversations\", \"value\", todouble(conversations), \"note\", \"about, rounded to five\"),\n    pack(\"metric\", \"Share sampled (%)\", \"value\", round(100.0 * share, 0), \"note\", \"of the conversations\"),\n    pack(\"metric\", \"Last run (days ago)\", \"value\", todouble(datetime_diff(\"day\", now(), run)),\n        \"note\", format_datetime(run, \"yyyy-MM-dd\")))\n| mv-expand pack\n| project metric = tostring(pack.metric), value = todouble(pack.value), note = tostring(pack.note)",
+    "size": 0,
+    "title": "The latest run",
+    "timeContext": {
+     "durationMs": 31622400000
+    },
+    "queryType": 0,
+    "resourceType": "microsoft.operationalinsights/workspaces",
+    "visualization": "tiles",
+    "tileSettings": {
+     "titleContent": {
+      "columnMatch": "metric",
+      "formatter": 1
+     },
+     "leftContent": {
+      "columnMatch": "value",
+      "formatter": 12,
+      "formatOptions": {
+       "palette": "auto"
+      },
+      "numberFormat": {
+       "unit": 0,
+       "options": {
+        "maximumFractionDigits": 2
+       }
+      }
+     },
+     "secondaryContent": {
+      "columnMatch": "note",
+      "formatter": 1
+     },
+     "showBorder": true
+    },
+    "crossComponentResources": [
+     "__WORKSPACE_ID__"
+    ]
+   },
+   "customWidth": "100"
+  },
+  {
+   "type": 3,
+   "content": {
+    "version": "KqlItem/1.0",
+    "query": "let ins = VoltrieveInsights_CL | where Source == \"{Source}\";\nlet last_end = toscalar(ins | summarize max(WindowEnd));\nlet last_run = toscalar(ins | where WindowEnd == last_end | summarize max(Run));\nlet latest = ins | where WindowEnd == last_end and Run == last_run;\nlatest\n| where Cut == \"topic\"\n| project Topic, People\n| order by People desc",
+    "size": 0,
+    "title": "Topics of the latest window (people)",
+    "timeContext": {
+     "durationMs": 31622400000
+    },
+    "queryType": 0,
+    "resourceType": "microsoft.operationalinsights/workspaces",
+    "visualization": "barchart",
+    "noDataMessage": "Not enough people yet.",
+    "crossComponentResources": [
+     "__WORKSPACE_ID__"
+    ]
+   },
+   "customWidth": "50"
+  },
+  {
+   "type": 3,
+   "content": {
+    "version": "KqlItem/1.0",
+    "query": "let ins = VoltrieveInsights_CL | where Source == \"{Source}\";\nlet last_end = toscalar(ins | summarize max(WindowEnd));\nlet last_run = toscalar(ins | where WindowEnd == last_end | summarize max(Run));\nlet latest = ins | where WindowEnd == last_end and Run == last_run;\nlatest\n| where Cut == \"group\"\n| project GroupName, Conversations, People\n| order by People desc",
+    "size": 0,
+    "title": "Groups of the latest window",
+    "timeContext": {
+     "durationMs": 31622400000
+    },
+    "queryType": 0,
+    "resourceType": "microsoft.operationalinsights/workspaces",
+    "visualization": "table",
+    "noDataMessage": "Not enough people yet.",
+    "crossComponentResources": [
+     "__WORKSPACE_ID__"
+    ]
+   },
+   "customWidth": "50"
+  },
+  {
+   "type": 3,
+   "content": {
+    "version": "KqlItem/1.0",
+    "query": "let ins = VoltrieveInsights_CL | where Source == \"{Source}\";\nlet last_end = toscalar(ins | summarize max(WindowEnd));\nlet last_run = toscalar(ins | where WindowEnd == last_end | summarize max(Run));\nlet latest = ins | where WindowEnd == last_end and Run == last_run;\nlatest\n| where Cut == \"topic_model\"\n| project CarModel, Topic, People\n| order by CarModel asc, People desc",
+    "size": 0,
+    "title": "Topics per car model",
+    "timeContext": {
+     "durationMs": 31622400000
+    },
+    "queryType": 0,
+    "resourceType": "microsoft.operationalinsights/workspaces",
+    "visualization": "table",
+    "noDataMessage": "Not enough people yet.",
+    "crossComponentResources": [
+     "__WORKSPACE_ID__"
+    ]
+   },
+   "customWidth": "50"
+  },
+  {
+   "type": 3,
+   "content": {
+    "version": "KqlItem/1.0",
+    "query": "let ins = VoltrieveInsights_CL | where Source == \"{Source}\";\nlet last_end = toscalar(ins | summarize max(WindowEnd));\nlet last_run = toscalar(ins | where WindowEnd == last_end | summarize max(Run));\nlet latest = ins | where WindowEnd == last_end and Run == last_run;\nlatest\n| where Cut == \"client\"\n| project Client, Conversations, People\n| order by People desc",
+    "size": 0,
+    "title": "Per client",
+    "timeContext": {
+     "durationMs": 31622400000
+    },
+    "queryType": 0,
+    "resourceType": "microsoft.operationalinsights/workspaces",
+    "visualization": "table",
+    "noDataMessage": "Not enough people yet.",
+    "crossComponentResources": [
+     "__WORKSPACE_ID__"
+    ]
+   },
+   "customWidth": "50"
+  },
+  {
+   "type": 3,
+   "content": {
+    "version": "KqlItem/1.0",
+    "query": "let ins = VoltrieveInsights_CL | where Source == \"{Source}\";\nlet topics = ins\n| where Cut == \"topic\" and WindowEnd >= startofweek(now()) - 12 * 7d;\nlet runs = topics | summarize Run = max(Run) by WindowEnd;\nlet ends = topics | summarize WindowEnd = max(WindowEnd) by Week = startofweek(WindowEnd);\ntopics\n| join kind=inner runs on WindowEnd, Run\n| join kind=inner ends on WindowEnd\n| summarize People = max(People) by Week, Topic\n| order by Week asc",
+    "size": 0,
+    "title": "Weekly trend per topic, 12 weeks (latest run of the latest window in each week)",
+    "timeContext": {
+     "durationMs": 31622400000
+    },
+    "queryType": 0,
+    "resourceType": "microsoft.operationalinsights/workspaces",
+    "visualization": "timechart",
+    "noDataMessage": "Not enough people yet.",
+    "crossComponentResources": [
+     "__WORKSPACE_ID__"
+    ]
+   },
+   "customWidth": "100"
+  },
+  {
+   "type": 3,
+   "content": {
+    "version": "KqlItem/1.0",
+    "query": "let ins = VoltrieveInsights_CL | where Source == \"{Source}\";\nlet runs = ins | where Cut == \"run\";\nlet first_end = toscalar(runs | summarize min(WindowEnd));\nlet seen = runs | distinct WindowEnd;\nrange Day from startofday(now()) - 31d to startofday(now()) - 2d step 1d\n| where Day >= first_end\n| join kind=leftanti seen on $left.Day == $right.WindowEnd\n| project Date = format_datetime(Day, \"yyyy-MM-dd\")\n| order by Date desc",
+    "size": 0,
+    "title": "Missing nights: days of the last 30 with no run, where a night's window ends the day before yesterday",
+    "timeContext": {
+     "durationMs": 31622400000
+    },
+    "queryType": 0,
+    "resourceType": "microsoft.operationalinsights/workspaces",
+    "visualization": "table",
+    "noDataMessage": "No night is missing.",
+    "crossComponentResources": [
+     "__WORKSPACE_ID__"
+    ]
+   },
+   "customWidth": "100"
   }
  ],
  "fallbackResourceIds": [
