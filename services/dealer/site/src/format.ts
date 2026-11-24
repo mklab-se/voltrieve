@@ -14,6 +14,14 @@ export function when(iso: string | null, now = new Date()): string {
   return d.toDateString() === now.toDateString() ? hour : `${d.getDate()} ${MONTHS[d.getMonth()]} ${hour}`;
 }
 
+const FULL_MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+/** A day, written out. */
+export function day(iso: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "" : `${d.getDate()} ${FULL_MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+}
+
 /** The time of a log entry, with seconds. */
 export function clock(iso: string): string {
   const d = new Date(iso);

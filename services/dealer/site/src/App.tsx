@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createApi, type Api } from "./api";
 import { bootAuth, type Auth, type AuthSession } from "./auth";
 import { Confirm } from "./components/Confirm";
@@ -7,6 +7,7 @@ import { Inventory } from "./components/Inventory";
 import { Log } from "./components/Log";
 import { ConfigMissing, Loading, NoAccess, Notices, SignIn } from "./components/Notices";
 import { Orders } from "./components/Orders";
+import { Signing } from "./components/Signing";
 import { loadConfig, type ConfigResult } from "./config";
 import { RESET, useDealer } from "./state";
 
@@ -79,8 +80,22 @@ interface DeskProps {
 /** The page itself, for a signed-in account. */
 export function Desk({ api, session, theme, onToggleTheme, onSignOut }: DeskProps) {
   const dealer = useDealer(api);
-  const { state, denied, live, lost } = dealer;
+  const { state, denied, live, lost, arrived, dismiss } = dealer;
   const [asking, setAsking] = useState(false);
+  const [landed, setLanded] = useState<string>();
+  const signed = useCallback(
+    (number: string) => {
+      setLanded(number);
+      dismiss(number);
+    },
+    [dismiss],
+  );
+  const signing = arrived[0];
+  // Whether the page was dimmed by the paper before.
+  const wasSigning = useRef(false);
+  useEffect(() => {
+    wasSigning.current = signing !== undefined;
+  }, [signing]);
 
   return (
     <div className="app">
@@ -98,7 +113,7 @@ export function Desk({ api, session, theme, onToggleTheme, onSignOut }: DeskProp
           <Notices problem={dealer.problem} notice={dealer.notice} onClose={dealer.dismissNotice} />
           {state ? (
             <>
-              <Orders state={state} busy={dealer.busy} onDeliver={dealer.deliver} onDelete={dealer.remove} />
+              <Orders state={state} busy={dealer.busy} landed={landed} onDeliver={dealer.deliver} onDelete={dealer.remove} />
               <Inventory state={state} flashes={dealer.flashes} onChange={(model, city, change) => void dealer.changeStock(model, city, change)} />
               <Log state={state} />
               <footer className="desk-foot">
@@ -123,6 +138,17 @@ export function Desk({ api, session, theme, onToggleTheme, onSignOut }: DeskProp
             setAsking(false);
             void dealer.reset();
           }}
+        />
+      )}
+      {/* Last, so that it is over a question that is open. Its dialog opens over it anyway. */}
+      {signing && (
+        <Signing
+          key={signing.number}
+          order={signing}
+          model={state?.models.find((m) => m.slug === signing.model)?.name ?? signing.model}
+          first={!wasSigning.current}
+          waiting={arrived.length - 1}
+          onDone={signed}
         />
       )}
     </div>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clientName, money, place, when } from "./format";
+import { clientName, day, money, place, when } from "./format";
 
 describe("money", () => {
   it("has a space between thousands", () => {
@@ -15,6 +15,13 @@ describe("a time", () => {
     expect(when(new Date(2026, 10, 24, 9, 5).toISOString(), now)).toBe("09:05");
     expect(when(new Date(2026, 10, 3, 9, 5).toISOString(), now)).toBe("3 Nov 09:05");
     expect(when("not a time", now)).toBe("");
+  });
+});
+
+describe("a day", () => {
+  it("is written out", () => {
+    expect(day(new Date(2026, 10, 3, 9, 5).toISOString())).toBe("3 November 2026");
+    expect(day("not a time")).toBe("");
   });
 });
 

@@ -109,6 +109,18 @@ describe("Delete", () => {
     expect(p.onDelete).not.toHaveBeenCalled();
   });
 
+  it("is taken back when the browser closes the question in its own way", () => {
+    const p = page({ orders: [order("VO-1002")] });
+    p.click("Delete VO-1002");
+    p.all("dialog")[0].props.onClose(); // a late event: it is open
+    expect(p.all("dialog")).toHaveLength(1);
+    p.all("dialog")[0].dom.close();
+    p.all("dialog")[0].props.onClose();
+    expect(p.all("dialog")).toEqual([]);
+    p.click("Delete VO-1002");
+    expect(p.all("dialog")[0].dom.open).toBe(true);
+  });
+
   it("deletes once when it is confirmed", () => {
     const p = page({ orders: [order("VO-1002")] });
     p.click("Delete VO-1002");

@@ -12,7 +12,7 @@ export interface El {
   type: string;
   props: Record<string, any>;
   children: Found[];
-  dom: { focus: () => void; showModal: () => void; close: () => void; open: boolean };
+  dom: { focus: () => void; showModal: () => void; close: () => void; open: boolean; getBoundingClientRect: () => object };
 }
 export type Found = El | string;
 
@@ -68,7 +68,8 @@ export const mocked = { ...actual, useState, useRef, useMemo, useCallback, useEf
 export function show(root: ReactElement) {
   const memory = new Map<string, unknown[]>();
   const doms = new Map<string, El["dom"]>();
-  const focused: { last?: string } = {};
+  // As in a browser: a dialog takes the focus, and gives it back.
+  const focused: { on?: El["dom"] } = {};
   let tree: Found[] = [];
   let busy = false;
   let dirty = false;
@@ -91,7 +92,21 @@ export function show(root: ReactElement) {
     }
     const here = `${path}<${String(el.type)}:${el.key ?? ""}>`;
     if (!doms.has(here)) {
-      const dom: El["dom"] = { open: false, focus: () => (focused.last = path), showModal: () => (dom.open = true), close: () => (dom.open = false) };
+      let before: El["dom"] | undefined;
+      const dom: El["dom"] = {
+        open: false,
+        getBoundingClientRect: () => ({ left: 0, top: 0, width: 0, height: 0 }),
+        focus: () => void (focused.on = dom),
+        showModal: () => {
+          before = focused.on;
+          focused.on = dom;
+          dom.open = true;
+        },
+        close: () => {
+          if (dom.open) focused.on = before;
+          dom.open = false;
+        },
+      };
       doms.set(here, dom);
     }
     const found: El = { type: String(el.type), props: el.props, children: walk(el.props.children, here, seen), dom: doms.get(here)! };

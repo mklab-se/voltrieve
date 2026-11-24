@@ -6,11 +6,13 @@ import { Confirm } from "./Confirm";
 interface Props {
   state: DealerState;
   busy: ReadonlySet<string>;
+  /** The order whose paper was put in the list last. */
+  landed?: string;
   onDeliver: (number: string, city: string) => Promise<boolean>;
   onDelete: (number: string) => Promise<boolean>;
 }
 
-export function Orders({ state, busy, onDeliver, onDelete }: Props) {
+export function Orders({ state, busy, landed, onDeliver, onDelete }: Props) {
   const [asking, setAsking] = useState<string>();
   const heading = useRef<HTMLHeadingElement>(null);
   const asked = state.orders.find((o) => o.number === asking);
@@ -41,6 +43,7 @@ export function Orders({ state, busy, onDeliver, onDelete }: Props) {
               model={state.models.find((m) => m.slug === o.model)?.name ?? o.model}
               stock={state.stock}
               busy={busy.has(o.number)}
+              landed={o.number === landed}
               onDeliver={onDeliver}
               onAsk={() => setAsking(o.number)}
             />
@@ -66,19 +69,20 @@ interface RowProps {
   model: string;
   stock: Stock;
   busy: boolean;
+  landed: boolean;
   onDeliver: (number: string, city: string) => Promise<boolean>;
   onAsk: () => void;
 }
 
 /** What customers wrote is text in React, and stays in its own direction. */
-function Row({ order: o, model, stock, busy, onDeliver, onAsk }: RowProps) {
+function Row({ order: o, model, stock, busy, landed, onDeliver, onAsk }: RowProps) {
   const remove = (
     <button type="button" className="ghost" aria-label={`Delete ${o.number}`} disabled={busy} onClick={onAsk}>
       Delete
     </button>
   );
   return (
-    <li className={`order ${o.status}`} data-order={o.number}>
+    <li className={`order ${o.status}${landed ? " landed" : ""}`} data-order={o.number}>
       <p className="order-what">
         <span className="order-number">{o.number}</span> <span className="order-model">{model}</span>{" "}
         <span className="order-price">{money(o.price_sek)}</span>
