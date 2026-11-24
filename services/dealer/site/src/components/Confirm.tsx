@@ -29,8 +29,9 @@ export function Confirm({ title, text, keep, go, onKeep, onGo }: Props) {
         e.preventDefault();
         onKeep();
       }}
-      // A browser may close it without asking. The close above sends this too, late, when it is open again.
-      onClose={() => !dialog.current?.open && onKeep()}
+      // A browser may close it without asking. The close above sends this too, late, when it is
+      // open again or gone.
+      onClose={() => dialog.current?.open === false && onKeep()}
     >
       <h2 id={`${id}t`}>{title}</h2>
       <p id={`${id}d`}>{text}</p>

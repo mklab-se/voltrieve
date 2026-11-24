@@ -90,8 +90,8 @@ export function Signing({ order, model, first, waiting, onDone }: Props) {
         e.preventDefault();
         skip();
       }}
-      // Also sent, late, by the close above when it is open again.
-      onClose={() => !dialog.current?.open && skip()}
+      // Also sent, late, by the close above, when it is open again or gone.
+      onClose={() => dialog.current?.open === false && skip()}
     >
       <div
         className="paper"

@@ -274,6 +274,92 @@ describe("orders that arrive", () => {
   });
 });
 
+describe("a hidden tab", () => {
+  /** A document of which only the visibility matters. */
+  function tab() {
+    const doc = Object.assign(new EventTarget(), { visibilityState: "visible", querySelectorAll: () => [] });
+    vi.stubGlobal("document", doc);
+    return (state: "visible" | "hidden") => {
+      doc.visibilityState = state;
+      doc.dispatchEvent(new Event("visibilitychange"));
+    };
+  }
+
+  it.each([["with motion", false, 5500], ["with reduced motion", true, 3000]] as const)("makes the papers wait, and starts them when it is shown, %s", async (_, still, ms) => {
+    reduced = still;
+    const turn = tab();
+    const f = await desk();
+    turn("hidden");
+    await f.now(B, A);
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(f.shown()).toEqual([]);
+    turn("visible");
+    expect(f.shown()).toEqual(["VO-1001"]);
+    expect(String(f.dialog().props.className).split(" ")).toContain("first");
+    await vi.advanceTimersByTimeAsync(ms - 1);
+    expect(f.shown()).toEqual(["VO-1001"]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(f.shown()).toEqual(["VO-1002"]);
+    await vi.advanceTimersByTimeAsync(ms);
+    expect(f.shown()).toEqual([]);
+  });
+
+  it("starts a paper over that was playing", async () => {
+    const turn = tab();
+    const f = await desk();
+    const plus = f.button("One Spark more in Malmö").dom;
+    plus.focus();
+    await f.now(A);
+    await vi.advanceTimersByTimeAsync(5000); // it is flying
+    const old = f.dialog();
+    turn("hidden");
+    expect(f.shown()).toEqual([]);
+    expect(old.dom.open).toBe(false);
+    await vi.advanceTimersByTimeAsync(20_000);
+    turn("visible");
+    expect(f.shown()).toEqual(["VO-1001"]);
+    expect(String(f.dialog().props.className)).not.toContain("gone");
+    await vi.advanceTimersByTimeAsync(5499);
+    expect(f.shown()).toEqual(["VO-1001"]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(f.shown()).toEqual([]);
+    expect(f.focused.on).toBe(plus);
+  });
+
+  it("is not a skip when the dialog that went away says that it closed", async () => {
+    const turn = tab();
+    const f = await desk();
+    await f.now(A);
+    const old = f.dialog();
+    turn("hidden");
+    old.props.ref.current = null; // as React does
+    old.props.onClose();
+    turn("visible");
+    expect(f.shown()).toEqual(["VO-1001"]);
+  });
+
+  it("does not bring back what was skipped or deleted", async () => {
+    const turn = tab();
+    const f = await desk();
+    await f.now(B, A);
+    f.click();
+    turn("hidden");
+    await f.now(A);
+    turn("visible");
+    expect(f.shown()).toEqual([]);
+  });
+
+  it("is started in as well", async () => {
+    const turn = tab();
+    turn("hidden");
+    const f = await desk();
+    await f.now(A);
+    expect(f.shown()).toEqual([]);
+    turn("visible");
+    expect(f.shown()).toEqual(["VO-1001"]);
+  });
+});
+
 describe("the flight", () => {
   const rect = (x: number, y: number, width: number, height: number) => ({ left: x, top: y, width, height });
   it("goes from the middle of the paper to the middle of the row, and shrinks to its height", () => {

@@ -10,6 +10,7 @@ import { Orders } from "./components/Orders";
 import { Signing } from "./components/Signing";
 import { loadConfig, type ConfigResult } from "./config";
 import { RESET, useDealer } from "./state";
+import { useVisible } from "./visible";
 
 type Theme = "light" | "dark";
 
@@ -90,7 +91,9 @@ export function Desk({ api, session, theme, onToggleTheme, onSignOut }: DeskProp
     },
     [dismiss],
   );
-  const signing = arrived[0];
+  // Nobody sees a paper in a hidden tab. It is taken away without being dismissed, and starts over
+  // when the tab is shown.
+  const signing = useVisible() ? arrived[0] : undefined;
   // Whether the page was dimmed by the paper before.
   const wasSigning = useRef(false);
   useEffect(() => {
