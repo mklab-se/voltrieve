@@ -77,7 +77,9 @@ def select(raw: Iterable[dict], first: date, last: date, notice: date | None) ->
             continue
         if not isinstance(ident, str) or not ident:
             continue
-        seeded = meta.get("seeded") == "true"  # only this exact text, anything else is real
+        if "seeded" in meta and meta["seeded"] != "true":
+            continue  # a mark we do not know: fail closed
+        seeded = "seeded" in meta
         started = _started(item, seeded, meta)
         if started is None or not first <= started <= last:
             continue

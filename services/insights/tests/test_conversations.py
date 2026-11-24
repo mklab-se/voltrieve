@@ -245,11 +245,18 @@ def test_nothing_that_identifies_is_in_the_repr():
 
 
 @pytest.mark.parametrize("flag", ["True", True, "false", "", None, 1])
-def test_only_the_exact_text_true_is_seeded(flag):
+def test_an_odd_seeded_mark_is_skipped(flag):
     item = raw(DAY)
     item["metadata"]["seeded"] = flag
-    item["metadata"]["started"] = "2026-11-10"
-    assert [c.seeded for c in chosen([item])] == [False]
+    assert chosen([item]) == []
+
+
+def test_no_seeded_key_is_real():
+    assert [c.seeded for c in chosen([raw(DAY)])] == [False]
+
+
+def test_the_exact_text_true_is_seeded():
+    assert [c.seeded for c in chosen([raw(DAY, seeded=True, started="2026-11-18")])] == [True]
 
 
 def test_a_real_conversation_with_a_started_key_is_dated_by_created_at():
