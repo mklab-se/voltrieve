@@ -7,6 +7,7 @@ so they are data: they are never logged. Only counts are logged.
 
 import asyncio
 import logging
+import math
 import time
 from collections.abc import Awaitable, Callable
 
@@ -23,6 +24,7 @@ ROW_LIMIT = 2000
 MAX_AGE_DAYS = 400
 WEEKS = 12
 TIMEOUT_SECONDS = 20.0
+FETCH_SECONDS = 30.0
 UNAVAILABLE = "The usage insights are not available right now"
 NOT_CONFIGURED = "Usage insights are not configured"
 
@@ -41,20 +43,19 @@ class UsageNotConfigured(Exception):
 def _rows_query(source: str) -> str:
     return (
         f'let latest = toscalar({TABLE} | where TimeGenerated > ago({MAX_AGE_DAYS}d) '
-        f'| where Source == "{source}" | summarize arg_max(Run, Run) | project Run);\n'
+        f'| where Source == "{source}" | summarize max(Run));\n'
         f'{TABLE} | where TimeGenerated > ago({MAX_AGE_DAYS}d) | where Source == "{source}" '
-        f"| where Run == latest | project {_PROJECT} | take {ROW_LIMIT}"
+        f"| where Run == latest | project {_PROJECT} | take {ROW_LIMIT + 1}"
     )
 
 
 def _weeks_query(source: str) -> str:
     return (
         f'let ends = {TABLE} | where TimeGenerated > ago({MAX_AGE_DAYS}d) | where Source == "{source}" '
-        f"| where WindowEnd > ago({WEEKS * 7}d) | summarize Run = max(Run) by WindowEnd "
-        f"| top {WEEKS} by WindowEnd desc;\n"
+        f"| where WindowEnd > ago({WEEKS * 7}d) | summarize Run = max(Run) by WindowEnd;\n"
         f'{TABLE} | where TimeGenerated > ago({MAX_AGE_DAYS}d) | where Source == "{source}" '
         f'| where Cut == "topic" | join kind=inner ends on WindowEnd, Run '
-        f"| project {_PROJECT} | take {ROW_LIMIT}"
+        f"| project {_PROJECT} | take {ROW_LIMIT + 1}"
     )
 
 
@@ -63,7 +64,7 @@ def _text(value) -> str:
 
 
 def _count(value) -> int | None:
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
         return None
     return int(value)
 
@@ -71,10 +72,12 @@ def _count(value) -> int | None:
 def _table(body) -> list[dict]:
     """The rows of the one table in a Log Analytics answer, as dicts by column name."""
     try:
+        if not isinstance(body, dict) or "error" in body:
+            raise ValueError
         table = body["tables"][0]
         names = [c["name"] for c in table["columns"]]
         rows = table["rows"]
-        if not all(name in names for name in COLUMNS) or not isinstance(rows, list):
+        if not all(name in names for name in COLUMNS) or not isinstance(rows, list) or len(rows) > ROW_LIMIT:
             raise ValueError
         return [dict(zip(names, row, strict=True)) for row in rows]
     except (KeyError, IndexError, TypeError, ValueError) as exc:
@@ -84,6 +87,8 @@ def _table(body) -> list[dict]:
 def build_answer(source: str, rows_body, weeks_body) -> dict:
     rows = _table(rows_body)
     run_row = next((r for r in rows if r["Cut"] == "run"), None)
+    if rows and run_row is None:
+        raise UsageUnavailable(UNAVAILABLE)
     first = run_row or (rows[0] if rows else None)
     out_rows = []
     for r in rows:
@@ -126,7 +131,7 @@ def build_answer(source: str, rows_body, weeks_body) -> dict:
             if first and first["WindowStart"] and first["WindowEnd"]
             else None
         ),
-        "sample_share": float(share) if isinstance(share, (int, float)) and not isinstance(share, bool) else None,
+        "sample_share": float(share) if isinstance(share, (int, float)) and not isinstance(share, bool) and math.isfinite(share) else None,
         "rows": out_rows,
         "weeks": weeks,
     }
@@ -162,14 +167,15 @@ class UsageService:
 
     async def _fetch(self, source: str) -> dict:
         try:
-            token = await self._token()
-            async with httpx.AsyncClient(timeout=self._timeout) as http:
-                rows_body = await self._query(http, token, _rows_query(source))
-                weeks_body = await self._query(http, token, _weeks_query(source))
+            async with asyncio.timeout(FETCH_SECONDS):
+                token = await self._token()
+                async with httpx.AsyncClient(timeout=self._timeout) as http:
+                    rows_body = await self._query(http, token, _rows_query(source))
+                    weeks_body = await self._query(http, token, _weeks_query(source))
+            answer = build_answer(source, rows_body, weeks_body)
         except Exception as exc:
             logger.warning("Usage insights query failed: %s", type(exc).__name__)
             raise UsageUnavailable(UNAVAILABLE) from exc
-        answer = build_answer(source, rows_body, weeks_body)
         logger.info("Usage insights read: %d rows, %d weeks", len(answer["rows"]), len(answer["weeks"]))
         return answer
 

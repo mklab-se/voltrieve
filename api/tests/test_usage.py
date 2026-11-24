@@ -181,10 +181,11 @@ async def test_the_queries_take_the_latest_run_of_each_window_end_and_are_limite
     queries = [json.loads(c.request.content)["query"] for c in route.calls]
     rows_q = next(q for q in queries if "join" not in q)
     weeks_q = next(q for q in queries if "join" in q)
-    assert "arg_max(Run" in rows_q and "Run == latest" in rows_q
-    assert "summarize Run = max(Run) by WindowEnd" in weeks_q and "top 12 by WindowEnd" in weeks_q
+    assert "Run == latest" in rows_q
+    assert "summarize Run = max(Run) by WindowEnd" in weeks_q and "top " not in weeks_q
+    assert "ago(84d)" in weeks_q and "max(Run))" in rows_q and "arg_max" not in rows_q
     for q in queries:
-        assert "take 2000" in q and "ago(400d)" in q and 'Source == "real"' in q
+        assert "take 2001" in q and "ago(400d)" in q and 'Source == "real"' in q
 
 
 @respx.mock
@@ -235,7 +236,7 @@ async def test_a_wrong_answer_shape_gives_503_with_a_fixed_text(http, admin, bad
 @respx.mock
 async def test_group_names_are_json_strings_and_never_logged(http, admin, caplog):
     name = '<script>alert(1)</script> "quoted"'
-    respx.post(URL).mock(side_effect=answers(table(row("group", GroupName=name, conversations=5)), WEEKS))
+    respx.post(URL).mock(side_effect=answers(table(row("run", conversations=None), row("group", GroupName=name, conversations=5)), WEEKS))
     with caplog.at_level(logging.DEBUG):
         r = await http.get("/admin/insights", headers=admin)
     assert r.json()["rows"][0]["group"] == name and r.headers["content-type"].startswith("application/json")
@@ -301,3 +302,74 @@ async def test_two_requests_at_once_make_one_query(http, admin):
     a, b = await first, await second
     assert a.status_code == b.status_code == 200 and a.json() == b.json()
     assert route.call_count == 2  # the rows and the weeks, once
+
+
+@respx.mock
+@pytest.mark.parametrize("which", ["rows", "weeks"])
+@pytest.mark.parametrize("error", [{"code": "PartialError"}, "x", None, 0])
+async def test_a_partial_failure_body_is_not_an_answer_and_is_not_cached(http, admin, which, error):
+    bad = {**(LATEST if which == "rows" else WEEKS), "error": error}
+    route = respx.post(URL).mock(side_effect=answers(bad if which == "rows" else LATEST,
+                                                      bad if which == "weeks" else WEEKS))
+    r = await http.get("/admin/insights", headers=admin)
+    assert r.status_code == 503 and r.json() == {"detail": "The usage insights are not available right now"}
+    route.mock(side_effect=answers())
+    assert (await http.get("/admin/insights", headers=admin)).status_code == 200
+
+
+@respx.mock
+async def test_the_weeks_hold_every_night_not_twelve(http, admin):
+    nights = table(*[row("topic", end=f"2026-11-{d:02d}T00:00:00Z", Topic="charging") for d in range(1, 21)])
+    respx.post(URL).mock(side_effect=answers(LATEST, nights))
+    assert len((await http.get("/admin/insights", headers=admin)).json()["weeks"]) == 20
+
+
+@respx.mock
+async def test_hitting_the_row_limit_gives_503(http, admin):
+    many = table(row("run", conversations=None), *[row("all") for _ in range(2000)])
+    respx.post(URL).mock(side_effect=answers(many, WEEKS))
+    assert (await http.get("/admin/insights", headers=admin)).status_code == 503
+
+
+@respx.mock
+async def test_rows_without_a_run_row_give_503(http, admin):
+    respx.post(URL).mock(side_effect=answers(table(row("all")), WEEKS))
+    assert (await http.get("/admin/insights", headers=admin)).status_code == 503
+
+
+@respx.mock
+async def test_a_surprise_in_the_rows_is_a_503_not_a_500(http, admin):
+    odd = table(row("run", conversations=None, share="x"), row("all", Run=None, Cut=["x"]))
+    respx.post(URL).mock(side_effect=answers(odd, WEEKS))
+    r = await http.get("/admin/insights", headers=admin)
+    assert r.status_code != 500
+
+
+@respx.mock
+async def test_non_finite_counts_are_not_rows(http, admin):
+    odd = table(row("run", conversations=None), row("all", conversations=float("nan")),
+                row("topic", Topic="a", conversations=7))
+    respx.post(URL).mock(side_effect=lambda req: httpx.Response(
+        200, content=json.dumps(odd if "join" not in json.loads(req.content)["query"] else WEEKS),
+        headers={"content-type": "application/json"}))
+    rows = (await http.get("/admin/insights", headers=admin)).json()["rows"]
+    assert [r["cut"] for r in rows] == ["topic"]
+
+
+async def test_a_slow_query_times_out_and_frees_the_lock(usage_app, admin, monkeypatch):
+    import asyncio
+
+    import app.usage as usage
+
+    monkeypatch.setattr(usage, "FETCH_SECONDS", 0.05)
+    transport = httpx.ASGITransport(app=usage_app())
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
+        with respx.mock:
+            async def hang(request):
+                await asyncio.sleep(5)
+
+            route = respx.post(URL).mock(side_effect=hang)
+            r = await c.get("/admin/insights", headers=admin)
+            assert r.status_code == 503 and r.json()["detail"] == "The usage insights are not available right now"
+            route.mock(side_effect=answers())
+            assert (await c.get("/admin/insights", headers=admin)).status_code == 200
