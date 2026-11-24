@@ -5,6 +5,7 @@ import { Header } from "./components/Header";
 import { ConfigMissing, Loading, SignIn } from "./components/Notices";
 import { readConfig, type AppConfig } from "./config";
 import { checkAccess } from "./dashboard";
+import { tabFromHash, type Tab } from "./insights";
 
 type Theme = "light" | "dark";
 
@@ -53,7 +54,8 @@ function Authed({ config }: { config: AppConfig }) {
 
 function Workspace({ config, auth, session }: { config: AppConfig; auth: Auth; session: AuthSession }) {
   const [theme, setTheme] = useState<Theme>(initialTheme);
-  // The feed is not asked for until the role is there.
+  const [tab, setTab] = useState<Tab>(() => tabFromHash(location.hash));
+  // Nothing is asked for until the role is there.
   const [access, setAccess] = useState<Access>("checking");
 
   useEffect(() => {
@@ -68,6 +70,18 @@ function Workspace({ config, auth, session }: { config: AppConfig; auth: Auth; s
     };
   }, [auth]);
 
+  useEffect(() => {
+    const read = () => setTab(tabFromHash(location.hash));
+    window.addEventListener("hashchange", read);
+    return () => window.removeEventListener("hashchange", read);
+  }, []);
+
+  function chooseTab(next: Tab) {
+    if (next === tab) return;
+    history.pushState(null, "", next === "ask" ? "#ask" : location.pathname + location.search);
+    setTab(next);
+  }
+
   function toggleTheme() {
     const next = theme === "dark" ? "light" : "dark";
     setTheme(next);
@@ -80,8 +94,15 @@ function Workspace({ config, auth, session }: { config: AppConfig; auth: Auth; s
 
   return (
     <div className="app">
-      <Header session={session} onSignOut={() => void auth.signOut()} theme={theme} onToggleTheme={toggleTheme} />
-      <Gate access={access} apiUrl={config.apiUrl} auth={auth} liveMetricsUrl={config.liveMetricsUrl} workbookUrl={config.workbookUrl} />
+      <Header
+        session={session}
+        onSignOut={() => void auth.signOut()}
+        theme={theme}
+        onToggleTheme={toggleTheme}
+        tab={access === "allowed" ? tab : undefined}
+        onTab={chooseTab}
+      />
+      <Gate access={access} apiUrl={config.apiUrl} auth={auth} tab={tab} liveMetricsUrl={config.liveMetricsUrl} workbookUrl={config.workbookUrl} />
     </div>
   );
 }

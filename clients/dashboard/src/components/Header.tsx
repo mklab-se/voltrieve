@@ -1,13 +1,18 @@
+import type { KeyboardEvent } from "react";
 import type { AuthSession } from "../auth";
+import { nextTab, TABS, type Tab } from "../insights";
 
 interface Props {
   session: AuthSession;
   onSignOut: () => void;
   theme: "light" | "dark";
   onToggleTheme: () => void;
+  /** The chosen tab. No tabs are shown without it, as before access is allowed. */
+  tab?: Tab;
+  onTab?: (tab: Tab) => void;
 }
 
-export function Header({ session, onSignOut, theme, onToggleTheme }: Props) {
+export function Header({ session, onSignOut, theme, onToggleTheme, tab, onTab }: Props) {
   return (
     <header className="topbar">
       <div className="brand">
@@ -17,6 +22,7 @@ export function Header({ session, onSignOut, theme, onToggleTheme }: Props) {
         <span className="brand-name">Voltrieve</span>
         <span className="brand-sub">Operations</span>
       </div>
+      {tab && <Tabs tab={tab} onTab={(next) => onTab?.(next)} />}
       <div className="actions">
         <button className="ghost icon" onClick={onToggleTheme} aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`} title="Toggle theme">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -33,5 +39,33 @@ export function Header({ session, onSignOut, theme, onToggleTheme }: Props) {
         </button>
       </div>
     </header>
+  );
+}
+
+function Tabs({ tab, onTab }: { tab: Tab; onTab: (tab: Tab) => void }) {
+  function onKeyDown(e: KeyboardEvent) {
+    const next = nextTab(tab, e.key);
+    if (!next) return;
+    e.preventDefault();
+    onTab(next);
+    document.getElementById(`tab-${next}`)?.focus();
+  }
+  return (
+    <div className="tabs" role="tablist" aria-label="Pages">
+      {TABS.map(([id, name]) => (
+        <button
+          key={id}
+          id={`tab-${id}`}
+          role="tab"
+          aria-selected={tab === id}
+          aria-controls="panel"
+          tabIndex={tab === id ? 0 : -1}
+          onClick={() => onTab(id)}
+          onKeyDown={onKeyDown}
+        >
+          {name}
+        </button>
+      ))}
+    </div>
   );
 }
