@@ -453,22 +453,26 @@ async def test_the_order_tools_need_the_role(tools, events, name):
 
 
 @respx.mock
-async def test_a_read_timeout_on_placing_says_that_the_order_may_exist(tools, buyer, events, in_turn):
-    route = respx.post(f"{BASE}/orders").mock(side_effect=httpx.ReadTimeout("slow"))
+@pytest.mark.parametrize("reply", [
+    httpx.ReadTimeout("slow"), httpx.ConnectTimeout("slow"), httpx.ReadError("cut"), httpx.ConnectError("no"),
+    httpx.RemoteProtocolError("cut"), 500, 502, 503, 504,
+])
+async def test_a_lost_reply_to_an_order_says_that_it_may_exist(tools, buyer, events, in_turn, reply):
+    route = respx.post(f"{BASE}/orders")
+    route.mock(side_effect=reply) if isinstance(reply, Exception) else route.respond(reply, text=ADDRESS)
     out = await tools[0].execute("place_car_order", ORDER_CALLS["place_car_order"], buyer, events)
     assert out == "The order may have been received. Call place_car_order again with the same offer."
     assert route.call_count == 1
 
 
 @respx.mock
-async def test_other_failures_give_the_text_of_today(tools, buyer, events, in_turn):
-    unreachable = "The dealer service could not be reached ({}). Try again later."
-    respx.post(f"{BASE}/orders").mock(side_effect=httpx.ConnectError("no"))
-    out = await tools[0].execute("place_car_order", ORDER_CALLS["place_car_order"], buyer, events)
-    assert out == unreachable.format("ConnectError")
-    respx.post(f"{BASE}/orders/offers").mock(side_effect=httpx.ReadTimeout("slow"))
+async def test_a_lost_reply_to_an_offer_gives_the_text_of_today(tools, buyer, events, in_turn):
+    route = respx.post(f"{BASE}/orders/offers").mock(side_effect=httpx.ReadTimeout("slow"))
     out = await tools[0].execute("prepare_car_order", ORDER_CALLS["prepare_car_order"], buyer, events)
-    assert out == unreachable.format("ReadTimeout")
+    assert out == "The dealer service could not be reached (ReadTimeout). Try again later."
+    route.mock(return_value=httpx.Response(503))
+    out = await tools[0].execute("prepare_car_order", ORDER_CALLS["prepare_car_order"], buyer, events)
+    assert out == "The dealer service is unavailable (HTTP 503). Try again later."
 
 
 @respx.mock

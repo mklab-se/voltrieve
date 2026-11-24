@@ -60,13 +60,13 @@ class DealerClient:
 
     async def place(self, offer: str, customer: str, turn: str | None) -> str:
         body = {"offer": offer, "customer": customer, "turn": turn}
-        return await self._call("POST", "/orders", json=body, on_timeout=PLACE_AGAIN)
+        return await self._call("POST", "/orders", json=body, when_unsure=PLACE_AGAIN)
 
     async def _call(
-        self, method: str, path: str, then: str = "", on_timeout: str | None = None, **kwargs
+        self, method: str, path: str, then: str = "", when_unsure: str = "", **kwargs
     ) -> str:
-        """The answer, with `then` after it when the call succeeded. `on_timeout` is the text for a
-        request that was sent and got no answer in time."""
+        """The answer, with `then` after it when the call succeeded. `when_unsure` is the text
+        for a call that may have been carried out: every transport error and every 5xx."""
         headers = {
             "Authorization": f"Bearer {await self._token_provider()}",
             "X-Correlation-Id": current_correlation_id.get() or str(uuid.uuid4()),
@@ -76,13 +76,11 @@ class DealerClient:
                 method, f"{self._base_url}{path}", headers=headers, **kwargs
             )
         except httpx.HTTPError as exc:
-            if on_timeout is not None and isinstance(exc, httpx.ReadTimeout):
-                return on_timeout
-            return f"The dealer service could not be reached ({type(exc).__name__}). Try again later."
+            return when_unsure or f"The dealer service could not be reached ({type(exc).__name__}). Try again later."
         if response.is_success:
             return f"{response.text}\n{then}" if then else response.text
         if response.status_code >= 500:
-            return (
+            return when_unsure or (
                 f"The dealer service is unavailable (HTTP {response.status_code}). "
                 "Try again later."
             )
