@@ -116,3 +116,24 @@ def test_a_rejected_photo_makes_no_turn():
     result = make_api(handler).turn_with_photo("Can I park?", b"jpeg")
     assert result.turn is None and result.upload["code"] == "too_blurry"
     assert state == {"uploads": 1, "chats": 0}
+
+
+def test_every_request_says_it_is_a_test():
+    seen = []
+
+    def handler(request):
+        seen.append((request.url.path, request.headers.get("x-voltrieve-test")))
+        if request.url.path == "/attachments":
+            return httpx.Response(200, json={"id": "a1", "status": "ready"})
+        if request.url.path == "/chat":
+            call = {"call_id": "c1", "name": "beep", "arguments": "{}"}
+            return httpx.Response(200, text=sse(
+                ("client_tool_calls", {"conversation_id": "k", "turn_id": "t", "calls": [call]}),
+                ("done", {})))
+        return httpx.Response(200, text=sse(("delta", {"text": "ok"}), ("done", {})))
+
+    api = make_api(handler)
+    api.upload(b"jpeg", "sign")
+    api.turn("Beep.", handlers={"beep": lambda arguments: "done"})
+    assert [path for path, _ in seen] == ["/attachments", "/chat", "/chat/tool-results"]
+    assert all(value == "1" for _, value in seen)

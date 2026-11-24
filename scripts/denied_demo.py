@@ -50,7 +50,8 @@ async def run(backend: str) -> int:
     try:
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://demo",
                                      timeout=180.0) as client:
-            response = await client.post("/chat", json={"message": booking_request()})
+            response = await client.post("/chat", json={"message": booking_request()},
+                                         headers={"X-Voltrieve-Test": "1"})
             response.raise_for_status()
             events = list(parse_sse(response.text.splitlines()))
     finally:

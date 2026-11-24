@@ -22,6 +22,9 @@ ROOT = Path(__file__).resolve().parents[1]
 
 Event = tuple[str, dict]
 
+# Tells the API that a run is ours, so that it is never counted as use.
+TEST_HEADER = {"X-Voltrieve-Test": "1"}
+
 
 def azd_value(name: str) -> str:
     result = subprocess.run(
@@ -137,14 +140,14 @@ class Api:
     def __init__(self, base_url: str, token: Callable[[], str], backend: str, timeout: float = 180.0):
         self._token = token
         self._backend = backend
-        self._http = httpx.Client(base_url=base_url, timeout=timeout)
+        self._http = httpx.Client(base_url=base_url, timeout=timeout, headers=TEST_HEADER)
 
     def close(self) -> None:
         self._http.close()
 
     def upload(self, data: bytes, label: str = "") -> dict:
         """Upload an attachment and return the answer: `ready` with an id, or `rejected`."""
-        headers = {"Authorization": f"Bearer {self._token()}"}
+        headers = {"Authorization": f"Bearer {self._token()}", **TEST_HEADER}
         try:
             response = self._http.post("/attachments", files={"file": data}, data={"label": label}, headers=headers)
         except httpx.HTTPError as exc:
@@ -174,7 +177,8 @@ class Api:
         return result
 
     def _stream(self, path: str, body: dict, correlation_id: str | None) -> Iterator[Event]:
-        headers = {"Authorization": f"Bearer {self._token()}", "X-Agent-Backend": self._backend}
+        headers = {"Authorization": f"Bearer {self._token()}", "X-Agent-Backend": self._backend,
+                   **TEST_HEADER}
         if correlation_id:
             headers["X-Correlation-Id"] = correlation_id
         try:

@@ -562,3 +562,21 @@ def test_model_costs_prices_an_architecture_run_by_its_planner(tmp_path, monkeyp
     assert {row[1]: row[-1] for row in rows} == {
         "gpt-6.1-terra+gpt-6-luna": "100.00", "gpt-6.1-terra+gpt-5.4-mini": "750.00"
     }
+
+
+def test_every_tool_that_calls_the_deployed_chat_says_it_is_a_test():
+    """Our own scripts and checks must send X-Voltrieve-Test, directly or through Api, so that
+    their runs are never counted as use. Test files run in process and are not covered."""
+    root = SCRIPTS.parent
+    files = [*(root / "scripts").rglob("*.py"), *(root / "tests/routing").rglob("*.py"),
+             *(root / "tests/grounding").rglob("*.py"), *(root / "tests/photos").rglob("*.py")]
+    missing = []
+    for path in files:
+        if ".venv" in path.parts or "__pycache__" in path.parts:
+            continue
+        if path.name.startswith("test_") or path.name == "conftest.py":
+            continue
+        text = path.read_text()
+        if '"/chat' in text and "Api(" not in text and "X-Voltrieve-Test" not in text:
+            missing.append(str(path.relative_to(root)))
+    assert missing == []
