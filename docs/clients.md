@@ -44,6 +44,7 @@ Not verified:
 - **One stream.** All chat clients read the same server-sent events and answer the same `client_tool_calls` through `/chat/tool-results`. The car and the website are copies of one another in their sign-in, stream parser, turn state and answer rendering, with a comment in each that says where its twin lives.
 - **Tools run on the client.** A client declares the tools it offers in every request. The API never runs them. What a tool does is decided in the client.
 - **Which backend answers.** The header `X-Agent-Backend` picks one of the three. For the prompt agent, the API picks the agent whose tools include every declared one: web, then CLI, then car. No match gives `unsupported_client_tool`.
+- **The notice.** The car (in its menu) and the website (under the chat) say the same about the live screen and the stored chat, and then: "A nightly job counts what people ask about. It saves only topics shared by several people, never your chat." The job is not running yet. The car hides its menu below 1280 pixels, as it hides the car.
 
 ## The car
 

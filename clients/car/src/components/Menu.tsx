@@ -55,7 +55,8 @@ export function Menu({ onNewChat, onSignOut, username, underTheHood, onUnderTheH
           </button>
           <p>
             You are talking to {ASSISTANT_NAME}, an AI assistant. During demos, questions may be shown on a live screen, with
-            contact details masked. The live screen keeps nothing, but your chat is kept by the service.
+            contact details masked. The live screen keeps nothing, but your chat is kept by the service. A nightly
+            job counts what people ask about. It saves only topics shared by several people, never your chat.
           </p>
         </div>
       )}
