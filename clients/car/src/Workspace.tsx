@@ -65,7 +65,8 @@ export function Workspace({ config, auth, session }: Props) {
   const renew = useCallback((ids: string[]) => drive.renewPhotos(ids), [drive]);
   const [backend, setBackend] = useState<Backend>("loop");
   const [underTheHood, setUnderTheHood] = useState(readUnderTheHood);
-  const chat = useChat({ auth, config, backend, tools: CAR_TOOLS, runTool, context, renew });
+  const onStop = useCallback(() => drive.forgetParking(), [drive]);
+  const chat = useChat({ auth, config, backend, tools: CAR_TOOLS, runTool, context, renew, onStop });
   const { state, busy, send, reset } = chat;
 
   const hud = useHud(state.turns.at(-1), busy, driving.gauges.block);

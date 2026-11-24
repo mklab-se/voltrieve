@@ -60,7 +60,9 @@ function towards(speedKmh: number, targetKmh: number, dt: number): number {
 }
 
 function stepDriving(car: Car, dt: number): Car {
-  const speedKmh = towards(car.speedKmh, car.targetKmh, dt);
+  // A car that is half out of its bay gets all the way out, also when it is told to stop.
+  const targetKmh = car.lateral > 0 ? Math.max(car.targetKmh, CREEP_KMH) : car.targetKmh;
+  const speedKmh = towards(car.speedKmh, targetKmh, dt);
   const movedM = ms((car.speedKmh + speedKmh) / 2) * dt;
   const lateral = Math.max(car.lateral - movedM / SIDEWAYS_M, 0);
   const mode = lateral > 0 ? "leaving" : "driving";

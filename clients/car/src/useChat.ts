@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { useEffect, useReducer, useRef, useState } from "react";
 import type { Renewed } from "./attachments";
 import type { Auth } from "./auth";
 import { streamChat, streamToolResults } from "./chat";
 import type { AppConfig } from "./config";
-import { chatReducer, initialChatState, type ChatState } from "./turns";
+import { errorOf, withSignIn } from "./errors";
+import { chatReducer, initialChatState, type ChatAction, type ChatState } from "./turns";
 import type { Backend, ClientContext, ClientTool, ClientToolCall, ServerEvent, ToolOutput } from "./types";
 
 /** A tool result can lead to another tool call, but not forever. */
@@ -20,6 +21,8 @@ export interface ChatOptions {
   context: () => ClientContext;
   /** New ids for attachments that the API has lost. */
   renew?: (ids: string[]) => Promise<Renewed>;
+  /** A turn was stopped, so nobody waits for its tools any more. */
+  onStop?: () => void;
 }
 
 export interface TurnInput extends ChatOptions {
@@ -37,7 +40,10 @@ interface Pause {
 }
 
 interface Answer {
+  /** The turn waits for the tools of this client. Never after an error. */
   pause?: Pause;
+  /** The event that asks for them, not shown until it is sure that they will run. */
+  asked?: ServerEvent;
   /** The API has lost an attachment. */
   lost?: ServerEvent;
 }
@@ -58,7 +64,8 @@ export async function runTurn(
   emit: (event: ServerEvent) => void,
   fetchImpl: typeof fetch = fetch,
 ): Promise<void> {
-  const { auth, signal } = input;
+  const { signal } = input;
+  const getToken = withSignIn(() => input.auth.getToken());
   const base = { apiUrl: input.config.apiUrl, backend: input.backend, correlationId: input.correlationId };
   const show = (event: ServerEvent) => {
     if (!signal?.aborted) emit(event);
@@ -70,7 +77,7 @@ export async function runTurn(
       streamChat(
         {
           ...base,
-          token: await auth.getToken(),
+          token: await getToken(),
           conversationId: input.conversationId,
           message: input.message,
           clientTools: input.tools,
@@ -91,22 +98,23 @@ export async function runTurn(
         answer = await relay(await request(fresh.ids), show);
       }
       if (answer.lost) return show(answer.lost);
-      const { pause } = answer;
-      if (!pause || signal?.aborted) return;
+      const { pause, asked } = answer;
+      if (!pause || !asked || signal?.aborted) return;
       if (round === MAX_TOOL_ROUNDS) {
-        return show(failure("too_many_tool_calls", "Runa asked for too many things in a row. Try again."));
+        return show(failure("too_many_tool_calls", `The turn asked for client tools after ${MAX_TOOL_ROUNDS} rounds of them.`));
       }
+      show(asked);
       const results = await runTools(pause.calls, input.runTool, signal);
       if (signal?.aborted) return;
       attachments = results.flatMap((r) => r.attachments ?? []);
       request = async (ids) => {
         const { turnId, conversationId } = pause;
         const named = replaceIds(results, ids);
-        return streamToolResults({ ...base, token: await auth.getToken(), conversationId, turnId, results: named }, signal, fetchImpl);
+        return streamToolResults({ ...base, token: await getToken(), conversationId, turnId, results: named }, signal, fetchImpl);
       };
     }
   } catch (e) {
-    show(failure("auth", textOf(e, "Could not get a token.")));
+    show({ type: "error", data: errorOf(e) });
   }
 }
 
@@ -118,19 +126,28 @@ function replaceIds(results: Result[], ids: string[]): Result[] {
 
 /** Show the events of one answer. The result says what to do when the turn waits for this client. */
 async function relay(events: AsyncIterable<ServerEvent>, show: (event: ServerEvent) => void): Promise<Answer> {
-  const answer: Answer = {};
+  let answer: Answer = {};
+  let failed = false;
   for await (const event of events) {
     if (event.type === "error" && event.data.code === UNKNOWN_ATTACHMENT) {
-      answer.lost = event; // not shown yet, it may be put right
+      answer = { lost: event }; // not shown yet, it may be put right
       continue;
     }
+    if (event.type === "client_tool_calls") {
+      const { turn_id: turnId, conversation_id: conversationId, calls } = event.data;
+      if (turnId && conversationId) {
+        answer = { ...answer, pause: { turnId, conversationId, calls }, asked: event };
+      } else {
+        show(failure("malformed_event", "The API asked for a tool without saying for which turn."));
+        failed = true;
+      }
+      continue;
+    }
+    // A turn that failed here is not resumed. The API closes it with the next message to the conversation.
+    failed ||= event.type === "error";
     show(event);
-    if (event.type !== "client_tool_calls") continue;
-    const { turn_id: turnId, conversation_id: conversationId, calls } = event.data;
-    if (turnId && conversationId) answer.pause = { turnId, conversationId, calls };
-    else show(failure("malformed_event", "The API asked for a tool without saying for which turn."));
   }
-  return answer;
+  return failed ? { lost: answer.lost } : answer;
 }
 
 /** One at a time and in order: to stop and then to park is not the same as to park and then to stop. */
@@ -163,41 +180,53 @@ export interface UseChat {
   reset(): void;
 }
 
+/** The turns of one chat, one at a time. The hook below is this with React's state. */
+export function createSession(
+  now: () => { options: ChatOptions; conversationId?: string },
+  dispatch: (action: ChatAction) => void,
+  setBusy: (busy: boolean) => void,
+  run: (turn: TurnInput, emit: (event: ServerEvent) => void) => Promise<void> = runTurn,
+) {
+  let running: AbortController | undefined;
+
+  function stop(): void {
+    if (!running) return;
+    running.abort();
+    running = undefined;
+    now().options.onStop?.();
+  }
+
+  return {
+    stop,
+    send(message: string, attachments?: string[]): void {
+      if (running) return;
+      const ctrl = new AbortController();
+      running = ctrl;
+      setBusy(true);
+      const correlationId = crypto.randomUUID();
+      const { options, conversationId } = now();
+      dispatch({ type: "start", message, backend: options.backend, correlationId });
+      const turn = { ...options, message, attachments, conversationId, correlationId, signal: ctrl.signal };
+      void run(turn, (event) => dispatch({ type: "event", event })).finally(() => {
+        if (running !== ctrl) return; // it was stopped
+        running = undefined;
+        setBusy(false);
+      });
+    },
+    reset(): void {
+      stop();
+      setBusy(false);
+      dispatch({ type: "reset" });
+    },
+  };
+}
+
 export function useChat(options: ChatOptions): UseChat {
   const [state, dispatch] = useReducer(chatReducer, initialChatState);
   const [busy, setBusy] = useState(false);
-  const running = useRef<AbortController | null>(null);
   const latest = useRef({ options, conversationId: state.conversationId });
   latest.current = { options, conversationId: state.conversationId };
-
-  const stop = useCallback(() => {
-    running.current?.abort();
-    running.current = null;
-  }, []);
-
-  useEffect(() => stop, [stop]);
-
-  const send = useCallback((message: string, attachments?: string[]) => {
-    if (running.current) return; // one turn at a time
-    const ctrl = new AbortController();
-    running.current = ctrl;
-    setBusy(true);
-    const correlationId = crypto.randomUUID();
-    const { options, conversationId } = latest.current;
-    dispatch({ type: "start", message, backend: options.backend, correlationId });
-    const turn = { ...options, message, attachments, conversationId, correlationId, signal: ctrl.signal };
-    void runTurn(turn, (event) => dispatch({ type: "event", event })).finally(() => {
-      if (running.current !== ctrl) return;
-      running.current = null;
-      setBusy(false);
-    });
-  }, []);
-
-  const reset = useCallback(() => {
-    stop();
-    setBusy(false);
-    dispatch({ type: "reset" });
-  }, [stop]);
-
-  return { state, busy, send, reset };
+  const [session] = useState(() => createSession(() => latest.current, dispatch, setBusy));
+  useEffect(() => session.stop, [session]);
+  return { state, busy, send: session.send, reset: session.reset };
 }
