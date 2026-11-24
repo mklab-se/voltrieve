@@ -88,13 +88,17 @@ export function Workspace({ config, auth, session }: { config: AppConfig; auth: 
     }
   }, []);
 
-  const { upload, lost } = photo;
+  const { upload, lost, sent, over } = photo;
   const attached = photo.attached.photo;
   const send = useCallback(
     async (message: string) => {
       setBusy(true);
+      const withKey = attached?.id ? attached.key : undefined; // the photo this message names
+      let failed = false;
+      let withdrawn = false;
       const correlationId = crypto.randomUUID();
       dispatch({ type: "start", message, backend, correlationId, photo: attached?.blob });
+      if (withKey !== undefined) sent(withKey);
       const ctrl = new AbortController();
       abort.current = ctrl;
       const getToken = withSignIn(() => auth.getToken());
@@ -111,7 +115,10 @@ export function Workspace({ config, auth, session }: { config: AppConfig; auth: 
         };
         const ask = (attachments: string[]) => streamChat({ ...request, attachments }, ctrl.signal);
         await runTurn(withPhoto(attached, ask, upload, lost), {
-          emit: (event) => dispatch({ type: "event", event }),
+          emit: (event) => {
+            failed ||= event.type === "error";
+            dispatch({ type: "event", event });
+          },
           runTool: (call) => runClientTool(call, { setTheme: applyTheme }),
           resume: async ({ conversationId, turnId }, results) =>
             streamToolResults(
@@ -120,13 +127,19 @@ export function Workspace({ config, auth, session }: { config: AppConfig; auth: 
             ),
         });
       } catch (e) {
-        if (e instanceof PhotoNotSent) dispatch({ type: "withdraw" }); // the notice beside the field says why
+        failed = true;
+        withdrawn = e instanceof PhotoNotSent;
+        if (withdrawn) dispatch({ type: "withdraw" }); // the notice beside the field says why
         else dispatch({ type: "event", event: { type: "error", data: errorOf(e) } });
       } finally {
+        if (withKey !== undefined) {
+          over(withKey, !failed);
+          if (failed && !withdrawn) dispatch({ type: "again", text: message });
+        }
         setBusy(false);
       }
     },
-    [applyTheme, attached, auth, backend, config.apiUrl, lost, upload],
+    [applyTheme, attached, auth, backend, config.apiUrl, lost, over, sent, upload],
   );
 
   function openDocument(source: SourceItem) {

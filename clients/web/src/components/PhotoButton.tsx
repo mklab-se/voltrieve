@@ -60,7 +60,7 @@ export const NOT_STORED = "Photos are not stored in the conversation.";
 const STATUS: Record<AttachedPhoto["status"], string> = {
   preparing: "Reading the photo…",
   uploading: "Uploading the photo…",
-  ready: "Goes with your questions until you remove it.",
+  ready: "Goes with your next question. Attach it again to ask more about it.",
   failed: "Not uploaded.",
 };
 

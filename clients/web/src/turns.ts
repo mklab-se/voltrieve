@@ -39,6 +39,8 @@ export type ChatAction =
   | { type: "start"; message: string; backend: Backend; correlationId: string; photo?: Blob }
   /** Take back the last turn, which was not sent, with its text in the field again. */
   | { type: "withdraw" }
+  /** The last message failed: its text is there to try again, unless something was written meanwhile. */
+  | { type: "again"; text: string }
   | { type: "draft"; text: string }
   | { type: "event"; event: ServerEvent }
   | { type: "reset" };
@@ -62,6 +64,8 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
       return { ...initialChatState, draft: state.draft };
     case "draft":
       return { ...state, draft: action.text };
+    case "again":
+      return { ...state, draft: state.draft.trim() ? state.draft : action.text };
     case "withdraw": {
       const text = state.turns[state.turns.length - 1]?.userText;
       const draft = [text, state.draft].filter(Boolean).join("\n");

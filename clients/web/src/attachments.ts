@@ -85,13 +85,18 @@ export async function uploadPhoto(input: UploadInput, fetchImpl: typeof fetch = 
   return FAILED;
 }
 
-/** The photo beside the text field. It stays until the customer removes it or it is refused. */
+/**
+ * The photo beside the text field. It goes with one message: it leaves the field when that is sent, and
+ * comes back only if it was not answered.
+ */
 export interface AttachedPhoto {
   /** Tells a result for this photo from a late one for another. */
   key: number;
   status: "preparing" | "uploading" | "ready" | "failed";
   blob?: Blob;
   id?: string;
+  /** It is with a message that is on its way, so the field does not show it. */
+  sent?: boolean;
   /** What to know about how it was chosen. */
   note?: string;
 }
@@ -108,6 +113,10 @@ export type AttachedAction =
   | { type: "uploaded"; key: number; result: UploadResult }
   /** The API has lost it, also after a new upload. */
   | { type: "lost"; key: number }
+  | { type: "sent"; key: number }
+  | { type: "answered"; key: number }
+  /** The message failed, so the photo is there to try again. */
+  | { type: "unanswered"; key: number }
   | { type: "remove" }
   | { type: "reset" };
 
@@ -121,6 +130,12 @@ export function attachedReducer(state: Attached, action: AttachedAction): Attach
   }
   const { photo } = state;
   if (photo?.key !== action.key) return state;
+  if (action.type === "sent") return { photo: { ...photo, sent: true } };
+  if (action.type === "answered") return {};
+  if (action.type === "unanswered") {
+    const { sent: _sent, ...back } = photo;
+    return { ...state, photo: back };
+  }
   const { id: _, ...kept } = photo;
   if (action.type === "uploading") return { photo: { ...kept, status: "uploading", blob: action.blob } };
   if (action.type === "lost") return { photo: { ...kept, status: "failed" }, notice: PHOTO_GONE };

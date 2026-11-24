@@ -93,6 +93,8 @@ The cockpit and five house fronts are generated pictures ([how they were made](h
 
 The gauge, `set_gauge`, the name "Flight Recorder" and the dashboard are not in the website. The website declares only `set_theme`. "Under the hood" works as in the car: timeline, backend picker and correlation id, off by default.
 
+A photo goes with one message. When the message is sent, the photo moves from the field into the message, and the next message has none. If the message fails, the photo and the text come back to the field. Photos are not stored in the conversation, so a follow-up cannot see an earlier photo: the field says to attach it again ([#18](https://github.com/mklab-se/voltrieve/issues/18)).
+
 ![My Voltrieve: the customer's car on the left, and a chat where Runa answers about a photo](images/website-photo.webp)
 
 *A photo on the website. The photo is a catalog picture and the answer is scripted in the mock server, so the two do not match. Mock data, and a test user.*

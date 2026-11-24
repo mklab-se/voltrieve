@@ -204,7 +204,7 @@ Verified live:
 - Where a photo turn leaves its text and its photo, on 2026-11-24: the photo nowhere we looked, the text of prompt and hosted turns in Foundry's tracing (`docs/evidence/photos-privacy.txt`). [Foundry's tracing was then disconnected](docs/decisions.md#closed-foundrys-tracing-is-disconnected), and the marked question and client's line of a turn on each backend left no rows in telemetry (`docs/evidence/tracing-disconnected.txt`).
 - The authorization denied path, on the loop backend, against real Foundry with a fake token validator.
 
-Offline tests pass: `agent_core` 172, `api` 525, `agents/hosted` 49, `search` 67, `services/dealer` 42, `services/insights` 714, `clients/cli` 62, `clients/web` 172, `clients/dashboard` 74, `clients/car` 426, `tests/photos` 229, `tests/contract` 94 and `infra/scripts/entra` 41, plus the 123 of `data/generator` in CI (they need a browser), the Bicep and script checks. Every suite runs in [CI](.github/workflows/tests.yml).
+Offline tests pass: `agent_core` 172, `api` 525, `agents/hosted` 49, `search` 67, `services/dealer` 42, `services/insights` 714, `clients/cli` 62, `clients/web` 180, `clients/dashboard` 74, `clients/car` 426, `tests/photos` 229, `tests/contract` 94 and `infra/scripts/entra` 41, plus the 123 of `data/generator` in CI (they need a browser), the Bicep and script checks. Every suite runs in [CI](.github/workflows/tests.yml).
 
 Not verified:
 

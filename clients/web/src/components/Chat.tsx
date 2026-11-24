@@ -55,7 +55,8 @@ export function Chat({ state, busy, underTheHood, photo, onDraft, onSend, onOpen
     };
   }, []);
 
-  const attached = photo.attached.photo;
+  const held = photo.attached.photo;
+  const attached = held?.sent ? undefined : held;
   const blocked = busy || (attached !== undefined && attached.status !== "ready");
 
   function ask(question: string) {

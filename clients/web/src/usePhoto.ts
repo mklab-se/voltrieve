@@ -15,6 +15,10 @@ interface UsePhoto extends PhotoControls {
   upload: (photo: Prepared) => Promise<UploadResult>;
   /** The API has lost the photo, also after a new upload. */
   lost: (key: number) => void;
+  /** The photo is with a message that is on its way. */
+  sent: (key: number) => void;
+  /** The message with the photo is over, answered or not. */
+  over: (key: number, answered: boolean) => void;
   reset: () => void;
 }
 
@@ -46,6 +50,11 @@ export function usePhoto(apiUrl: string, auth: Auth): UsePhoto {
   );
 
   const lost = useCallback((key: number) => dispatch({ type: "lost", key }), []);
+  const sent = useCallback((key: number) => dispatch({ type: "sent", key }), []);
+  const over = useCallback(
+    (key: number, answered: boolean) => dispatch({ type: answered ? "answered" : "unanswered", key }),
+    [],
+  );
 
   function drop() {
     abort.current?.abort(); // one user may have few uploads at a time
@@ -56,6 +65,8 @@ export function usePhoto(apiUrl: string, auth: Auth): UsePhoto {
     attached,
     upload,
     lost,
+    sent,
+    over,
     choose(chosen) {
       drop();
       const key = (lastKey.current += 1);

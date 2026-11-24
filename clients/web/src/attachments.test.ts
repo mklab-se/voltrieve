@@ -230,16 +230,56 @@ describe("a turn with a photo", () => {
   const named = (fetchImpl: { mock: { calls: unknown[][] } }) =>
     fetchImpl.mock.calls.map(([, init]) => JSON.parse((init as RequestInit).body as string).attachments);
 
-  it("names the photo on every message until it is removed", async () => {
+  it("names the photo on the message it was sent with, and on none after", async () => {
     const fetchImpl = vi.fn(async () => answered());
     const again = vi.fn();
     let state = attached(...ready());
     await collect(withPhoto(photo(state), chat(fetchImpl), again, never));
+    state = attachedReducer(state, { type: "answered", key: 1 });
     await collect(withPhoto(photo(state), chat(fetchImpl), again, never));
-    state = attachedReducer(state, { type: "remove" });
-    await collect(withPhoto(photo(state), chat(fetchImpl), again, never));
-    expect(named(fetchImpl)).toEqual([["a1"], ["a1"], undefined]);
+    expect(named(fetchImpl)).toEqual([["a1"], undefined]);
     expect(again).not.toHaveBeenCalled();
+  });
+
+  it("leaves the field when it is sent, and is gone when it is answered", () => {
+    const sent = attached(...ready(), { type: "sent", key: 1 });
+    expect(sent.photo).toMatchObject({ key: 1, id: "a1", blob, sent: true });
+    expect(render(initialChatState, sent)).not.toContain("photo-preview");
+    expect(attachedReducer(sent, { type: "answered", key: 1 })).toEqual({});
+  });
+
+  it("comes back to the field, ready, when it was not answered", () => {
+    const back = attached(...ready(), { type: "sent", key: 1 }, { type: "unanswered", key: 1 });
+    expect(back).toEqual(attached(...ready()));
+    expect(render(initialChatState, back)).toContain("photo-preview");
+  });
+
+  it("comes back to the field, to try again, when the API has lost it twice or the new upload failed", () => {
+    const sent = attached(...ready(), { type: "sent", key: 1 });
+    for (const state of [
+      attachedReducer(sent, { type: "lost", key: 1 }),
+      attachedReducer(sent, { type: "uploaded", key: 1, result: { status: "error", message: "Busy." } }),
+    ]) {
+      const after = attachedReducer(state, { type: "unanswered", key: 1 });
+      expect(after.photo).toEqual({ key: 1, status: "failed", blob });
+      expect(render(initialChatState, after)).toContain("Try again</button>");
+    }
+  });
+
+  it("stays out of the field while it is uploaded again for the message it was sent with", () => {
+    const again = attached(...ready(), { type: "sent", key: 1 }, { type: "uploading", key: 1, blob }, { type: "uploaded", key: 1, result: { status: "ready", id: "a2" } });
+    expect(again.photo).toMatchObject({ id: "a2", sent: true });
+    expect(render(initialChatState, again)).not.toContain("photo-preview");
+  });
+
+  it("is not touched by the end of another photo's message", () => {
+    const second = attached(...ready("a1", 1), ...ready("a2", 2));
+    expect(attachedReducer(second, { type: "answered", key: 1 })).toBe(second);
+    expect(attachedReducer(second, { type: "sent", key: 1 })).toBe(second);
+  });
+
+  it("says what a follow-up can see", () => {
+    expect(render(initialChatState, attached(...ready()))).toContain("Goes with your next question. Attach it again to ask more about it.");
   });
 
   it("uploads the photo again by itself when the API has lost it", async () => {
@@ -310,6 +350,27 @@ describe("the text that goes back", () => {
     const state = chatReducer(initialChatState, { type: "draft", text: "Half a" });
     const next = chatReducer(state, { type: "start", message: "A suggestion", backend: "loop", correlationId: "x" });
     expect(next.draft).toBe("Half a");
+  });
+});
+
+describe("the text of a message with a photo that failed", () => {
+  const failedTurn = chatReducer(chatReducer(initialChatState, { type: "draft", text: "Is this OK?" }), {
+    type: "start",
+    message: "Is this OK?",
+    backend: "loop",
+    correlationId: "x",
+    photo: blob,
+  });
+
+  it("is in the field again, and the message stays with its error", () => {
+    const state = chatReducer(failedTurn, { type: "again", text: "Is this OK?" });
+    expect(state.draft).toBe("Is this OK?");
+    expect(state.turns).toHaveLength(1);
+  });
+
+  it("does not replace what was written meanwhile", () => {
+    const state = chatReducer(chatReducer(failedTurn, { type: "draft", text: "Another" }), { type: "again", text: "Is this OK?" });
+    expect(state.draft).toBe("Another");
   });
 });
 
