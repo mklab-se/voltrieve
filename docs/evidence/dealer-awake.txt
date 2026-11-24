@@ -1,0 +1,23 @@
+Does an open dealer page keep the dealer service awake? scripts/dealer_awake.py against the deployed service,
+2026-11-24 (UTC). The service had been started 50 seconds before. The app scales to zero after 5 idle minutes.
+
+22:44:14 2026-11-24: the stream for 12 minutes, a read every 60 s
+22:44:14 the token has a name claim: yes
+22:44:16 replicas before: ca-dealer-voltrieve-dev--azd-1795560194-647654c87-6z4hx started 2026-11-24T22:43:23Z
+22:44:16 stream open
+22:56:17 replicas after: ca-dealer-voltrieve-dev--azd-1795560194-647654c87-6z4hx started 2026-11-24T22:43:23Z
+22:56:17 longest silence 15 s, connections lost 0, ended on time 0
+22:56:17 reads 12, failed 0
+22:56:17 the same replicas before and after: yes
+
+22:56:18 2026-11-24: the stream for 12 minutes, no reads
+22:56:18 the token has a name claim: yes
+22:56:19 replicas before: ca-dealer-voltrieve-dev--azd-1795560194-647654c87-6z4hx started 2026-11-24T22:43:23Z
+22:56:20 stream open
+23:08:22 replicas after: ca-dealer-voltrieve-dev--azd-1795560194-647654c87-6z4hx started 2026-11-24T22:43:23Z
+23:08:22 longest silence 15 s, connections lost 0, ended on time 0
+23:08:22 reads 0, failed 0
+23:08:22 the same replicas before and after: yes
+
+The page reads its state every 60 s, as in the first run. The second run is not clean: scripts/smoke.py and a deployment
+of the API called /healthz of the dealer at about 23:03. Not measured: more than 12 minutes, and several pages.

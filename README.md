@@ -209,17 +209,22 @@ Verified live:
 - Where a photo turn leaves its text and its photo, on 2026-11-24: the photo nowhere we looked, the text of prompt and hosted turns in Foundry's tracing (`docs/evidence/photos-privacy.txt`). [Foundry's tracing was then disconnected](docs/decisions.md#closed-foundrys-tracing-is-disconnected), and the marked question and client's line of a turn on each backend left no rows in telemetry (`docs/evidence/tracing-disconnected.txt`).
 - The authorization denied path, on the loop backend, against real Foundry with a fake token validator.
 
-The dealer system and the orders are built and documented, and have not been run on the deployed service: the dealer service with its table and page, the order tools with the car rule, the dealer page and the checks. Not run live yet. The counts of offline tests below are from before this work and were not updated.
+The dealer system and the orders were run on the deployed service on 2026-11-24 (`docs/evidence/dealer-orders.txt`):
+
+- `scripts/orders_check.py`: 27 of 27 cases on the three backends. Orders go through, nothing is ordered from one message, after a "no" or with the old address, and the car is refused with nothing reaching the dealer service.
+- Deliveries (one winner of two at once, 409 the second time and at zero), deletes that leave the stock alone, and a restart that keeps stock and orders.
+- The page in a browser, with a token in place of the sign-in page: an order through Runa was signed on the screen.
+- An open page kept the service awake for 12 minutes (`docs/evidence/dealer-awake.txt`).
+- A marker in an address was found in no table of the workspace.
 
 Not verified, for the dealer system and the orders:
 
-- An order on each of the three backends, the car's refusal on each, and no order from one message, after a "no" or with a changed address (`scripts/orders_check.py`).
-- That the dealer page stays awake for 10 quiet minutes with a page open (`scripts/dealer_awake.py`), and how long it takes to open cold.
-- That a marker in an address is found in no table of Application Insights, and that a restart keeps stock and orders.
-- Sign-in to the dealer page, the signing in Safari or Firefox (it was looked at in Chromium only), and the masking of street addresses on real ones.
-- The routing suite on the new instructions, against the limit of 10 s to the first token.
+- The sign-in to the dealer page, the `name` claim in a token of the website or the CLI (it is in one of the az CLI), and the demo by hand in two windows.
+- The signing in Safari or Firefox (it was looked at in Chromium only) and after a real switch of tabs, and the masking of street addresses on real ones.
+- A token of Runa's own identity on the staff routes, other than in tests.
+- The full routing suite on the new instructions, and the time to the first text. A sample of 24 turns reached the right sources.
 
-Offline tests pass: `agent_core` 172, `api` 525, `agents/hosted` 49, `search` 67, `services/dealer` 42, `services/insights` 714, `clients/cli` 62, `clients/web` 180, `clients/dashboard` 74, `clients/car` 426, `tests/photos` 229, `tests/contract` 94 and `infra/scripts/entra` 41, plus the 123 of `data/generator` in CI (they need a browser), the Bicep and script checks. Every suite runs in [CI](.github/workflows/tests.yml).
+Offline tests pass: `agent_core` 314, `api` 634, `agents/hosted` 56, `search` 67, `services/dealer` 437, `services/dealer/site` 153, `services/insights` 725, `clients/cli` 62, `clients/web` 181, `clients/dashboard` 74, `clients/car` 426, `tests/photos` 229, `tests/contract` 176 and `infra/scripts/entra` 49, plus the 123 of `data/generator` in CI (they need a browser), the Bicep and script checks. Every suite runs in [CI](.github/workflows/tests.yml).
 
 Not verified:
 

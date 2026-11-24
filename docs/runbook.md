@@ -155,7 +155,7 @@ The photos of the signs can be checked without Azure too, against the server's p
 
 ## The dealer orders demo
 
-A representative's page beside the website. A customer orders a car through Runa, and the order shows up on the page at the same moment, with a signing. Then the same request is tried in the car, where it is refused. The design is in [decisions](decisions.md#dealer-orders-and-inventory) and the page is described in [the clients](clients.md#the-dealer-page). **Not run live yet.** The steps follow the code, and no one has done them against the deployed service.
+A representative's page beside the website. A customer orders a car through Runa, and the order shows up on the page at the same moment, with a signing. Then the same request is tried in the car, where it is refused. The design is in [decisions](decisions.md#dealer-orders-and-inventory) and the page is described in [the clients](clients.md#the-dealer-page). The parts were run live on 2026-11-24, most of them by script. The sign-in and the demo as a whole, by hand in two windows, were not.
 
 **Use a made up address.** The name on an order is the real name of the account you sign in with, and both are stored in the table and shown to every representative. A made up address is, for example, "Storgatan 1, 753 10 Uppsala".
 
@@ -177,7 +177,7 @@ Under the hood on the website and in the car shows `client_not_allowed` for step
 
 ### When the dealer page is cold
 
-The page and the dealer share a cold start, which was about 30 seconds in a measured run. If the page does not open, or shows a lost connection, wait half a minute and reload, or run `just warm-up` first. An open page reads the state once a minute, which is meant to keep the service awake, and also repairs an event that was missed. After a restart the log is empty, and orders and stock are as they were. Whether an open page really keeps the dealer awake for 10 quiet minutes is not verified: `scripts/dealer_awake.py` measures it. Not run live yet.
+The page and the dealer share a cold start, which was about 30 seconds in a measured run. If the page does not open, or shows a lost connection, wait half a minute and reload, or run `just warm-up` first. An open page reads the state once a minute, which is meant to keep the service awake, and also repairs an event that was missed. After a restart the log is empty, and orders and stock are as they were. An open page kept the dealer awake for 12 minutes ([`dealer-awake.txt`](https://github.com/mklab-se/voltrieve/blob/main/docs/evidence/dealer-awake.txt), measured with `scripts/dealer_awake.py`).
 
 ### The scripts
 
@@ -200,7 +200,7 @@ uv run scripts/orders_check.py --save docs/evidence/orders.txt
 | `resumed` | The car cannot place the offer of a conversation that began elsewhere |
 | `odd`, `long` | Markup, line breaks and 5,000 characters in the address give one clean line or no order |
 
-It takes at most 69 turns for all cases on all backends, and the `--dry` run says the number first. At that size it is an estimate of 5 to 10 SEK, not a measurement. It needs `azd env select` and `az login` as a person with `Chat.User`, `Order.Place` and `Dealer.Manage`. A line per case says PASS or FAIL. The exit code is 1 on a FAIL, or when an order of ours is left. The routing suite, run once after the new instructions, costs 15 to 20 SEK and is asked for first. Not run live yet.
+It takes at most 69 turns for all cases on all backends, and the `--dry` run says the number first. At that size it is an estimate of 5 to 10 SEK, not a measurement. It needs `azd env select` and `az login` as a person with `Chat.User`, `Order.Place` and `Dealer.Manage`. A line per case says PASS or FAIL. The exit code is 1 on a FAIL, or when an order of ours is left. The routing suite, run once after the new instructions, costs 15 to 20 SEK and is asked for first. All 27 cases passed on 2026-11-24 ([`dealer-orders.txt`](https://github.com/mklab-se/voltrieve/blob/main/docs/evidence/dealer-orders.txt)).
 
 **`scripts/dealer_awake.py`** holds the event stream open as the page does, reads the state every minute, and says whether the same replica stayed awake and whether any connection was lost. It sends no chat turns and costs no tokens. It needs `az` signed in as a user with `Dealer.Manage`, and prints no name, address or token.
 
@@ -208,7 +208,7 @@ It takes at most 69 turns for all cases on all backends, and the `--dry` run say
 uv run scripts/dealer_awake.py --minutes 12 --read-seconds 60
 ```
 
-Not run live yet.
+Run live on 2026-11-24, 12 minutes with the reads and 12 without.
 
 ## Under the hood and private turns
 

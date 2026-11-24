@@ -267,7 +267,7 @@ The other order fails closed: a new API or agent that calls order routes the dea
 
 **Rollback** goes the other way, the API first, then the agents, then the dealer. Orders and stock stay in the table.
 
-Not run live yet: this order has not been run on the deployed environment.
+The dev environment was updated in this order on 2026-11-24, with the dealer deployed again at the end. The rollback has not been tried.
 
 ## Redeploying
 
@@ -308,7 +308,7 @@ The car and the dashboard add no idle cost: two more Static Web Apps on the Free
 
 ## Before a demo
 
-The API and the dealer scale to zero after 5 idle minutes. A cold start took 34 seconds for the API and 30 for the dealer in a measured run, which is far over the 10 second limit for the first token. `just warm-up` wakes everything and asks a real question on each backend. `just keep-warm` does the same, then pings `/healthz` every 2 minutes until Ctrl-C, which costs no tokens. An open dealer page is meant to keep the dealer awake too, because it reads its state once a minute. Not run live yet. If the page is cold anyway, see [the runbook](runbook.md#when-the-dealer-page-is-cold).
+The API and the dealer scale to zero after 5 idle minutes. A cold start took 34 seconds for the API and 30 for the dealer in a measured run, which is far over the 10 second limit for the first token. `just warm-up` wakes everything and asks a real question on each backend. `just keep-warm` does the same, then pings `/healthz` every 2 minutes until Ctrl-C, which costs no tokens. An open dealer page keeps the dealer awake too, because it reads its state once a minute: 12 minutes with the same replica and no lost connection ([`dealer-awake.txt`](https://github.com/mklab-se/voltrieve/blob/main/docs/evidence/dealer-awake.txt)). If the page is cold anyway, see [the runbook](runbook.md#when-the-dealer-page-is-cold).
 
 ## Budget alert
 

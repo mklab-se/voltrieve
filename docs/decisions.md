@@ -332,7 +332,7 @@ Disconnected, with its own entry: [Closed: Foundry's tracing is disconnected](#c
 
 ## Dealer orders and inventory
 
-Decided on 2026-11-24. The [design](https://github.com/mklab-se/voltrieve/blob/main/docs/superpowers/specs/2026-11-24-dealer-orders-design.md) is approved by the product owner. It adds a system that people can look at beside Runa, and a second lesson: what Runa may do depends on where it is used. Nothing in this section has been run live yet. Not run live yet.
+Decided on 2026-11-24. The [design](https://github.com/mklab-se/voltrieve/blob/main/docs/superpowers/specs/2026-11-24-dealer-orders-design.md) is approved by the product owner. It adds a system that people can look at beside Runa, and a second lesson: what Runa may do depends on where it is used. Run live on 2026-11-24 ([`dealer-orders.txt`](https://github.com/mklab-se/voltrieve/blob/main/docs/evidence/dealer-orders.txt)).
 
 ### The dealer serves its own page
 
@@ -367,7 +367,7 @@ The log holds the latest 200 entries and is lost at a restart. Orders and stock 
 
 For the first time Voltrieve stores a name and an address itself. The name is the signed-in account's real name, and the address is what the customer types: **use a made up address in a demo.** Both are shown to staff with `Dealer.Manage`, and are deleted with the order, by a reset, or at the first use after 30 days (a service that nobody uses deletes nothing, so this is no firm limit). They are never in a log line, span or metric, and a validation error does not repeat the input. The chat where the address was typed is stored in Foundry like every chat. Masking of Swedish street addresses and postal codes was added to the live dashboard and the nightly job as a best effort: a pattern cannot find every address, and the names of people are still not caught. The website's notice has one more sentence about orders.
 
-Not verified: that a marker in an address is found in no table of Application Insights, and the masking on real addresses.
+A marker in an address was found in no table of the workspace ([`dealer-orders.txt`](https://github.com/mklab-se/voltrieve/blob/main/docs/evidence/dealer-orders.txt)). Not verified: the masking on real addresses.
 
 ## Live findings
 
@@ -466,4 +466,4 @@ up in the indexes, so an invented title gets no link. Other choices:
 - Whether Foundry keeps a photo that was sent in an unstored turn, for abuse monitoring or anything else.
 - A browser sign-in to the car and the new website, and an unstored turn inside the hosted agent, until the evidence runs say otherwise.
 - Indexer duration, final item counts, how long role propagation retries waited, and smoke test scores. The first deployment did not keep these.
-- The dealer system and the orders, live: an order on each backend, the car's refusal on each backend, no order from one message, a "no" or a changed address, how long the page stays awake, a marker in an address in telemetry, and the routing suite after the new instructions. Not run live yet.
+- The dealer system and the orders: the sign-in to the page, other browsers than Chromium, a token of Runa on the staff routes (tests only), the `name` claim in a token of the website or the CLI, and the full routing suite after the new instructions (a sample of 24 turns was right).

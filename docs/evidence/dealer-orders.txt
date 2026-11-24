@@ -1,0 +1,76 @@
+The dealer orders on the deployed service, 2026-11-24 23:10 to 23:40 (UTC). Made up addresses. Every order was deleted.
+Deployed: dealer service, prompt agents, hosted agent, API and website of branch orders-infra, commit 6b90c36 (the agents 639b4c4, the same agent code).
+
+1. scripts/orders_check.py --deliver, 5 min 14 s (what happened is read from /staff/state, never from the answer)
+
+27 cases, at most 69 turns
+PASS prompt whole    3 turns: VO-1001, delivered once
+PASS prompt one      1 turns
+PASS prompt no       3 turns
+PASS prompt changed  4 turns
+PASS prompt car      1 turns
+PASS prompt cartools 1 turns
+PASS prompt resumed  3 turns: the model called the tool and was refused
+PASS prompt odd      3 turns: VO-1003 in one clean line
+PASS prompt long     2 turns
+PASS loop   whole    3 turns: VO-1004, delivered once
+PASS loop   one      1 turns
+PASS loop   no       3 turns
+PASS loop   changed  4 turns
+PASS loop   car      1 turns
+PASS loop   cartools 1 turns
+PASS loop   resumed  3 turns: the model called the tool and was refused
+PASS loop   odd      3 turns: VO-1006 in one clean line
+PASS loop   long     2 turns: VO-1007 within 200 characters
+PASS hosted whole    3 turns: VO-1008, delivered once
+PASS hosted one      1 turns
+PASS hosted no       3 turns
+PASS hosted changed  4 turns
+PASS hosted car      1 turns
+PASS hosted cartools 1 turns
+PASS hosted resumed  3 turns: the model called the tool and was refused
+PASS hosted odd      3 turns: VO-1010 in one clean line
+PASS hosted long     2 turns: VO-1011 within 200 characters
+all as it should be
+
+2. The store and the staff routes, one order of an Atlas per backend first (a script of its own, through /staff)
+
+23:16:42 orders before: 0
+23:16:54 loop (marker) order ['VO-1012']
+23:17:06 prompt (marker) order ['VO-1013']
+23:17:21 hosted (marker) order ['VO-1014']
+23:18:25 after a restart: stock the same True orders the same True log entries 78 -> 0
+deliver from Uppsala (200, 'ok') stock 5 -> 4
+deliver again (409, 'This order is already delivered.') stock 4
+Malmö at 0 minus one: (409, 'There is none in stock in Malmö.') deliver: (409, 'There is none in stock in Malmö.')
+delete VO-1012 204
+delete VO-1013 204
+delete VO-1014 204
+deleting left the stock alone: True  stock as before: True  orders left: 0
+
+3. Doors
+  no token on /staff/state 401, a representative's token on /stock 403 (Missing required role)
+  a body of 100,000 bytes without a token: 413, declared and chunked
+  scripts/denied_demo.py, in process, a user without Order.Place on the website: authorization_denied on loop and prompt.
+  The same user in the car: client_not_allowed on loop and prompt. Not run on the hosted agent: it accepts only the API.
+  A token of Runa's own identity on the staff routes: tests only, a person cannot get one.
+
+4. The page in headless Chromium 1440x900 against the deployed service, with a token from the az CLI in place of sign-in
+  ready 0.3 s after it loaded (warm), live, and an order placed through Runa on the own loop was signed on the screen: the
+  paper showed for about 5 s, then the order was in the list. Deliver and Reset worked. 720 pixels: no sideways scroll.
+  console errors 0. The Microsoft sign-in page, other browsers and a real tab switch are not covered.
+
+5. A small routing sample, 8 questions once per backend, 24 turns: right sources 24 of 24, prepare_car_order called in 6 of 6
+   order questions, article numbers 21 of 21 on each backend, 0 invented. Median seconds
+   of a whole turn per group: prompt 2.9 to 9.9, loop 2.6 to 9.4, hosted 5.9 to 13.5 (docs 12.3, stock 12.2, both 13.5). The last
+   full run (routing.txt) had hosted at docs 11.4 and stock 12.0. The time to the first text was not looked at. 1 or 2 turns a
+   group, so this says nothing about speed. The full suite was not run.
+
+6. Telemetry
+   A marker was in the address of the three orders of part 2, 23:16. scripts/tracing_check.py --search at 23:36 (19 minutes later):
+   no rows for the three markers in any table. The telemetry of that minute was there: 264 rows from the API, 67 from the hosted
+   agent, 36 from the dealer. The name of the signed-in person was in no row of requests, traces, dependencies, exceptions or events.
+   Each request of the dealer gives one span (no operation had the same order request twice), and one trace joins the API,
+   the hosted agent and the dealer. "Teststad", the town in every address, gave no rows in any table.
+
+7. Azure: cost of the month in the resource group before these runs 1,075 SEK, as reported, which lags.
