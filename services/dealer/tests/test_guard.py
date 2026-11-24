@@ -1,5 +1,6 @@
 """What every request goes through: the body limit, the log line, and errors that nobody expected."""
 
+import asyncio
 import json
 
 import pytest
@@ -150,3 +151,23 @@ async def test_an_error_in_the_middle_of_an_answer_shows_nothing(make_app, capsy
     assert str(raised.value) == "the answer was cut off"
     assert raised.value.__context__ is None and raised.value.__cause__ is None
     assert MARKER not in capsys.readouterr().out
+
+
+async def test_a_cancelled_request_is_logged_too(make_app, capsys):
+    from app.guard import RequestGuard
+    from app.logging_setup import correlation_id
+
+    make_app()  # sets up the log
+    before = correlation_id.get()
+
+    async def forever(scope, receive, send):
+        await asyncio.Event().wait()
+
+    scope = {"type": "http", "path": "/staff/events", "headers": [], "method": "GET"}
+    task = asyncio.create_task(RequestGuard(forever)(scope, None, None))
+    await asyncio.sleep(0)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert [line["path"] for line in access_lines(capsys)] == ["/staff/events"]
+    assert correlation_id.get() == before

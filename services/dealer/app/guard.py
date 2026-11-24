@@ -82,22 +82,22 @@ class RequestGuard:
 
         error, unexpected = None, None
         try:
-            if too_large(headers.get("content-length", "")):
-                raise BodyTooLarge
-            await self.app(scope, receive_wrapper, send_wrapper)
-        except BodyTooLarge:
-            error = JSONResponse({"detail": "Request body too large"}, 413)
-        except Exception as exc:
-            unexpected = where(exc)
-            error = JSONResponse({"detail": "Internal error"}, 500)
-        try:
+            try:
+                if too_large(headers.get("content-length", "")):
+                    raise BodyTooLarge
+                await self.app(scope, receive_wrapper, send_wrapper)
+            except BodyTooLarge:
+                error = JSONResponse({"detail": "Request body too large"}, 413)
+            except Exception as exc:
+                unexpected = where(exc)
+                error = JSONResponse({"detail": "Internal error"}, 500)
             if unexpected:
                 logger.error("Unhandled error: %s", unexpected)
             if error and started:  # outside the except block, so nothing is chained
                 raise RuntimeError("the answer was cut off")
             if error:
                 await error(scope, receive, send_wrapper)
-        finally:
+        finally:  # also when the request is cancelled, as a stream is at a stop
             logger.info(
                 "request",
                 extra={
