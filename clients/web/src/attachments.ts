@@ -1,3 +1,4 @@
+import { PHOTO_GONE } from "./errors";
 import type { ServerEvent } from "./types";
 
 export const UNREADABLE = "This file is not a photo the browser can read. Use JPEG, PNG or WebP.";
@@ -122,7 +123,7 @@ export function attachedReducer(state: Attached, action: AttachedAction): Attach
   if (photo?.key !== action.key) return state;
   const { id: _, ...kept } = photo;
   if (action.type === "uploading") return { photo: { ...kept, status: "uploading", blob: action.blob } };
-  if (action.type === "lost") return { photo: { ...kept, status: "failed" } };
+  if (action.type === "lost") return { photo: { ...kept, status: "failed" }, notice: PHOTO_GONE };
   const { result } = action;
   if (result.status === "rejected") return { notice: result.message };
   if (result.status === "error") return { photo: { ...kept, status: "failed" }, notice: result.message };
@@ -172,13 +173,13 @@ export async function attachPhoto(
   if (io.isCurrent()) await io.upload({ key, blob });
 }
 
-/** The photo could not be uploaded again, so the turn was not sent. */
+/** The photo could not be uploaded again or was lost again, so the turn was not sent. */
 export class PhotoNotSent extends Error {}
 
 /**
  * The events of a turn that names the photo, if there is one. When the API no longer has it (15
  * minutes, or a restart), the photo is uploaded once more and the turn is sent again. When it is
- * lost then too, `lostAgain` is told and the error is shown.
+ * lost then too, `lostAgain` is told and the turn is not sent.
  */
 export async function* withPhoto(
   photo: AttachedPhoto | undefined,
@@ -200,7 +201,10 @@ export async function* withPhoto(
   const result = await uploadAgain({ key: photo.key, blob: photo.blob });
   if (result.status !== "ready") throw new PhotoNotSent(result.message);
   for await (const event of send([result.id])) {
-    if (isLost(event)) lostAgain(photo.key);
+    if (isLost(event)) {
+      lostAgain(photo.key);
+      throw new PhotoNotSent(PHOTO_GONE);
+    }
     yield event;
   }
 }

@@ -23,6 +23,8 @@ const failure = (code: string, message: string): ServerEvent => ({ type: "error"
 export async function runTurn(events: AsyncIterable<ServerEvent>, { emit, runTool, resume }: TurnIo): Promise<void> {
   for (let round = 0; ; round += 1) {
     let pause: Pause | undefined;
+    let asked: ServerEvent | undefined;
+    let failed = false;
     for await (const event of events) {
       if (event.type === "client_tool_calls") {
         const { turn_id: turnId, conversation_id: conversationId, calls } = event.data;
@@ -33,10 +35,14 @@ export async function runTurn(events: AsyncIterable<ServerEvent>, { emit, runToo
           return emit(failure("malformed_event", "The API asked for a tool without saying for which turn."));
         }
         pause = { turnId, conversationId, calls };
+        asked = event; // not shown until it is sure that the tools will run
+        continue;
       }
+      failed ||= event.type === "error";
       emit(event);
     }
-    if (!pause) return;
+    if (!pause || !asked || failed) return;
+    emit(asked);
     const results = pause.calls.map((call) => ({ call_id: call.call_id, output: runTool(call) }));
     events = await resume(pause, results);
   }

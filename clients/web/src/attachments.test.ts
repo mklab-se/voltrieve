@@ -252,12 +252,12 @@ describe("a turn with a photo", () => {
     expect(named(fetchImpl)).toEqual([["a1"], ["a2"]]);
   });
 
-  it("shows an error when the API has lost it a second time", async () => {
+  it("is not sent when the API has lost it a second time, and the text goes back to the field", async () => {
     const fetchImpl = vi.fn(async () => unknown());
     const again = vi.fn(async (): Promise<UploadResult> => ({ status: "ready", id: "a2" }));
     const lost = vi.fn();
-    const events = await collect(withPhoto(photo(attached(...ready())), chat(fetchImpl), again, lost));
-    expect(events).toMatchObject([{ type: "error", data: { code: "unknown_attachment" } }]);
+    const turn = withPhoto(photo(attached(...ready())), chat(fetchImpl), again, lost);
+    await expect(collect(turn)).rejects.toBeInstanceOf(PhotoNotSent);
     expect(fetchImpl).toHaveBeenCalledTimes(2);
     expect(again).toHaveBeenCalledTimes(1);
     expect(lost).toHaveBeenCalledTimes(1);
@@ -266,8 +266,10 @@ describe("a turn with a photo", () => {
 
   it("keeps the photo, to try again, when the API has lost it twice", () => {
     const state = attached(...ready("a2"), { type: "lost", key: 1 });
-    expect(state).toEqual({ photo: { key: 1, status: "failed", blob } });
-    expect(render(initialChatState, state)).toContain("Try again");
+    const notice = "The photo is no longer available. Try again, or remove it and ask without it.";
+    expect(state).toEqual({ photo: { key: 1, status: "failed", blob }, notice });
+    expect(render(initialChatState, state)).toContain("Try again</button>");
+    expect(render(initialChatState, state)).toContain(notice);
     expect(attached(...ready(), { type: "lost", key: 2 }).photo!.status).toBe("ready");
   });
 
