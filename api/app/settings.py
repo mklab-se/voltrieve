@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     cors_origins: str = ""  # comma separated list of allowed origins
     log_level: str = "INFO"
     applicationinsights_connection_string: str = ""
+    log_analytics_workspace_id: str = ""  # the workspace holding VoltrieveInsights_CL
 
     # Needed by the loop backend; read lazily, so the API starts without them.
     foundry_project_endpoint: str = ""

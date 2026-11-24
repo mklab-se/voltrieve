@@ -28,6 +28,7 @@ from app.schemas import (
 )
 from app.sources import LINK_SECONDS, LinkRefused
 from app.turns import Job, new_turn_id
+from app.usage import SOURCES, UsageNotConfigured, UsageUnavailable
 
 logger = logging.getLogger(__name__)
 
@@ -234,6 +235,23 @@ def build_router() -> APIRouter:
             media_type="text/event-stream",
             headers=SSE_HEADERS,
         )
+
+    @router.get("/admin/insights")
+    async def insights(
+        request: Request,
+        claims: Claims = Depends(authenticate),
+        source: str = "real",
+    ) -> JSONResponse:
+        """What people ask about, from the nightly job's totals. Real and seeded are never mixed."""
+        if DASHBOARD_ROLE not in claims.roles:
+            raise HTTPException(403, "Missing required role")
+        if source not in SOURCES:
+            raise HTTPException(422, "source must be real or seeded")
+        try:
+            answer = await request.app.state.usage.insights(source)
+        except (UsageNotConfigured, UsageUnavailable) as exc:
+            raise HTTPException(503, str(exc), headers={"Cache-Control": "no-store"}) from exc
+        return JSONResponse(answer, headers={"Cache-Control": "no-store"})
 
     @router.get("/sources/{title}")
     async def source_link(

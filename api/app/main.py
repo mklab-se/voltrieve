@@ -22,6 +22,7 @@ from app.settings import Settings
 from app.telemetry import annotate_span, configure_telemetry
 from app.sources import SourceService, build_source_service
 from app.turns import TurnService, TurnStore
+from app.usage import UsageService, build_usage_service
 
 logger = logging.getLogger("app.access")
 CORRELATION_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
@@ -132,6 +133,7 @@ def create_app(
     store: TurnStore | None = None,
     sources: SourceService | None = None,
     attachments: AttachmentStore | None = None,
+    usage: UsageService | None = None,
 ) -> FastAPI:
     configure_logging(settings.log_level)
     configure_telemetry(settings.applicationinsights_connection_string)
@@ -170,6 +172,7 @@ def create_app(
     app.state.store = store or TurnStore()
     app.state.attachments = attachments if attachments is not None else AttachmentStore()
     app.state.uploads = UploadQueue()
+    app.state.usage = usage if usage is not None else build_usage_service(settings)
     app.state.sources = sources if sources is not None else build_source_service(settings)
     app.state.turns = TurnService(app.state.store, app.state.registry, model=settings.chat_deployment,
                                   sources=app.state.sources)
