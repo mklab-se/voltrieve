@@ -2,17 +2,12 @@ param name string
 param location string
 param tags object = {}
 param projectName string
-param appInsightsName string
 param chatModelName string
 param chatModelVersion string
 @description('The models Search can plan queries with, as name and version. Search accepts some GPT-6 models, and gpt-6.1-terra is not one of them, so none is the chat model.')
 param planningModels array
 param embeddingModelName string
 param embeddingModelVersion string
-
-resource appInsights 'Microsoft.Insights/components@2020-02-02' existing = {
-  name: appInsightsName
-}
 
 resource account 'Microsoft.CognitiveServices/accounts@2026-11-15-preview' = {
   name: name
@@ -94,25 +89,6 @@ resource planningDeployments 'Microsoft.CognitiveServices/accounts/deployments@2
     }
   }
 ]
-
-// The App Insights connection string is an ingestion endpoint identifier, not a secret.
-resource appInsightsConnection 'Microsoft.CognitiveServices/accounts/projects/connections@2026-11-15-preview' = {
-  parent: project
-  name: 'appinsights'
-  properties: {
-    category: 'AppInsights'
-    target: appInsights.id
-    authType: 'ApiKey' // connection string is an ingestion identifier, not an application secret
-    isSharedToAll: true
-    credentials: {
-      key: appInsights.properties.ConnectionString
-    }
-    metadata: {
-      ApiType: 'Azure'
-      ResourceId: appInsights.id
-    }
-  }
-}
 
 output name string = account.name
 output id string = account.id

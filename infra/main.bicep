@@ -109,7 +109,6 @@ module foundry 'modules/foundry.bicep' = {
     location: location
     tags: tags
     projectName: 'voltrieve'
-    appInsightsName: monitoring.outputs.appInsightsName
     chatModelName: chatModelName
     chatModelVersion: chatModelVersion
     planningModels: planningModels

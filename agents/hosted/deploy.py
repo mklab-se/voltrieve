@@ -56,12 +56,14 @@ def _git_sha() -> str:
 
 
 def environment_variables(env: dict[str, str]) -> dict[str, str]:
-    """What the container needs. FOUNDRY_PROJECT_ENDPOINT and the Application Insights
-    connection string are injected by the platform, and FOUNDRY_ names are reserved."""
+    """What the container needs. FOUNDRY_PROJECT_ENDPOINT is injected by the platform, and
+    FOUNDRY_ names are reserved. The platform no longer injects the Application Insights connection
+    string (the project is not connected to it) and reserves its usual name, so the agent gets
+    ours as VOLTRIEVE_TELEMETRY_CONNECTION_STRING, filled from the azd value. It is optional."""
     allowed = (env.get("ALLOWED_CALLER_OID") or env.get("API_PRINCIPAL_ID") or "").strip()
     if not allowed:
         raise SystemExit("API_PRINCIPAL_ID (or ALLOWED_CALLER_OID) is empty: the agent would refuse every caller.")
-    return {
+    variables = {
         "MODEL_DEPLOYMENT_NAME": env["CHAT_DEPLOYMENT"],
         "SEARCH_ENDPOINT": env["SEARCH_ENDPOINT"],
         "DEALER_URL": env["DEALER_URL"],
@@ -72,6 +74,10 @@ def environment_variables(env: dict[str, str]) -> dict[str, str]:
         "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT": "false",
         "PYTHONNOUSERSITE": "1",
     }
+    telemetry = (env.get("APPLICATIONINSIGHTS_CONNECTION_STRING") or "").strip()
+    if telemetry:
+        variables["VOLTRIEVE_TELEMETRY_CONNECTION_STRING"] = telemetry
+    return variables
 
 
 def hosted_definition(image: str, env: dict[str, str]) -> HostedAgentDefinition:

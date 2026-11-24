@@ -11,6 +11,8 @@ if grep -rn -i "listKeys\|apiKey\|accountKey" modules/ main.bicep | grep -v "not
 grep -q "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT', value: 'false'" modules/api-app.bicep || { echo "api-app may record message content"; exit 1; }
 grep -q "AZURE_EXPERIMENTAL_ENABLE_GENAI_TRACING" modules/api-app.bicep || { echo "api-app lacks the GenAI tracing setting"; exit 1; }
 if grep -q "KB_CONNECTION_NAME\|kbConnectionName" modules/api-app.bicep; then echo "api-app still takes the knowledge base connection name"; exit 1; fi
+# Foundry is not connected to Application Insights: that would start its server-side tracing of chat text
+if grep -q "AppInsights" modules/foundry.bicep; then echo "Foundry is connected to Application Insights"; exit 1; fi
 # three browser apps, each a Free Static Web App tagged for azd by a required serviceName
 grep -q "^param serviceName string$" modules/static-web-app.bicep || { echo "static-web-app lacks a required serviceName"; exit 1; }
 grep -q "'azd-service-name': serviceName" modules/static-web-app.bicep || { echo "static-web-app does not tag by serviceName"; exit 1; }

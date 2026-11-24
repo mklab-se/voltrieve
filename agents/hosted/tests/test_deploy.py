@@ -50,3 +50,15 @@ def test_sessions_are_suspended_after_the_minimum_idle_time():
 def test_tag_is_unique_per_second_and_carries_the_commit():
     tag = deploy.unique_tag(datetime(2026, 11, 4, 12, 30, 5, tzinfo=UTC), "abc1234")
     assert tag == "20261104123005-abc1234"
+
+
+def test_deploy_passes_it_and_keeps_message_content_off():
+    variables = deploy.environment_variables({**ENV, "APPLICATIONINSIGHTS_CONNECTION_STRING": "c"})
+    assert variables["VOLTRIEVE_TELEMETRY_CONNECTION_STRING"] == "c"
+    assert variables["OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT"] == "false"
+
+
+@pytest.mark.parametrize("value", [None, "", "  "])
+def test_without_the_azd_value_the_variable_is_left_out(value):
+    env = {**ENV} if value is None else {**ENV, "APPLICATIONINSIGHTS_CONNECTION_STRING": value}
+    assert "VOLTRIEVE_TELEMETRY_CONNECTION_STRING" not in deploy.environment_variables(env)

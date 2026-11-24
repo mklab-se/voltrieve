@@ -28,8 +28,12 @@ parses it. The oid it carries must equal ALLOWED_CALLER_OID. The check fails clo
 ALLOWED_CALLER_OID empty every request is refused, unless ALLOW_ANY_CALLER=true is set explicitly
 (local use only, logged loudly).
 
-Tracing: the agent server host configures Azure Monitor itself from
-APPLICATIONINSIGHTS_CONNECTION_STRING (azure.ai.agentserver.core), so nothing is configured here.
+Tracing: the agent server host configures Azure Monitor itself, from the connection string we hand
+to its constructor (`applicationinsights_connection_string`, azure.ai.agentserver.core). The string
+is in VOLTRIEVE_TELEMETRY_CONNECTION_STRING (set in deploy.py from the azd value). The platform
+no longer injects APPLICATIONINSIGHTS_CONNECTION_STRING, because the project is not connected to
+Application Insights, and it reserves that name. Without our variable the host starts without
+telemetry. The string is an ingestion identifier, not a secret, and it is never logged or printed.
 AZURE_EXPERIMENTAL_ENABLE_GENAI_TRACING=true (set in deploy.py) adds the model call spans.
 """
 
@@ -269,7 +273,8 @@ def get_runtime() -> Runtime:
 def create_host():
     from azure.ai.agentserver.invocations import InvocationAgentServerHost
 
-    host = InvocationAgentServerHost()
+    connection_string = os.environ.get("VOLTRIEVE_TELEMETRY_CONNECTION_STRING", "").strip() or None
+    host = InvocationAgentServerHost(applicationinsights_connection_string=connection_string)
     if os.environ.get("ALLOW_ANY_CALLER", "").lower() == "true":
         logger.critical("ALLOW_ANY_CALLER=true: ANY caller may invoke this agent. Local use only.")
     elif not os.environ.get("ALLOWED_CALLER_OID", "").strip():

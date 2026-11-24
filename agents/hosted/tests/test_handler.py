@@ -293,3 +293,37 @@ async def test_the_private_flag_reaches_the_loop(caplog):
     assert "Model stream failed: RuntimeError" in caplog.text and "SPARK" not in caplog.text
     await invoke(runtime, {**BODY, "input": "SPARK"})
     assert "bad request: SPARK" in caplog.text
+
+
+def host_arguments(monkeypatch) -> dict:
+    """The keyword arguments create_host passes to the agent server host's constructor."""
+    import azure.ai.agentserver.invocations as invocations
+
+    seen: dict = {}
+
+    class FakeHost:
+        def __init__(self, *args, **kwargs):
+            seen.update(kwargs)
+
+        def invoke_handler(self, fn):
+            return fn
+
+    monkeypatch.setattr(invocations, "InvocationAgentServerHost", FakeHost)
+    main.create_host()
+    return seen
+
+
+def test_the_host_gets_our_connection_string(monkeypatch):
+    monkeypatch.setenv("VOLTRIEVE_TELEMETRY_CONNECTION_STRING", "InstrumentationKey=x")
+    seen = host_arguments(monkeypatch)
+    assert seen["applicationinsights_connection_string"] == "InstrumentationKey=x"
+
+
+def test_without_it_the_host_starts_without_telemetry(monkeypatch):
+    monkeypatch.delenv("VOLTRIEVE_TELEMETRY_CONNECTION_STRING", raising=False)
+    assert host_arguments(monkeypatch)["applicationinsights_connection_string"] is None
+
+
+def test_an_empty_connection_string_is_no_connection_string(monkeypatch):
+    monkeypatch.setenv("VOLTRIEVE_TELEMETRY_CONNECTION_STRING", "  ")
+    assert host_arguments(monkeypatch)["applicationinsights_connection_string"] is None
