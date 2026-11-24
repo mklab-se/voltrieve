@@ -300,3 +300,31 @@ def test_mask_contacts_is_fast_on_long_text():
         started = time.perf_counter()
         mask_contacts(chunk * (100_000 // len(chunk)))
         assert time.perf_counter() - started < 1, chunk
+
+
+def test_mask_contacts_takes_chained_emails_whole():
+    from voltrieve_agent.private import mask_contacts
+
+    assert mask_contacts("anna@example.se+bo@example.se") == "[email]"
+    assert mask_contacts("x anna@example.se+bo@example.se. y") == "x [email] y"
+
+
+def test_new_email_pattern_covers_everything_the_old_one_did():
+    import random
+    import re
+
+    from voltrieve_agent.private import _EMAIL
+
+    old = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")  # the pattern before the lookbehind
+
+    def covered(pattern, text):
+        marks = set()
+        for m in pattern.finditer(text):
+            marks.update(range(m.start(), m.end()))
+        return marks
+
+    rng = random.Random(7)
+    alphabet = "ab1_.+-@ \n,"
+    for _ in range(20_000):
+        text = "".join(rng.choice(alphabet) for _ in range(rng.randint(0, 30)))
+        assert covered(old, text) <= covered(_EMAIL, text), text

@@ -39,9 +39,41 @@ def test_mask_keeps_readable(text):
     assert mask(text) == text
 
 
-@pytest.mark.parametrize("text", ["AWD 400", "kw 150"])
-def test_mask_may_take_ordinary_words_that_look_like_plates(text):
-    assert mask(text) in (text, "[plate]")
+def test_mask_takes_ordinary_words_that_look_like_plates():
+    assert mask("AWD 400") == "[plate]"  # over-masking is the safe side
+    assert mask("kw 150") == "kw 150"  # two letters are not a plate
+
+
+SEPARATORS = ["", " ", "  ", " - ", "-", "\u00a0", "\u2011", "\u2013", "\u2014", "\u2212", "\u00ad", "\u200b", "\u2060 \u200b"]
+
+
+@pytest.mark.parametrize("sep", SEPARATORS)
+def test_plate_separators(sep):
+    text = f"bil ABC{sep}123 här"
+    assert mask(text) == "bil [plate] här"
+    assert allowed(text, ()) is False
+    assert allowed(f"bil abc{sep}12d", ()) is False
+
+
+@pytest.mark.parametrize("text", ["_ABC123_", "ABC_123", "reg_ABC123", "ABC_12D"])
+def test_underscore_does_not_hide_a_plate(text):
+    assert "[plate]" in mask(text)
+
+
+def test_vin_before_phone_and_email():
+    assert mask("070-123 45 67 1HGCM82633A004352") == "[phone] [vin]"
+    assert mask("Ring 0701234567\n1HGCM82633A004352") == "Ring [phone]\n[vin]"
+    assert mask("1HGCM82633A004352@example.se") == "[email]"
+    assert mask("a.1HGCM82633A004352@example.se") == "[email]"
+
+
+def test_chained_emails_are_masked_whole():
+    assert mask("anna@example.se+bo@example.se") == "[email]"
+
+
+def test_a_text_with_every_kind():
+    text = "Anna anna+x@example.se, 070-123 45 67, 19800101-1234, ABC 123 and 1HGCM82633A004352 want VT-1042-11"
+    assert mask(text) == "Anna [email], [phone], [id number], [plate] and [vin] want VT-1042-11"
 
 
 def test_vin_needs_a_digit_and_no_i_o_q():
@@ -110,6 +142,36 @@ def test_a_short_registration_is_a_whole_word():
     assert allowed("the ev is nice", ("EV",)) is False
     assert allowed("every road", ("EV",)) is True
     assert allowed("wants to charge", ("",)) is True
+
+
+@pytest.mark.parametrize(
+    ("text", "registration"),
+    [
+        ("A B", "AB"),
+        ("A-B", "AB"),
+        ("a 1", "A1"),
+        ("e.v.", "EV"),
+        ("I\u2665U", "IU"),
+        ("my a_b car", "ab"),
+    ],
+)
+def test_a_short_registration_written_loosely(text, registration):
+    assert allowed(text, (registration,)) is False
+
+
+def test_a_short_registration_inside_a_word_is_fine():
+    assert allowed("a big car", ("AB",)) is True
+    assert allowed("every road", ("EV",)) is True
+
+
+@pytest.mark.parametrize("text", ["code 20\u200b26", "anna\uff20example.se", "code 2\u00ad0 26", "WVWZZZ\u200b1JZXW000001"])
+def test_allowed_sees_through_format_characters_and_fullwidth(text):
+    assert allowed(text, ()) is False
+
+
+def test_a_registration_of_only_punctuation_is_ignored():
+    assert allowed("wants a wall-box", ("-",)) is True
+    assert allowed("wants a wall-box", (" . ", "")) is True
 
 
 def test_allowed_handles_several_registrations():

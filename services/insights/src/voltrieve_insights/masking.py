@@ -6,25 +6,29 @@ Masking is the safe side: a word that looks like a plate may be masked. Nothing 
 import re
 import unicodedata
 
-from voltrieve_agent.private import mask_contacts
+from voltrieve_agent.private import mask_contacts, mask_emails
 
 MAX_INTENT = 100
-# Swedish plate: three letters and three characters (ABC 123, ABC 12D), the space or hyphen is optional.
-_PLATE = re.compile(r"(?<!\w)[^\W\d_]{3}[\s-]?\d{2}[^\W_](?!\w)")
+# Between the letters and the digits of a plate: up to three of whitespace, underscores, hyphens, dashes, the minus
+# sign, the soft hyphen and zero-width characters.
+_SEP = r"[\s_\-\u00ad\u2010-\u2015\u2212\u200b-\u200d\u2060\ufeff]{0,3}"
+# Swedish plate: three letters and three characters (ABC 123, ABC 12D). Underscore does not hide one.
+_PLATE = re.compile(r"(?<![^\W_])[^\W\d_]{3}" + _SEP + r"\d{2}[^\W_](?![^\W_])")
 # VIN: 17 letters and digits without I, O and Q, with at least one digit. The lookbehind keeps a long run linear.
 _VIN = re.compile(r"(?<![A-Za-z0-9])(?=[A-HJ-NPR-Za-hj-npr-z]*[0-9])[A-HJ-NPR-Za-hj-npr-z0-9]{17}(?![A-Za-z0-9])")
-_WORDS = re.compile(r"\W+")
 
 
 def mask(text: str) -> str:
-    """The text with contact details, id numbers, plates and VINs replaced."""
-    masked = mask_contacts(text)
-    masked = _VIN.sub("[vin]", masked)
+    """The text with contact details, id numbers, plates and VINs replaced. Emails go first and VINs
+    before phone numbers, so a phone number cannot eat the first digit of a VIN."""
+    masked = _VIN.sub("[vin]", mask_emails(text))
+    masked = mask_contacts(masked)
     return _PLATE.sub("[plate]", masked)
 
 
-def _squash(text: str) -> str:
-    return "".join(c for c in unicodedata.normalize("NFKC", text).casefold() if c.isalnum())
+def _plain(text: str) -> str:
+    """NFKC text without format characters (zero-width, soft hyphen): what a reader sees."""
+    return "".join(c for c in unicodedata.normalize("NFKC", text) if unicodedata.category(c) != "Cf")
 
 
 def _four_digits(text: str) -> bool:
@@ -39,21 +43,26 @@ def _four_digits(text: str) -> bool:
     return False
 
 
+def _alnum(text: str) -> str:
+    return "".join(c for c in text if c.isalnum())
+
+
 def allowed(text: str, registrations: tuple[str, ...]) -> bool:
     """Whether an intent the model wrote may be kept: short, no contact detail or plate, no run of
-    four digits, and none of the chat's registrations."""
-    if len(text) > MAX_INTENT or mask(text) != text or _four_digits(text):
+    four digits, and none of the chat's registrations. A registration is looked for in any case, with
+    spaces and punctuation between its characters. One of only punctuation is ignored."""
+    seen = _plain(text)
+    if len(text) > MAX_INTENT or len(seen) > MAX_INTENT or mask(seen) != seen or _four_digits(seen):
         return False
-    squashed = _squash(text)
-    words = {w for w in _WORDS.split(unicodedata.normalize("NFKC", text).casefold()) if w}
+    lowered = seen.casefold()
+    squashed = _alnum(lowered)
     for registration in registrations:
-        wanted = _squash(registration)
+        wanted = _alnum(_plain(registration).casefold())
         if not wanted:
-            literal = registration.strip()
-            if literal and literal in text:
-                return False
-        elif len(wanted) <= 2:
-            if wanted in words:
+            continue
+        if len(wanted) <= 2:
+            pattern = r"(?<![^\W_])" + r"[\W_]*".join(re.escape(c) for c in wanted) + r"(?![^\W_])"
+            if re.search(pattern, lowered):
                 return False
         elif wanted in squashed:
             return False

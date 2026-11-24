@@ -15,7 +15,9 @@ from contextvars import ContextVar
 # Set by the loop while it runs a private turn.
 current_private: ContextVar[bool] = ContextVar("current_private", default=False)
 
-_EMAIL = re.compile(r"(?<![\w.+-])[\w.+-]+@[\w-]+\.[\w.-]+")  # the lookbehind keeps a long run linear
+# The lookbehind keeps a long run linear. A match goes on over a + (a@b.se+c@d.se is one match), so
+# nothing the plain pattern covered stays readable.
+_EMAIL = re.compile(r"(?<![\w.+-])[\w.+-]+@[\w-]+\.[\w.-]+(?:\+[\w.+-]*@[\w-]+\.[\w.-]+)*")
 _ID_NUMBER = re.compile(r"\b(?:19|20)?\d{6}[-+]?\d{4}\b")  # Swedish personal identity number
 # A phone number starts with + or 0 (070-123 45 67, +46 70 123 45 67): prices, dates and part
 # numbers do not, so they stay readable.
@@ -25,9 +27,14 @@ MAX_ERRORS = 8
 MAX_FRAMES = 30  # of each error, the ones closest to it
 
 
+def mask_emails(text: str) -> str:
+    """The text with email addresses replaced."""
+    return _EMAIL.sub("[email]", text)
+
+
 def mask_contacts(text: str) -> str:
     """The text with email addresses, phone numbers and Swedish id numbers replaced."""
-    masked = _EMAIL.sub("[email]", text)
+    masked = mask_emails(text)
     masked = _PHONE.sub(lambda m: "[phone]" if sum(c.isdigit() for c in m[0]) >= 8 else m[0], masked)
     return _ID_NUMBER.sub("[id number]", masked)
 
