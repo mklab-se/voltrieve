@@ -1,0 +1,20 @@
+What the insights identity may do, 2026-11-24, against the dev project.
+
+A temporary Container Apps job ran with the user assigned identity of the insights job and nothing else, and printed HTTP statuses only. The job was deleted afterwards. The role (infra/modules/insights-role.bicep) has three data actions on the Foundry account:
+  Microsoft.CognitiveServices/accounts/AIServices/agents/read
+  Microsoft.CognitiveServices/accounts/OpenAI/deployments/chat/completions/action
+  Microsoft.CognitiveServices/accounts/Language/analyze-text/action
+
+list conversations                            200
+read the items of one, own loop               200, has items
+read the items of one, prompt agent           200, has items
+read the items of one, hosted agent           200, has items
+create a conversation                         403
+add an item to a conversation                 403
+delete a conversation (an id that is not there) 403
+a stored response                             403
+a chat completion on gpt-6-luna               200
+analyze-text, PiiEntityRecognition, 2023-04-01 200
+
+The conversations were made by the API, with another identity.
+Not verified: deleting a conversation that exists (it was not tried, on purpose).
