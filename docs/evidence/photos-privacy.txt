@@ -43,5 +43,9 @@ A second window, 2026-11-24 from 02:31 UTC, after that setting was deployed
   exceptions in the window: 1, from voltrieve-hosted, a library that looks for an optional package when a session
   starts ("Failed to set up A365 OpenAI Agents instrumentation"). It holds nothing from the turn.
 
+Stored items, listed on all three backends after a sign question with a photo and then "Honk twice." or "Turn the wipers on fast." with the car's tools
+  the photo turn: the question as text with "(attached: ...)" and the answer as text. No image.
+  the next turn: the question, the function_call (honk or set_wipers), its output and the answer. Stored as usual.
+
 Not verified here: what Foundry keeps outside Application Insights, any change to the tracing (nothing was changed),
 and turns outside the window.

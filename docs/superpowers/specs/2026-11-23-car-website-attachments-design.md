@@ -470,28 +470,43 @@ Issue #12 as it is written. That issue is the specification.
 
 ## 13. Acceptance
 
-- [ ] On all three backends: wipers, horn, speed and park work from a typed message.
+- [x] On all three backends: wipers, horn, speed and park work from a typed message.
+      *Live, 18 of 18: `docs/evidence/car-tools.txt`.*
 - [ ] The street, the speedometer and the sound follow the tools.
-- [ ] After "honk" and "wipers on" following a sign question, the turns are stored as usual.
-- [ ] Parking in another block than the one that was asked about is pointed out.
-- [ ] A sign photo gets the right answer for the drawn signs and times, on all three backends, and
+      *Seen in a browser with the mock server and tested. Not seen with the deployed API, and nobody has listened.*
+- [x] After "honk" and "wipers on" following a sign question, the turns are stored as usual.
+      *Live on all three backends: `docs/evidence/photos-privacy.txt`.*
+- [x] Parking in another block than the one that was asked about is pointed out.
+      *Tested in `clients/car`.*
+- [x] A sign photo gets the right answer for the drawn signs and times, on all three backends, and
       the numbers are in the evidence.
-- [ ] A blurred photo is rejected and Runa asks for a new one.
-- [ ] A photo of a broken lamp on the website names the right part and side, on all three backends.
-- [ ] Asked what is broken, a photo without damage, or one that is not a car, never gets an article
+      *Live, 252 of 252: `docs/evidence/photos-routing.txt`.*
+- [x] A blurred photo is rejected and Runa asks for a new one.
+      *Live, refused in 9 of 9 at upload. The texts are tested in the clients.*
+- [x] A photo of a broken lamp on the website names the right part and side, on all three backends.
+      *Live, 36 of 36: `docs/evidence/photos-routing.txt`.*
+- [x] Asked what is broken, a photo without damage, or one that is not a car, never gets an article
       number. Asked which part something is, Runa may name it.
-- [ ] After a photo turn, the conversation has the text only. A test proves it.
+      *Live, right in every run: `docs/evidence/photos-routing.txt`.*
+- [x] After a photo turn, the conversation has the text only. A test proves it.
+      *Live on all three backends and tested: `docs/evidence/photos-privacy.txt`.*
 - [ ] No photo bytes, registration number or context in logs, spans or the live feed. A test proves it.
       *Note 2026-11-24:* met for what our code writes. Not met for Foundry's tracing
       (`docs/evidence/photos-privacy.txt`).
-- [ ] A user cannot use another user's attachment.
-- [ ] Turns without attachments: the routing suite is not worse than before, and photo turns are measured
+- [x] A user cannot use another user's attachment.
+      *Tested in `api`. Not tried live with two users.*
+- [x] Turns without attachments: the routing suite is not worse than before, and photo turns are measured
       against the 10 s limit.
-- [ ] Events and backend picker are off by default in the car and on the website.
+      *Live. Part numbers and answers as before. 132 of 135 right against 134 before: three parts questions also searched the documents. 135 of 135 in a later run: `docs/evidence/search-versions.txt`.*
+- [x] Events and backend picker are off by default in the car and on the website.
+      *Tested in both clients, and seen in a browser.*
 - [ ] The website has no gauge and no dashboard, and issue #12's own criteria pass.
-- [ ] A handler for a made-up text format can be added in a test without changing any file outside
+      *The gauge is gone and the dashboard is its own app. Sign in to the dashboard is not verified.*
+- [x] A handler for a made-up text format can be added in a test without changing any file outside
       `api/app/attachments/`.
-- [ ] No em-dashes in changed files, and no real client situation in the repository.
+      *Tested in `api`.*
+- [x] No em-dashes in changed files, and no real client situation in the repository.
+      *Checked before each push.*
 
 ## 14. Left to the builder
 
