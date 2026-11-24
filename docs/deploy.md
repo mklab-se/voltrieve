@@ -57,7 +57,7 @@ The name is limited to 22 characters and appears in resource names. Optional val
 
 The Basic service is in `AZURE_SEARCH_LOCATION`. A Serverless service is in `serverlessSearchLocation`, which defaults to Sweden Central.
 
-The hooks and scripts fill in the rest, such as `TENANT_ID`, `API_CLIENT_ID`, `INSIGHTS_IMAGE`, `WEB_URL`, `CAR_URL`, `DASHBOARD_URL`, `CAR_CLIENT_ID`, `DASHBOARD_CLIENT_ID`, `TEST_USER_UPN` and `HOSTED_AGENT_PRINCIPAL_ID`. All of them are identifiers. The Application Insights connection string is an ingestion identifier, not a secret.
+The hooks and scripts fill in the rest, such as `TENANT_ID`, `API_CLIENT_ID`, `INSIGHTS_IMAGE`, `INSIGHTS_JOB_NAME`, `INSIGHTS_IDENTITY_ID`, `INSIGHTS_IDENTITY_CLIENT_ID`, `LOG_ANALYTICS_WORKSPACE_ID`, `WEB_URL`, `CAR_URL`, `DASHBOARD_URL`, `CAR_CLIENT_ID`, `DASHBOARD_CLIENT_ID`, `TEST_USER_UPN` and `HOSTED_AGENT_PRINCIPAL_ID`. All of them are identifiers. The Application Insights connection string is an ingestion identifier, not a secret.
 
 ## Order
 
@@ -167,7 +167,9 @@ az containerapp job start -n "$(azd env get-value INSIGHTS_JOB_NAME)" -g "$(azd 
   --yaml "$week"
 ```
 
-Run older weeks before newer ones: the page shows the latest run. The workbook takes the latest window, whichever run was last. To read real chats, the notice has to be live first. Then set both values and provision:
+Run older weeks before newer ones: the page shows the latest run. The workbook takes the latest window, whichever run was last.
+
+**Off until it is approved.** `INSIGHTS_SCHEDULE` stays `off` and `INSIGHTS_NOTICE_DATE` stays empty until the product owner says yes to both. To read real chats, the notice has to be live first. After the yes, set both values (the date is the first full UTC day after the notice went live) and provision:
 
 ```sh
 azd env set INSIGHTS_NOTICE_DATE 2026-12-01
@@ -175,7 +177,9 @@ azd env set INSIGHTS_SCHEDULE on
 azd provision
 ```
 
-Not verified yet: that the job deploys and runs, that the condition holds the two identities to the table, and that a job can go from `off` to `on` in place. If Azure refuses to change the trigger, delete the job and provision again: it holds no data.
+Run on 2026-11-24 ([`insights-acceptance.txt`](https://github.com/mklab-se/voltrieve/blob/main/docs/evidence/insights-acceptance.txt)): the job deploys and runs by hand, and the condition held the job's identity to the table. The API read it too, but what else the API's identity can read was not tried.
+
+Not verified: the schedule, and that a job can go from `off` to `on` in place. If Azure refuses to change the trigger, delete the job and provision again: it holds no data.
 
 ### 5. Check it
 
@@ -201,6 +205,16 @@ When an environment already runs an older version, deploy the hosted agent befor
 **Rollback** goes in reverse, the API first, then the agents, so a new API never meets an older agent.
 
 **An empty environment** starts with `azd up`, then `scripts/deploy-agents.sh`, then an API restart. Photos count as unavailable until then.
+
+## Order for an update with the usage insights
+
+1. `azd provision`: the table, the data collection rule, the job with its identity and roles, and the API's access to the table. Then `scripts/deploy-agents.sh` at once, as after every provision. An older deployment still has the connection `appinsights` in the Foundry project. Bicep does not delete it, so [delete it by hand](decisions.md#closed-foundrys-tracing-is-disconnected) after the agents.
+2. `scripts/deploy-insights.sh`: the job's image. It starts no run.
+3. `azd deploy api`: conversations are marked with the client, and `GET /admin/insights` answers.
+4. The dashboard, [with the container](#2-apple-silicon-without-rosetta-scriptsdeploy-websh) where the SWA CLI cannot run.
+5. The car and the website, for the notice. They have to be live before real chats may be read.
+
+Every step leaves the job off. Checking and seeding are in [the runbook](runbook.md#usage-insights).
 
 ## Redeploying
 

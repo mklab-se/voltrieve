@@ -264,6 +264,59 @@ Conversations and turns are marked with the client (`car`, `web`, `cli`, `other`
 
 Seen live: the newest conversation per backend carried `test`, its backend and the car model `spark`, and 137 turns carried `voltrieve.client`, all `test` (`docs/evidence/tracing-disconnected.txt`). Not verified: a conversation marked with `car`, `web` or `cli`, because every marked turn was our own run.
 
+## Usage insights
+
+Decided on 2026-11-24. The [design](https://github.com/mklab-se/voltrieve/blob/main/docs/superpowers/specs/2026-11-24-usage-insights-design.md) is approved by the product owner, and its last section says what changed while building. The evidence is in `docs/evidence/insights-*.txt`. The job has only run on made up conversations.
+
+### A nightly job instead of labeling each turn
+
+The product owner chose a job that reads Foundry's stored conversations at night, over labeling each turn in the API right after the answer. The job sees a whole conversation, so it can judge whether the person got what they needed, and nothing is added to a turn. All three backends keep their conversations in the same store, so one job covers them. The price: one identity can read everyone's chats, and nothing shows until the next night. Foundry's own cluster analysis needs samples with the full text, and an agent that labels itself can slow or disturb answers.
+
+### No stored intents and no tokens for people
+
+The product owner chose labels and a short intent sentence, not labels only. The job reads the same seven days again each night, so it does not need to keep either between nights. Intents and owners are in its memory only. What is saved is groups and counts. A second store of chat text was named as a failure in the design.
+
+### Log Analytics instead of a database
+
+The totals are a custom table, `VoltrieveInsights_CL`, kept for 12 months while the workspace stays at 30 days. It adds no service to run and close to no cost (a few MB a year), and the workbook reads it directly. A run is one upload, so it is saved whole or not at all. The price: rows cannot be changed, so a new run for a week adds rows and each reader takes the latest, and a query waits a few minutes after ingestion.
+
+### The rule of five, and what it still leaves readable
+
+A row is saved only if five different people are in it, and counts are rounded to five. The limit is a setting that can be raised and never lowered. Two more rules came while building:
+
+- **Suppression.** Where the labels that are missing are few and known, the saved parts of a row never leave a rest of one to four people. Then the smallest part is held back too. This holds for client, car model, result and kind, and for the results of groups.
+- **At most three conversations of one person count in a row,** so one person with many chats does not make a topic large.
+
+A script over 3,000 random inputs (24,884 saved rows) found no row of fewer than five people, and no such rest where the rule applies. What a reader can still work out, on purpose:
+
+- Topics and groups hold nothing back, since one person with another question would empty the page. So a reader can tell that one to four people asked about something else, but no row says what.
+- A missing row means under the limit, held back, or that nobody asked.
+- Rounding hides exact counts, not that a rest exists when the whole is clearly larger than its saved parts.
+- A rest of five or more can be several small parts, and a reader who knows that each is under the limit can guess how they split.
+- Runs overlap, so two nights can be subtracted. Closed weeks without overlap would remove that, at the price of fresh numbers.
+
+None of it names a person. No more ways to cut the numbers are added, since each one would add a way to subtract.
+
+### Only names that can be saved are checked for personal data
+
+Patterns do not catch names of people or streets, so a group name passes Azure AI Language's detection of personal data, and one that fails becomes "unnamed group". Only the names of groups with five people are sent to it. A smaller group becomes "other", so its name goes nowhere and there is nothing to check. That keeps the calls few. The run fails if the detection does not answer. Four categories pass, since they are ordinary in a car question: quantity, date and time, type of person, and organization. So the name of a company could pass the detection, and only the prompt forbids it. Live, two forced names were replaced and two plain ones kept. The planted details never reached a name, so this does not say how the detection handles a real one. Its price was not found for the text meter. Microsoft's page says about 1 USD per 1,000 texts.
+
+### A cap and a random sample
+
+Above 2,000 conversations of one source, a week is a random sample and the page shows the share, so a busy week cannot become a large bill or an empty page. The sample is of conversations, not of people. The cap does not fit the deadline when both sources are full: see [the runbook](runbook.md#usage-insights).
+
+### The job and the API may read one table
+
+Both identities read through Log Analytics Data Reader with a condition on the name of the table, because the same role without it opens every log. The job may also read conversations, call models in the Foundry account and analyze text (a custom role with three data actions), pull its image, and write to its own rule. The role cannot be held to one model. Live, the job's identity got 0 rows from `AppTraces`, `AppGenAIContent`, `ContainerAppConsoleLogs_CL` and `search *`, and 403 when it tried to create, add or delete. Deleting a conversation that exists was not tried.
+
+### Real chats are read from the first full day after the notice
+
+The car and the website say that a nightly job counts what people ask about. Real conversations are read only if they started on or after `INSIGHTS_NOTICE_DATE`, the first full UTC day after the notice was live. A date and not a time, because the job counts whole days and a chat from the day the notice appeared may be older than it. Empty means that no real conversation is read, and so does a run with `--window-end`. The date and the schedule stay off until the product owner says yes to both.
+
+### Foundry's tracing
+
+Disconnected, with its own entry: [Closed: Foundry's tracing is disconnected](#closed-foundrys-tracing-is-disconnected).
+
 ## Live findings
 
 - Prompt agent with `agent_reference` plus `tools`: `400 Not allowed when agent is specified.`
@@ -354,6 +407,8 @@ up in the indexes, so an invented title gets no link. Other choices:
 - Cold-start figures. Whole turn times are in `docs/why-foundry.md` section 6, measured from one laptop.
 - Whether `alwaysQuerySource` would make one knowledge base cover both sources.
 - A trace with the dealer since Foundry's tracing was disconnected, and the Agent 365 exporter of the hosted agent's platform.
+- The usage insights on real conversations and on a schedule, the job at its cap, group names over several nights of real use, the price of the detection, and the job's own model calls leaving no text in telemetry.
+- A 403 from `GET /admin/insights` for a user without `Dashboard.View`, live.
 - The 10 minute run expiry from older documentation.
 - Whether an MCP tool with a project connection works outside an agent definition.
 - Whether Foundry keeps a photo that was sent in an unstored turn, for abuse monitoring or anything else.

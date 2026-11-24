@@ -2,6 +2,8 @@
 
 Status: approved by the product owner on 2026-11-24. Nothing is built yet. Takes over the grouping part of issue #5.
 
+Built since then. The text below is as approved, and [section 14](#14-changes-while-building) says what changed.
+
 ## 1. Why
 
 The product owner wants to know three things:
@@ -176,3 +178,20 @@ Left to the builder: module layout, prompts, the topic list, table columns, char
 - Whether direct model calls by the job leave text anywhere.
 - Whether the model names groups the same way from night to night.
 - What Foundry keeps for itself.
+
+## 14. Changes while building
+
+The approved text above is not rewritten. This is what was built differently, or was not in it.
+
+- **Suppression (section 6, step 8).** Where the missing labels are few and known, the saved parts of a row never leave a rest of one to four people: the smallest part is held back too. Client, car model, result and kind follow it, and the results of a group follow it towards both the group and the topic. Topics and groups hold nothing back.
+- **At most three conversations per person per row.** A person counts as at most three in each number, so the parts can add up to more than the whole.
+- **What is left, updated.** The paragraph says that a total minus its parts can hint at a hidden part. With suppression it no longer does so for one to four people in the cuts above. Still readable: that one to four people asked about something else than the saved topics or groups, that a missing row can mean under five, held back or nobody, that a rest exists when the whole is clearly larger, how a rest of several small parts may split, and what two overlapping nights give when subtracted. The list is in `services/insights/src/voltrieve_insights/totals.py`.
+- **Names are checked only for groups that can be saved (section 6, step 6).** A group of fewer than five becomes "other", so its name goes to no detection and nowhere else. Quantities, dates, types of person and organizations do not fail a name.
+- **The hosted agent's exporter (section 7).** Our own variable reaches the agent through the host's own argument, and the exporter is not started by our code. The platform leaves a value that does not parse in the usual variable, and the exporter parses that too, so our process replaces it. Until then the hosted agent sent no telemetry.
+- **The `run` row.** Every run saves one row without counts for each source, so a night with nobody to show is not missing.
+- **A refused conversation is skipped (section 6, "The job fails closed").** The model's service refuses some, and 1 of 100 made up ones was. More than 10 % refused in one source fails the run. A refused grouping call leaves its conversations without a group.
+- **A lost answer at the upload.** The run is one upload with one try. If only its answer is lost, the run reads as failed but may have been saved, whole.
+- **The sample** is per source, so made up conversations do not crowd out real ones. The price is that both at 2,000 take longer than the deadline of 25 minutes.
+- **`--window-end`** runs an older week of made up conversations, for demos. It reads no real chat and writes no real row.
+
+Not met or not verified of section 9: the notice being live, the job's own calls leaving no text (the search ran on a call from the deployer), 403 live for a user without the role, four made up people plus one real (a test only), a failed run showing as missing in the workbook, and the 10 s limit on the hosted agent, which was over it before and after.

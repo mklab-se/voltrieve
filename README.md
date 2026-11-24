@@ -36,7 +36,7 @@ Most agent samples stop at "it answers". This one answers the questions you meet
 | --- | --- | --- |
 | [The car](docs/clients.md#the-car) | The driver | The assistant inside the car, with functions you see and hear, and a photo of a road sign |
 | [The website](docs/clients.md#the-website) | A signed-in customer | Asking Runa about your own car, with a photo if you have one |
-| [The operations dashboard](docs/clients.md#the-operations-dashboard) | Voltrieve employees | What happens in the service: users, times, cost, errors |
+| [The operations dashboard](docs/clients.md#the-operations-dashboard) | Voltrieve employees | What happens in the service: users, times, cost, errors, and what people ask about |
 | [The CLI](docs/clients.md#the-cli) | Developers | A test tool for the API, on every backend, with the whole trace |
 
 All four clients are built. [The clients](docs/clients.md) says what each one does, and what has not been run live is marked there.
@@ -156,6 +156,7 @@ Tear down with `azd down --purge`. App registrations and the tester are not remo
 | `clients/dashboard/` | The operations dashboard, for employees |
 | `clients/cli/` | The CLI, a developer tool |
 | `services/dealer/` | The dealer web service |
+| `services/insights/` | The job that counts what people ask about |
 | `search/` | Definitions and tooling for the Search objects |
 | `data/` | The source data file, document generator and generated documents |
 | `infra/` | Bicep modules and the Entra setup script |
@@ -166,7 +167,7 @@ Tear down with `azd down --purge`. App registrations and the tester are not remo
 
 ## Costs
 
-Idle, about 80 USD a month plus a small amount for Log Analytics: Search Basic is about 75 USD and Container Registry Basic about 5 USD. Container Apps scale to zero, the three Static Web Apps (website, car and dashboard) are on the Free tier, models bill per token, and the hosted agent bills per active session. A Serverless search service can stand next to Basic. It is off by default. In the dev environment it is on, at about 0.11 USD by the diagnostic metric for a night of test runs, not by an invoice ([Deployment](docs/deploy.md#idle-cost)).
+Idle, about 80 USD a month plus a small amount for Log Analytics (the usage insights add a few MB a year, and their job costs nothing while it does not run): Search Basic is about 75 USD and Container Registry Basic about 5 USD. Container Apps scale to zero, the three Static Web Apps (website, car and dashboard) are on the Free tier, models bill per token, and the hosted agent bills per active session. A Serverless search service can stand next to Basic. It is off by default. In the dev environment it is on, at about 0.11 USD by the diagnostic metric for a night of test runs, not by an invoice ([Deployment](docs/deploy.md#idle-cost)).
 
 ## Status
 
@@ -180,6 +181,15 @@ Run live on 2026-11-24:
 - The three sites are deployed and show their sign-in page (looked at by hand, no evidence file).
 - Search on the newest data plane version, on Basic and on Serverless, with two planners: 135 of 135 routing turns right on Serverless (`docs/evidence/search-versions.txt`).
 
+The usage insights were built and run on 2026-11-24, by hand and on made up conversations only. The schedule is off and the notice date is empty, so the job has read no real chat ([the decisions](docs/decisions.md#usage-insights)):
+
+- Labels: 91 of 100 made up conversations had all four labels right, on a gate of 90. Where the person tries to steer the labels it was 3 of 6. The right answers and the prompt have the same author, and a second agent checked the answers (`docs/evidence/insights-labels.txt`).
+- Personal details: 108 were planted in 50 conversations. None was found in an intent, or in the 51 group names saved in all runs. The model did not write them, so the filter had nothing to stop.
+- Groups: the last run labeled 508 of 514 conversations and saved 36 group rows, 25 of them named. 20 of 20 phrasings of one need became one group, and two names with a person or a street were replaced (`docs/evidence/insights-acceptance.txt`). It took 4 minutes and cost 0.08 USD at list price, without the detection of personal data.
+- Failing closed: two runs that failed saved nothing.
+- Access: the job's identity lists and reads conversations on all three backends, and gets 403 when it creates, adds or deletes (`docs/evidence/insights-role.txt`). In Log Analytics it reads its own table, and got 0 rows from the others that were tried.
+- Foundry's tracing is disconnected: a marked turn on each backend left no rows in any table 16 and 47 minutes later. Before the change the same check found rows for the prompt and hosted agents (`docs/evidence/tracing-disconnected.txt`). The hosted agent's first text had a p95 of 13.6 s then, over the 10 s limit as before.
+
 Verified live:
 
 - All three backends through the deployed API: every runbook step passes on the final build, including the automated trace check in step 12.
@@ -192,7 +202,7 @@ Verified live:
 - Where a photo turn leaves its text and its photo, on 2026-11-24: the photo nowhere we looked, the text of prompt and hosted turns in Foundry's tracing (`docs/evidence/photos-privacy.txt`). [Foundry's tracing was then disconnected](docs/decisions.md#closed-foundrys-tracing-is-disconnected), and the marked question and client's line of a turn on each backend left no rows in telemetry (`docs/evidence/tracing-disconnected.txt`).
 - The authorization denied path, on the loop backend, against real Foundry with a fake token validator.
 
-Offline tests pass: `agent_core` 167, `api` 459, `agents/hosted` 40, `search` 62, `services/dealer` 42, `clients/cli` 62, `clients/web` 172, `clients/dashboard` 25, `clients/car` 426, `tests/photos` 228, `tests/contract` 74 and `infra/scripts/entra` 41, plus the 123 of `data/generator` in CI (they need a browser), the Bicep and script checks. Every suite runs in [CI](.github/workflows/tests.yml).
+Offline tests pass: `agent_core` 172, `api` 524, `agents/hosted` 49, `search` 62, `services/dealer` 42, `services/insights` 703, `clients/cli` 62, `clients/web` 172, `clients/dashboard` 67, `clients/car` 426, `tests/photos` 229, `tests/contract` 94 and `infra/scripts/entra` 41, plus the 123 of `data/generator` in CI (they need a browser), the Bicep and script checks. Every suite runs in [CI](.github/workflows/tests.yml).
 
 Not verified:
 
@@ -201,6 +211,12 @@ Not verified:
 - A rollback of the Serverless search service or of the Search versions, and what Serverless costs on an invoice.
 - The workbook's check of Foundry's tracing rows.
 - A trace with the dealer since Foundry's tracing was disconnected, the Agent 365 exporter that the hosted agent's platform turns on, and what Foundry keeps for itself.
+- The usage insights on real conversations, their schedule, and the switch from `off` to `on`. The job's identity deleting a conversation that exists (it was refused for an id that is not there).
+- The job at its cap of 2,000 conversations per source. At the measured speed one source takes about 16 minutes and both about 31, over its deadline of 25.
+- The job's own model calls leaving no text in telemetry: the check ran on a call from the deployer, before the first run of the job.
+- A 403 from `GET /admin/insights` for a user without `Dashboard.View`, and four made up people plus one real: only in tests.
+- The page "What people ask" against the deployed API in a browser, a missing night in the workbook, and that the new sentence in the notice is live in the car and on the website.
+- The group names over several nights of real use, the labels on real conversations, and the price of the detection of personal data.
 - Reading a small sign in a large photo: [a known limit](docs/attachments.md#the-known-limit).
 - A real browser sign-in with `voltrieve login` (its MSAL calls are tested against a fake).
 - A real sign-in as the tester.

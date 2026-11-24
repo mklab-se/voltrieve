@@ -277,13 +277,14 @@ those JPEGs as they are.
 
 ## The operations dashboard
 
-Three views, from now to history. All of them are built on Application Insights.
+Four views, from now to history. The first three are built on Application Insights, and the last on the table of the nightly job.
 
 | View | Where | Shows |
 |---|---|---|
 | Live dashboard | The dashboard app (`just open-dashboard`, or `just dashboard` to run it locally), for the `Dashboard.View` role, given to the deployer | Users active in the last 5 minutes, messages today, first text per backend, each turn as it happens with its tools, knowledge bases, timings and estimated cost, and the prompt when **Show prompts** is on |
 | Live Metrics | Application Insights, or the dashboard's **Live Metrics** link | Requests, response times and failures this second |
-| Workbook | Azure portal, **Voltrieve operations** in the resource group, or the dashboard's **History** link | Users per day, a map of where they connect from, first text median and p95 per backend, share over 10 s, tools, knowledge bases, outcomes, estimated cost per day and month against the 990 SEK budget, errors, cold starts, and two privacy checks |
+| Workbook | Azure portal, **Voltrieve operations** in the resource group, or the dashboard's **History** link | Users per day, a map of where they connect from, first text median and p95 per backend, share over 10 s, tools, knowledge bases, outcomes, estimated cost per day and month against the 990 SEK budget, errors, cold starts, two privacy checks, what people ask, and missing nights |
+| What people ask | The dashboard app, the second page (`#ask`), for the `Dashboard.View` role | What people ask about and how it went, from the [usage insights](#usage-insights) |
 
 **What our own code stores.** Each turn adds attributes to its `chat.turn` span: OpenTelemetry GenAI names
 (`gen_ai.request.model`, `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`) and
@@ -354,6 +355,69 @@ conversation. Leave the switch off when the screen is shown to an audience unles
   address itself is masked on ingestion. Requests from inside Azure land in the region.
 - *A live dashboard left open keeps the API awake:* its stream counts as traffic, so the API
   does not scale to zero while it is open. Close it after a demo.
+
+## Usage insights
+
+A job reads the stored conversations of the last seven settled UTC days, labels and groups them in memory, and saves totals that at least five people share. The design is [here](https://github.com/mklab-se/voltrieve/blob/main/docs/superpowers/specs/2026-11-24-usage-insights-design.md), and [the decisions](decisions.md#usage-insights) say why.
+
+```mermaid
+flowchart LR
+    Store[("Foundry conversations")] -- "read only" --> Job["Job: mask, label,<br/>group, rule of five"]
+    Job -- "totals, one upload" --> Table[("VoltrieveInsights_CL<br/>12 months")]
+    Table --> Page["Dashboard:<br/>What people ask"]
+    Table --> Book["Workbook, with<br/>missing nights"]
+```
+
+**Off until the product owner says yes.** The schedule (`INSIGHTS_SCHEDULE`) is `off`, so the job starts by hand only. The notice date (`INSIGHTS_NOTICE_DATE`) is empty, so a run selects made up conversations and no real one. `on` means every night at 02:30 UTC. The date is the first full UTC day after the notice went live in the car and on the website. How to set them is in [Deployment](deploy.md#4-scriptsdeploy-insightssh).
+
+**Run it by hand.** The job needs its image first (`scripts/deploy-insights.sh`).
+
+```sh
+job="$(azd env get-value INSIGHTS_JOB_NAME)"; group="$(azd env get-value AZURE_RESOURCE_GROUP)"
+az containerapp job start -n "$job" -g "$group"
+az containerapp job execution list -n "$job" -g "$group" -o table
+```
+
+The lines of a run are in its console log, and reach the workspace as `ContainerAppConsoleLogs_CL`. There is one line a step:
+
+| Step | Says |
+|---|---|
+| `list` | Conversations listed |
+| `select`, `sample` | How many real and seeded were chosen, and how many are left after the cap of 2,000 for each |
+| `read` | Conversations with user text |
+| `label` | Labeled, and refused by the service. More than 10 % refused in one source fails the run |
+| `previous names` | Group names of the run before, that a group may keep |
+| `group` | Conversations in a group, and calls refused |
+| `totals` | Rows |
+| `save` | Rows, and tokens in and out |
+
+A count of 1 to 4 shows as `under 5`. No line holds text, an id or a person. The last run on 2026-11-24 chose 514, labeled 508, had 6 refused, saved 117 rows, and took 4 minutes.
+
+**A failed night.** The run prints `failed: <step>: <error type>`, ends with exit code 1 and saves nothing. The platform does not try again. One exception: a failure at `save` may have been saved, whole, when only the answer was lost. The dashboard keeps showing the run before. The workbook's table **Missing nights** lists the days without a run for the chosen source, after its first one. A night with nobody to show is not missing: every run saves a `run` row without counts for each source. Not verified: that table with a night that failed. Two failures were seen live, and saved nothing: a query that the query engine refused, at `previous names`, and a wrong model name, at `label`.
+
+**Watch the time.** The run ends itself after 25 minutes. 514 conversations took 4. At that speed 2,000 take about 16 minutes, and both sources at the cap about 31, which would fail.
+
+**Older weeks, for demos.** A trend needs more than one week. `--window-end` runs a week that ends on a day, for made up conversations only: it reads no real chat and writes no real row. Seed four weeks, then run the three older ones, oldest first, then the newest without the argument. On 2026-11-24 the weeks ended on 1, 8, 15 and 22 November. The commands for a start with an argument are in [Deployment](deploy.md#4-scriptsdeploy-insightssh).
+
+```sh
+uv run scripts/seed_conversations.py                              # says how many, writes nothing
+uv run scripts/seed_conversations.py --yes --weeks 4 --copies 5   # writes them, marked seeded
+```
+
+`--copies` (at most 10) writes each conversation several times, by other made up people, so that enough share a need to make a named group. Running it twice writes everything twice. A seeded conversation is never counted with real ones. No script removes the made up conversations. Foundry keeps them 60 days by its documentation.
+
+**The checks.** They need `az`, and the roles and settings that each script names at its top.
+
+| Check | Does | Reads or writes |
+|---|---|---|
+| `uv run scripts/tracing_check.py --mark`, then `--search` | Looks for chat text in [telemetry](#the-operations-dashboard) | One marked turn per backend, and counts from the workspace |
+| `uv run scripts/labels_check.py` | Labels 100 made up conversations with known answers, and looks for 108 planted details in the intents. The gate is 90 of 100, read it in the output: the exit code does not say it | Nothing from Foundry's conversations |
+| `uv run scripts/insights_check.py` | Grouping with the real model and the real detection: one need in one group, names kept, steering, planted names. Exit code 1 on a FAIL | Nothing is read or saved |
+| `uv run scripts/seed_conversations.py` | Writes made up conversations for a run of the job | Writes to Foundry's conversations with `--yes` |
+
+`--out FILE` on `labels_check.py` and `insights_check.py` saves what is printed. The recorded runs are `insights-labels.txt`, `insights-acceptance.txt` and `tracing-disconnected.txt` in `docs/evidence/`. Labels: 91 of 100. Planted details: 0 of 108 in the intents and in the saved group names.
+
+**When the page is empty.** *Not enough people yet* under Real is right while no real chat is read. *What people ask could not be loaded* means that the request failed, for example because the API could not read the table. A new role condition can take 15 minutes to work, and an answer is kept for 5 minutes.
 
 ## Source links
 

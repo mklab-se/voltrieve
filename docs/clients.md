@@ -6,7 +6,7 @@ Voltrieve has one server and four clients. Each client shows one audience, so so
 | --- | --- | --- | --- |
 | The car | The driver | The assistant inside the car, with functions you see and hear: speed, wipers, horn, parking, and a photo of a road sign | `clients/car/` |
 | The website | A customer who is signed in | Asking Runa about your own car, with a photo if you have one | `clients/web/` |
-| The operations dashboard | Voltrieve employees | What happens in the service: users, response times, cost, errors | `clients/dashboard/` |
+| The operations dashboard | Voltrieve employees | What happens in the service: users, response times, cost, errors, and what people ask about | `clients/dashboard/` |
 | The CLI | Developers | A test tool for the API. It does not stand in for a car | `clients/cli/` |
 
 ```mermaid
@@ -18,7 +18,7 @@ flowchart LR
     Car -->|"POST /attachments, /chat"| API
     Web -->|"POST /attachments, /chat"| API
     CLI -->|"/chat"| API
-    Dash -->|"GET /admin/live"| API
+    Dash -->|"GET /admin/live, /admin/insights"| API
     Entra["Entra ID<br/>one registration per client"] -. tokens .-> Car
     Entra -. tokens .-> Web
     Entra -. tokens .-> Dash
@@ -35,6 +35,8 @@ Run live on 2026-11-24: the car, the website and the dashboard in a browser agai
 Not verified:
 
 - sign-in to the car, the new website and the dashboard,
+- the dashboard's page "What people ask" against the deployed API in a browser,
+- that the notice's sentence about the nightly job is live in the deployed car and website,
 - the car in Safari or Firefox, on a slow or Windows computer, or with a screen reader,
 - whether a person hears the horn and the motor.
 
@@ -44,7 +46,7 @@ Not verified:
 - **One stream.** All chat clients read the same server-sent events and answer the same `client_tool_calls` through `/chat/tool-results`. The car and the website are copies of one another in their sign-in, stream parser, turn state and answer rendering, with a comment in each that says where its twin lives.
 - **Tools run on the client.** A client declares the tools it offers in every request. The API never runs them. What a tool does is decided in the client.
 - **Which backend answers.** The header `X-Agent-Backend` picks one of the three. For the prompt agent, the API picks the agent whose tools include every declared one: web, then CLI, then car. No match gives `unsupported_client_tool`.
-- **The notice.** The car (in its menu) and the website (under the chat) say the same about the live screen and the stored chat, and then: "A nightly job counts what people ask about. It saves only topics shared by several people, never your chat." The job is not running yet. The car hides its menu below 1280 pixels, as it hides the car.
+- **The notice.** The car (in its menu) and the website (under the chat) say the same about the live screen and the stored chat, and then: "A nightly job counts what people ask about. It saves only topics shared by several people, never your chat." The job is not on a schedule and has read no real chat. It may read real chats only from the first full UTC day after the notice went live, and that date is not set ([the decision](decisions.md#real-chats-are-read-from-the-first-full-day-after-the-notice)). The car hides its menu below 1280 pixels, as it hides the car.
 
 ## The car
 
@@ -101,11 +103,24 @@ The gauge, `set_gauge`, the name "Flight Recorder" and the dashboard are not in 
 
 ## The operations dashboard
 
-Its own app with its own sign-in. It shows the live feed and links to Live Metrics and the workbook, for users with the `Dashboard.View` role. See [the runbook](runbook.md#the-operations-dashboard).
+Its own app with its own sign-in. It has two pages, **Live** and **What people ask**, for users with the `Dashboard.View` role. The first shows the live feed and links to Live Metrics and the workbook. See [the runbook](runbook.md#the-operations-dashboard).
 
 ![The live dashboard: users, messages, cost and first text per backend, and one card for each turn](images/dashboard.webp)
 
 *The live dashboard with mock data: the times and costs are not measurements. The note says "never stored", which was corrected afterwards: the live feed stores nothing, but the chat itself is stored in Foundry's conversation.*
+
+### What people ask
+
+The second page (`#ask`) shows the totals that the [nightly job](runbook.md#usage-insights) saved, from `GET /admin/insights`. It answers what people ask about, what works and what does not, without letting anyone read a chat:
+
+- topics, and inside each its groups, results and what people want, with the share that was answered,
+- topics per car model, people per client, and people per week for twelve weeks.
+
+Only topics that at least five people share are there, and counts are rounded to five, so the page says "about 35 people". What is missing has fewer than five people or is held back. **Real** and **Made up** are two views, and they are never added. The page says which one it shows, when the last run was, which week it covers, and the share sampled when that was not everything. Real is empty today.
+
+![The page What people ask, on Made up: about 315 people, the topic Charging opened with its groups, results and what people want](images/insights.webp)
+
+*What people ask, with mock data from `npm run mock` in `clients/dashboard`: the topics and numbers are invented by the mock server, and are no measurement.*
 
 ## The CLI
 
