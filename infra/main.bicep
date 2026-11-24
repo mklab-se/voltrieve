@@ -241,7 +241,7 @@ module dealerApp 'modules/dealer-app.bicep' = {
 }
 
 // The dealer may read and write its own table and nothing else in the account.
-module dealerReadsTable 'modules/role-storage-table.bicep' = {
+module dealerUsesTable 'modules/role-storage-table.bicep' = {
   scope: rg
   params: {
     storageAccountName: storage.outputs.name

@@ -18,14 +18,14 @@ assert template["variables"]["storageTableDataContributor"] == TABLE_CONTRIBUTOR
 named = {n for n, m in modules.items()
          if "roleDefinitionId" in m["properties"]["parameters"]
          and "dealerApp" in json.dumps(m["properties"]["parameters"])}
-assert named == {"dealerReadsTable"}, named
-args = modules["dealerReadsTable"]["properties"]["parameters"]
+assert named == {"dealerUsesTable"}, named
+args = modules["dealerUsesTable"]["properties"]["parameters"]
 assert "storageTableDataContributor" in args["roleDefinitionId"]["value"], args
 assert args["tableName"]["value"] == "dealer" or "dealerTable" in args["tableName"]["value"], args
 assert "ServicePrincipal" in args["principalType"]["value"]
 
 # the module assigns one role, on the table
-inner = modules["dealerReadsTable"]["properties"]["template"]["resources"]
+inner = modules["dealerUsesTable"]["properties"]["template"]["resources"]
 assignments = [r for r in (inner.values() if isinstance(inner, dict) else inner)
                if r["type"] == "Microsoft.Authorization/roleAssignments"]
 assert len(assignments) == 1

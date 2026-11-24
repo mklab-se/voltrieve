@@ -71,7 +71,7 @@ def test_test_user_gets_only_chat_role(graph_mock, graph):
     assert roles == {env["CHAT_USER_ROLE_ID"]}
 
 
-def test_deployer_gets_both_roles_and_dealer_requires_assignment(graph_mock, graph):
+def test_deployer_gets_every_user_role_and_dealer_requires_assignment(graph_mock, graph):
     env = apps.setup(graph, "tid", "deployer-oid", DOMAIN, [])
     assert graph_mock.role_assignments_for("deployer-oid") == {
         env["CHAT_USER_ROLE_ID"],

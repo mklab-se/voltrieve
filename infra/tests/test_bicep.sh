@@ -95,8 +95,8 @@ grep -q '"dealerSiteClientId": { "value": "${DEALER_SITE_CLIENT_ID=}" }' main.pa
 grep -q "scope: table$" modules/role-storage-table.bicep || { echo "the table role is not scoped to a table"; exit 1; }
 [ "$(grep -c "Microsoft.Authorization/roleAssignments@" modules/role-storage-table.bicep)" = 1 ] || { echo "the table module assigns more than one role"; exit 1; }
 grep -q "^var storageTableDataContributor = '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3'$" main.bicep || { echo "main.bicep lacks the Table Data Contributor GUID"; exit 1; }
-grep -A8 "module dealerReadsTable" main.bicep | grep -q "roleDefinitionId: storageTableDataContributor" || { echo "the dealer does not get Table Data Contributor"; exit 1; }
-grep -A8 "module dealerReadsTable" main.bicep | grep -q "principalId: dealerApp.outputs.principalId" || { echo "the table role is not given to the dealer"; exit 1; }
+grep -A8 "module dealerUsesTable" main.bicep | grep -q "roleDefinitionId: storageTableDataContributor" || { echo "the dealer does not get Table Data Contributor"; exit 1; }
+grep -A8 "module dealerUsesTable" main.bicep | grep -q "principalId: dealerApp.outputs.principalId" || { echo "the table role is not given to the dealer"; exit 1; }
 # what is compiled: exactly one role names the dealer, and its scope is the table
 az bicep build --file main.bicep --stdout 2>/dev/null | python3 tests/check_dealer.py || { echo "check_dealer.py failed"; exit 1; }
 echo "bicep ok"
