@@ -226,6 +226,26 @@ module apiIdentity 'modules/app-identity.bicep' = {
   }
 }
 
+// The usage insights job reads conversations with this identity (AcrPull comes with the module).
+module insightsIdentity 'modules/app-identity.bicep' = {
+  scope: rg
+  params: {
+    name: 'id-insights-${environmentName}'
+    location: location
+    tags: tags
+    registryName: registry.outputs.name
+  }
+}
+
+module insightsRole 'modules/insights-role.bicep' = {
+  scope: rg
+  params: {
+    foundryName: foundry.outputs.name
+    principalId: insightsIdentity.outputs.principalId
+    nameSuffix: token
+  }
+}
+
 module apiCurrent 'modules/fetch-container-image.bicep' = if (apiExists) {
   scope: rg
   params: {
@@ -536,3 +556,5 @@ output API_PRINCIPAL_ID string = apiApp.outputs.principalId
 output WEB_URL string = web.outputs.url
 output CAR_URL string = car.outputs.url
 output DASHBOARD_URL string = dashboard.outputs.url
+output INSIGHTS_IDENTITY_ID string = insightsIdentity.outputs.id
+output INSIGHTS_IDENTITY_CLIENT_ID string = insightsIdentity.outputs.clientId

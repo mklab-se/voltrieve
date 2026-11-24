@@ -57,4 +57,20 @@ for f in modules/search.bicep modules/search-serverless.bicep; do
 done
 # what is compiled: what hangs on the parameter, and what active moves
 az bicep build --file main.bicep --stdout 2>/dev/null | python3 tests/check_serverless.py || { echo "check_serverless.py failed"; exit 1; }
+# the insights role reads conversations and nothing more
+R=modules/insights-role.bicep
+[ "$(grep -c "^  'Microsoft\.CognitiveServices/" $R)" = 3 ] || { echo "insights role must have exactly three data actions"; exit 1; }
+for a in "AIServices/agents/read" "OpenAI/deployments/chat/completions/action" "Language/analyze-text/action"; do
+  grep -q "^  'Microsoft.CognitiveServices/accounts/$a'$" $R || { echo "insights role lacks $a"; exit 1; }
+done
+if grep -n "\*\|/write\|/delete" $R | grep -v "^[0-9]*://"; then echo "insights role has a wildcard, write or delete"; exit 1; fi
+grep -q "^        actions: \[\]$" $R || { echo "insights role must have empty actions"; exit 1; }
+grep -q "assignableScopes: \[resourceGroup().id\]" $R || { echo "insights role is not limited to the resource group"; exit 1; }
+grep -q "scope: foundry$" $R || { echo "insights role is not assigned on the Foundry account"; exit 1; }
+[ "$(grep -c "Microsoft.Authorization/roleAssignments@" $R)" = 1 ] || { echo "insights module assigns more than one role"; exit 1; }
+if grep -n "insightsIdentity" main.bicep | grep -i "role-foundry\|roleDefinitionId"; then echo "another role for the insights identity"; exit 1; fi
+grep -q "principalId: insightsIdentity.outputs.principalId" main.bicep || { echo "insights role is not given to the insights identity"; exit 1; }
+for out in INSIGHTS_IDENTITY_ID INSIGHTS_IDENTITY_CLIENT_ID; do
+  grep -q "^output $out string" main.bicep || { echo "main.bicep lacks output $out"; exit 1; }
+done
 echo "bicep ok"
