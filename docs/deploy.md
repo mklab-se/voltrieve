@@ -304,7 +304,9 @@ The tester password is printed again only if the account was deleted and is recr
 
 ## Removing the Basic service
 
-Once Serverless is `active`, nothing uses the Basic service, but it costs the same, about 22 SEK a day. Setting a value never deletes it: azd deploys incrementally, so a service that leaves the template stays in Azure and stays on the bill. The delete is a command of its own, run by the product owner.
+Once Serverless is `active`, nothing uses the Basic service, but it costs the same, about 22 SEK a day. Do not do steps 2 to 4 before a demo: until it is deleted, the Basic service is the fast fallback.
+
+Setting a value never deletes it: azd deploys incrementally, so a service that leaves the template stays in Azure and stays on the bill. The delete is a command of its own, run by the product owner.
 
 ```mermaid
 flowchart LR
@@ -316,13 +318,24 @@ flowchart LR
     Delete -. "SEARCH_BASIC=on, provision:<br/>a new, empty service" .-> Active
 ```
 
-**1. Compare what the two services hold,** while the environment still knows both. Keep this shell open, because step 2 empties `SEARCH_BASIC_ENDPOINT`:
+The two names look alike. `srch-voltrieve-<token>` is Basic and goes. `srch-voltrieve-sl-<token>` is Serverless and stays. This block finds the Basic one by its tier, in any shell, also after step 2. Run it again in each new shell. The `az` lines work in the default subscription of the CLI, so it sets that too:
 
 ```sh
-eval "$(azd env get-values)"   # not exported, so the provision below reads its own values
-BASIC_ENDPOINT="$SEARCH_BASIC_ENDPOINT"
-BASIC_NAME="${BASIC_ENDPOINT#https://}"; BASIC_NAME="${BASIC_NAME%%.*}"
+eval "$(azd env get-values)"
+az account set --subscription "$AZURE_SUBSCRIPTION_ID"
+az search service list -g "$AZURE_RESOURCE_GROUP" --query "[].{name:name, tier:sku.name}" -o table
+BASIC_NAME="$(az search service list -g "$AZURE_RESOURCE_GROUP" --query "[?sku.name=='basic'].name" -o tsv)"
+BASIC_ENDPOINT="https://$BASIC_NAME.search.windows.net"
+BASIC_ID="$(az search service show -n "$BASIC_NAME" -g "$AZURE_RESOURCE_GROUP" --query id -o tsv)"
 BASIC_PRINCIPAL="$(az search service show -n "$BASIC_NAME" -g "$AZURE_RESOURCE_GROUP" --query identity.principalId -o tsv)"
+echo "Basic: $BASIC_NAME, identity $BASIC_PRINCIPAL"
+```
+
+Write the identity down. After step 4 it cannot be looked up.
+
+**1. Compare what the two services hold:**
+
+```sh
 search_get() { az rest --resource https://search.azure.com --url "$1?api-version=2026-11-01-preview" --query "$2" -o tsv; }
 for endpoint in "$BASIC_ENDPOINT" "$SEARCH_SERVERLESS_ENDPOINT"; do
   echo "$endpoint"
@@ -344,36 +357,83 @@ azd provision
 scripts/deploy-agents.sh
 ```
 
-The provision keeps the Serverless endpoint everywhere. It stops managing the Basic service and its eight role assignments, which all stay where they are. `SEARCH_BASIC_ENDPOINT` becomes empty, and `voltrieve-search upload --prune` then only knows Serverless.
+The provision keeps the Serverless endpoint everywhere. It stops managing the Basic service and its eight role assignments, which all stay where they are. `SEARCH_BASIC_ENDPOINT` becomes empty, so `voltrieve-search upload --prune` only knows Serverless from here. **Do not prune between step 2 and step 4:** Basic would keep the chunks of the deleted documents.
 
-**3. Check that everything answers without it:**
+**3. Check that everything answers without it.** First the live addresses. All three must contain `srch-voltrieve-sl-`:
 
 ```sh
+az containerapp show -n "ca-api-$AZURE_ENV_NAME" -g "$AZURE_RESOURCE_GROUP" \
+  --query "properties.template.containers[0].env[?name=='SEARCH_ENDPOINT'].value" -o tsv
+for name in "$KB_CONNECTION_NAME" "$PARTS_KB_CONNECTION_NAME"; do
+  az rest --query properties.target -o tsv --url "https://management.azure.com/subscriptions/$AZURE_SUBSCRIPTION_ID/resourceGroups/$AZURE_RESOURCE_GROUP/providers/Microsoft.CognitiveServices/accounts/$FOUNDRY_ACCOUNT_NAME/projects/$FOUNDRY_PROJECT_NAME/connections/${name}?api-version=2026-11-15-preview"
+done
+```
+
+Then prove that the metric sees this kind of traffic. An empty answer alone proves nothing: the metric can be late, or not count knowledge base calls. So ask Basic on purpose, and see it arrive:
+
+```sh
+now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
+basic_queries() {
+  az monitor metrics list --resource "$BASIC_ID" --metric SearchQueriesPerSecond --aggregation Average \
+    --interval PT1M --start-time "$1" --end-time "$(now)" \
+    --query 'value[].timeseries[].data[] | [?average > `0`].[timeStamp, average]' -o json
+}
+CONTROL="$(now)"; echo "control: $CONTROL"
+SEARCH_ENDPOINT="$BASIC_ENDPOINT" uv run --project search voltrieve-search smoke
+```
+
+Wait about 10 minutes, then:
+
+```sh
+basic_queries "$CONTROL"
+```
+
+It must list the minutes of that run. If it prints `[]`, wait longer. If it stays `[]`, the metric cannot show whether anyone uses Basic: stop here, and delete nothing. When the control is there, run the real checks, after it and not before:
+
+```sh
+CHECKS="$(now)"; echo "checks: $CHECKS"
 PLANNING_MODEL="$(azd env get-value PLANNING_MODEL)" SEARCH_ENDPOINT="$(azd env get-value SEARCH_ENDPOINT)" \
   uv run --project search voltrieve-search smoke
 uv run scripts/smoke.py
 uv run tests/routing/check.py
-az monitor metrics list --resource "$(az search service show -n "$BASIC_NAME" -g "$AZURE_RESOURCE_GROUP" --query id -o tsv)" \
-  --metric SearchQueriesPerSecond --offset 2h --interval PT5M --query 'value[].timeseries[].data[?average > `0`] | []'
 ```
 
-The last command must print `[]`: no query reached Basic in two hours, with the checks in them.
-
-**4. The owner deletes it.** Not a script, not a hook and not an agent without the owner's yes. Look at the name and the tier first: it must say `basic`, and it must not be the name in `SEARCH_SERVICE_NAME`:
+The routing check asks all three backends, and the prompt agent reaches Search through the MCP connections. Wait again, as long as the control took to show, then:
 
 ```sh
-az search service show -n "$BASIC_NAME" -g "$AZURE_RESOURCE_GROUP" --query '{name:name, tier:sku.name}' -o table
-echo "keep: $(azd env get-value SEARCH_SERVICE_NAME)"
-az search service delete -n "$BASIC_NAME" -g "$AZURE_RESOURCE_GROUP"
+basic_queries "$CHECKS"
+```
+
+It must print `[]`. Every check must have passed.
+
+**4. The owner deletes it.** Not a script, not a hook and not an agent without the owner's yes. The delete only runs when the tier is `basic`, the service in use is a Serverless one, and the two names differ:
+
+```sh
+KEEP="$(azd env get-value SEARCH_SERVICE_NAME)"
+TIER="$(az search service show -n "$BASIC_NAME" -g "$AZURE_RESOURCE_GROUP" --query sku.name -o tsv)"
+echo "delete: $BASIC_NAME ($TIER), keep: $KEEP"
+if [ "$TIER" = basic ] && [ "${KEEP#srch-voltrieve-sl-}" != "$KEEP" ] && [ "$BASIC_NAME" != "$KEEP" ]; then
+  az search service delete -n "$BASIC_NAME" -g "$AZURE_RESOURCE_GROUP"
+else
+  echo "not deleted: the name or the tier is wrong"
+fi
 ```
 
 It asks for a yes. **It cannot be undone:** the indexes, the knowledge bases and the indexer history of that service are gone. No data is lost that Serverless does not hold: the documents are in storage, the definitions are in the repository, and step 1 compared the counts. Older versions of the prompt agents point at Basic and stop working. The versions that step 2 created do not.
 
-Its identity leaves three role assignments behind, one on storage and two on Foundry. They let nobody in. Look at the list, then delete them:
+Its identity leaves three role assignments behind, one on storage and two on Foundry. They let nobody in. List them:
 
 ```sh
-az role assignment list --all --query "[?principalId=='$BASIC_PRINCIPAL'].{id:id, role:roleDefinitionName}" -o table
-az role assignment delete --ids $(az role assignment list --all --query "[?principalId=='$BASIC_PRINCIPAL'].id" -o tsv)
+ORPHANS="$(az role assignment list --all --query "[?principalId=='$BASIC_PRINCIPAL'].id" -o tsv)"
+echo "identity: $BASIC_PRINCIPAL"; echo "$ORPHANS"
+```
+
+Go on only if the identity is the one you wrote down, and the list holds nothing but assignments on storage, Foundry and the deleted service. Each is deleted by its id, one at a time, because `az role assignment delete` without an id could take others:
+
+```sh
+echo "$ORPHANS" | while IFS= read -r id; do
+  if [ -n "$id" ]; then az role assignment delete --ids "$id"; fi
+done
 ```
 
 **The way back.** Before step 4 nothing is lost: set `SEARCH_BASIC` to `on`, provision, and fill it as below. After step 4 the same commands create a new, empty service:
@@ -381,18 +441,33 @@ az role assignment delete --ids $(az role assignment list --all --query "[?princ
 ```sh
 azd env set SEARCH_BASIC on
 azd provision
+```
 
+Then fill it. The variable is for this shell only, since the API still uses Serverless. A 403 means that the new roles need some minutes:
+
+```sh
 set -a; eval "$(azd env get-values)"; set +a
-export SEARCH_ENDPOINT="$SEARCH_BASIC_ENDPOINT"        # this shell only, the API still uses Serverless
-uv run --project search voltrieve-search apply         # 403: the new roles need some minutes
+export SEARCH_ENDPOINT="$SEARCH_BASIC_ENDPOINT"
+uv run --project search voltrieve-search apply
 uv run --project search voltrieve-search index
 uv run --project search voltrieve-search smoke
 unset SEARCH_ENDPOINT
 ```
 
-Then, in a new shell, `SEARCH_SERVERLESS` goes to `standby`, with a provision and `scripts/deploy-agents.sh`. The [rollback of Serverless](#order-for-an-update-with-the-new-search-values) is refused until `SEARCH_BASIC` is `on`. The way back costs about 22 SEK a day from the minute the service exists, one round of embeddings (159 chunks, under 0.01 USD), and the time of two provisions. It also needs the region to take a new service: `AZURE_SEARCH_LOCATION` was accepted on 2026-11-04, and that is no promise.
+If the old service is still there and documents were pruned while `SEARCH_BASIC` was `off`, rebuild its two indexes before that block. The indexers keep no list of what they filled, so each one is reset too, or it skips every document it has seen:
 
-Not verified: none of these commands has been run. Checked without Azure: the compiled template, worked out for every combination of the two values.
+```sh
+for name in docs parts; do
+  az rest --resource https://search.azure.com --method delete --url "$BASIC_ENDPOINT/indexes/voltrieve-$name-index?api-version=2026-11-01-preview"
+  az rest --resource https://search.azure.com --method post --url "$BASIC_ENDPOINT/indexers/voltrieve-$name-indexer/reset?api-version=2026-11-01-preview"
+done
+```
+
+If Search refuses to delete an index that a knowledge source uses, do step 4 instead: a new service has no old chunks.
+
+Last, in a new shell, `SEARCH_SERVERLESS` goes to `standby`, with a provision and `scripts/deploy-agents.sh`. The [rollback of Serverless](#order-for-an-update-with-the-new-search-values) is refused until `SEARCH_BASIC` is `on`. The way back costs about 22 SEK a day from the minute the service exists, one round of embeddings (159 chunks, under 0.01 USD), and the time of two provisions. It also needs the region to take a new service: `AZURE_SEARCH_LOCATION` was accepted on 2026-11-04, and that is no promise.
+
+Not verified: none of these commands has been run, nor whether the old name can be used again right after the delete, which the way back needs. Checked without Azure: the compiled template, worked out for every combination of the two values.
 
 ## Order for an update with the new search values
 
@@ -408,11 +483,15 @@ Each step is an `azd provision`, with `scripts/deploy-agents.sh` at once after i
 azd env set SEARCH_SERVERLESS standby
 azd provision
 scripts/deploy-agents.sh
+```
 
+Fill it with the definitions, then with the documents, which are already in storage. The variable is for this shell only, since the API still uses Basic:
+
+```sh
 set -a; eval "$(azd env get-values)"; set +a
-export SEARCH_ENDPOINT="$SEARCH_SERVERLESS_ENDPOINT"   # this shell only, the API still uses Basic
-uv run --project search voltrieve-search apply         # the definitions
-uv run --project search voltrieve-search index         # the documents, already in storage
+export SEARCH_ENDPOINT="$SEARCH_SERVERLESS_ENDPOINT"
+uv run --project search voltrieve-search apply
+uv run --project search voltrieve-search index
 uv run --project search voltrieve-search smoke
 unset SEARCH_ENDPOINT
 ```

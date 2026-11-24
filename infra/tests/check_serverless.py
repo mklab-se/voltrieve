@@ -43,6 +43,11 @@ for where, value in moved.items():
     assert "searchServerless" in when_active and "searchServerless" not in otherwise, (where, value)
     assert "'search'" in otherwise, (where, value)
 
+assert template["outputs"]["SEARCH_SERVICE_NAME"]["value"] == (
+    "[if(variables('serverlessActive'), reference('searchServerless').outputs.name.value, "
+    "reference('search').outputs.name.value)]"
+)
+
 # the same callers can read the Serverless service, and its identity has two roles
 roles = arguments("searchServerlessRoles")
 readers = roles["readerPrincipalIds"]["value"]
@@ -149,6 +154,8 @@ for serverless in ("off", "standby", "active"):
     deployed, uses = Deployment(serverlessSearch=serverless, **everyone).run()  # Basic is on by default
     assert BASIC <= deployed and uses["SEARCH_BASIC_ENDPOINT"] == {"search"}
     assert all(reached <= deployed for reached in uses.values()), (serverless, uses)
+    if serverless == "active":  # the name to keep when Basic is deleted
+        assert uses["SEARCH_SERVICE_NAME"] == {"searchServerless"}
     if serverless != "active":
         try:
             Deployment(basicSearch="off", serverlessSearch=serverless, **everyone).run()
