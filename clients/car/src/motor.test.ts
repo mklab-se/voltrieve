@@ -24,4 +24,32 @@ describe("the sound of the motor", () => {
     expect(() => motor.setOn(true)).not.toThrow();
     expect(() => motor.setSpeed(50)).not.toThrow();
   });
+
+  it("is silent while the tab is hidden, and comes back", () => {
+    const volumes: number[] = [];
+    const param = (note?: (v: number) => void) => ({ value: 0, setTargetAtTime: (v: number) => note?.(v) });
+    const node = (gain?: (v: number) => void) => {
+      const n = { gain: param(gain), frequency: param(), type: "", start() {}, connect: (to: unknown) => to };
+      return n;
+    };
+    let gains = 0;
+    const audio = {
+      currentTime: 0,
+      destination: {},
+      resume: async () => {},
+      createGain: () => node((gains += 1) === 1 ? (v) => volumes.push(v) : undefined),
+      createOscillator: () => node(),
+      createBiquadFilter: () => node(),
+    };
+    const motor = createMotor(() => audio as unknown as AudioContext);
+    motor.setSpeed(50);
+    motor.setOn(true);
+    expect(volumes.at(-1)).toBe(motorTone(50).volume);
+    motor.setHidden(true);
+    expect(volumes.at(-1)).toBe(0);
+    motor.setSpeed(60);
+    expect(volumes.at(-1)).toBe(0);
+    motor.setHidden(false);
+    expect(volumes.at(-1)).toBe(motorTone(60).volume);
+  });
 });

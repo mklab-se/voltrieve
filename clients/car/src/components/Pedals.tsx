@@ -17,6 +17,7 @@ export function PedalButtons({ pedals }: { pedals: Pedals }) {
           aria-label={LABELS[pedal]}
           aria-keyshortcuts={KEYS[pedal]}
           onPointerDown={(e) => {
+            if (e.button !== 0) return;
             e.currentTarget.setPointerCapture(e.pointerId);
             pedals.press(pedal, now());
           }}
@@ -28,6 +29,7 @@ export function PedalButtons({ pedals }: { pedals: Pedals }) {
           onKeyUp={(e) => {
             if (e.key === " " || e.key === "Enter") pedals.release(pedal, now());
           }}
+          onClick={() => pedals.click(pedal, now())}
           onBlur={() => pedals.releaseAll(now())}
         >
           <ArrowIcon up={pedal === "accelerate"} />

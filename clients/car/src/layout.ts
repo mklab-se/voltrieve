@@ -17,6 +17,11 @@ export const WINDSCREEN: Box = { left: 1.5, top: 1.6, width: 97, height: 48.4 };
 /** The glass of the rear view mirror. */
 export const MIRROR: Box = { left: 38.28, top: 8.6, width: 20.97, height: 7.1 };
 
+/** The lower edge of the HUD, and how tall it may be, in percent of the picture's height and width. */
+export const HUD_BOTTOM = 42.4;
+const HUD_TALL = 24.6;
+const MARGIN_PX = 12;
+
 /** Everything the driver uses is above this line. Below it are the footwell and the tunnel. */
 const NEEDED = 0.72;
 
@@ -25,4 +30,9 @@ export function fitPicture(width: number, height: number): Box {
   const scale = Math.max(width / PICTURE.width, height / PICTURE.height);
   const full = { width: PICTURE.width * scale, height: PICTURE.height * scale };
   return { left: (width - full.width) / 2, top: Math.min(height - NEEDED * full.height, 0), ...full };
+}
+
+/** How tall the HUD may be in pixels, so that a very wide window does not cut it off. */
+export function hudHeight(box: Box): number {
+  return Math.min((HUD_TALL / 100) * box.width, (HUD_BOTTOM / 100) * box.height + box.top - MARGIN_PX);
 }

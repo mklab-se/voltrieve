@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { askToPark, PARK_QUESTION } from "./ask";
+import { askToPark, PARK_QUESTION, runShown } from "./ask";
 import { uploadPhoto } from "./attachments";
 import type { Auth, AuthSession } from "./auth";
 import { Cockpit } from "./components/Cockpit";
@@ -18,15 +18,13 @@ import type { Backend, ClientToolCall, SourceItem } from "./types";
 import { useChat } from "./useChat";
 import { useDriving } from "./useDriving";
 import { useHud } from "./useHud";
+import { useStable } from "./useStable";
 
 interface Props {
   config: AppConfig;
   auth: Auth;
   session: AuthSession;
 }
-
-/** What the HUD says while the car does something that takes time. */
-const DOING: Record<string, string | undefined> = { park: "Parking the car", get_sign_photo: "Looking at the sign" };
 
 /** The token, or an error in words for the driver. */
 const signedIn = (auth: Auth) => auth.getToken().catch(() => Promise.reject(new Error("You could not be signed in. Try again.")));
@@ -57,14 +55,20 @@ export function Workspace({ config, auth, session }: Props) {
   }, []);
 
   const [doing, setDoing] = useState<string>();
+  // What an old chat still waits for must not show up in a new one.
+  const generation = useRef(0);
+  const sameChat = useCallback(() => {
+    const mine = generation.current;
+    return () => generation.current === mine;
+  }, []);
   const runTool = useCallback(
-    async (call: ClientToolCall) => {
-      setDoing(DOING[call.name]);
-      const result = await runCarTool(call, drive).finally(() => setDoing(undefined));
-      if (result.attachments) setAskedBlock.current(drive.askedBlock);
-      return result;
-    },
-    [drive],
+    (call: ClientToolCall) =>
+      runShown(call, (c) => runCarTool(c, drive), {
+        current: sameChat(),
+        doing: setDoing,
+        asked: () => setAskedBlock.current(drive.askedBlock),
+      }),
+    [drive, sameChat],
   );
   const context = useCallback(() => carContext(drive.car, now()), [drive, now]);
   const renew = useCallback((ids: string[]) => drive.renewPhotos(ids), [drive]);
@@ -84,31 +88,42 @@ export function Workspace({ config, auth, session }: Props) {
   useEffect(() => motor.setOn(motorOn), [motor, motorOn]);
 
   const free = !busy && pending === undefined;
-  function say(text: string) {
+  const say = useStable((text: string) => {
     if (!free) return;
     setSourceError(undefined);
     onEvent("send");
     send(text);
-  }
+  });
   function parkHere() {
     if (!free) return;
     setSourceError(undefined);
     onEvent("send");
     setPending(PARK_QUESTION);
-    void askToPark(() => drive.signPhoto(), (text, attachments) => {
+    const ask = (text: string, attachments?: string[]) => {
       setPending(undefined);
       if (attachments) hud.setAskedBlock(drive.askedBlock);
       send(text, attachments);
-    });
+    };
+    void askToPark(() => drive.signPhoto(), ask, sameChat());
   }
-  function openDocument(source: SourceItem) {
+  function newChat() {
+    generation.current += 1;
+    drive.startOver();
+    reset();
+    setPending(undefined);
+    setDoing(undefined);
+    setSourceError(undefined);
+    hud.setAskedBlock(undefined);
+    onEvent("escape");
+  }
+  const openDocument = useStable((source: SourceItem) => {
     if (!source.link) return;
     const link = source.link;
     setSourceError(undefined);
     openSource(async () => fetchSourceUrl(config.apiUrl, await signedIn(auth), link)).catch((e: unknown) =>
       setSourceError(e instanceof Error ? e.message : "The document could not be opened. Try again."),
     );
-  }
+  });
 
   return (
     <div className="car">
@@ -134,10 +149,7 @@ export function Workspace({ config, auth, session }: Props) {
       />
       {underTheHood && <UnderTheHood state={state} backend={backend} onBackend={setBackend} busy={!free} />}
       <Menu
-        onNewChat={() => {
-          reset();
-          onEvent("escape");
-        }}
+        onNewChat={newChat}
         onSignOut={() => void auth.signOut()}
         username={session.username}
         underTheHood={underTheHood}

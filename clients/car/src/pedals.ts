@@ -7,9 +7,12 @@ const TAP_MS = 200;
 const TAP_KMH = 5;
 /** Taps this close to each other add up, although the car has not reached the last one yet. */
 const SERIES_MS = 1500;
+/** The click of a pointer or a key comes right after it was let go. */
+const CLICK_MS = 250;
 
 export class Pedals {
   private down?: { pedal: Pedal; atMs: number };
+  private releasedMs?: number;
   private lastTap?: { kmh: number; atMs: number };
 
   constructor(private readonly car: { speedKmh(): number; setSpeed(kmh: number): void }) {}
@@ -24,7 +27,16 @@ export class Pedals {
     if (this.down?.pedal !== pedal) return;
     const tapped = nowMs - this.down.atMs < TAP_MS;
     this.down = undefined;
+    this.releasedMs = nowMs;
     this.car.setSpeed(tapped ? this.tap(pedal, nowMs) : Math.round(this.car.speedKmh()));
+  }
+
+  /** A click without a press, as assistive technology sends it, is a tap. */
+  click(pedal: Pedal, nowMs: number): void {
+    if (this.down) return;
+    if (this.releasedMs !== undefined && nowMs - this.releasedMs < CLICK_MS) return;
+    this.press(pedal, nowMs);
+    this.release(pedal, nowMs);
   }
 
   releaseAll(nowMs: number): void {

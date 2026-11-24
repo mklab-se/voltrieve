@@ -9,7 +9,7 @@ function controls(over: Partial<CarControls> = {}) {
     setWipers: vi.fn(),
     honk: vi.fn(async () => true),
     park: vi.fn(async () => ({ block: 3, askedBlock: undefined as number | undefined })),
-    signPhoto: vi.fn(async (): Promise<{ id?: string; message: string }> => ({ id: "att1", message: "ready" })),
+    signPhoto: vi.fn(async (): Promise<{ id?: string; message: string }> => ({ id: "att1", message: "The photo is attached. It shows the sign of block 4." })),
     ...over,
   };
 }
@@ -78,7 +78,7 @@ describe("the car's tools", () => {
 
   it("attaches the photo of the sign", async () => {
     expect(await runCarTool(call("get_sign_photo"), controls())).toEqual({
-      output: "The photo is attached.",
+      output: "The photo is attached. It shows the sign of block 4.",
       attachments: ["att1"],
     });
   });

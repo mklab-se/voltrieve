@@ -42,11 +42,11 @@ export function Hud({ open, notice, pending, doing, turn, sourceError, onEvent, 
       data-open={open}
       inert={!open}
       aria-label={ASSISTANT_NAME}
-      onPointerEnter={() => onEvent("enter")}
-      onPointerLeave={() => onEvent("leave")}
-      onFocus={() => onEvent("enter")}
+      onPointerEnter={() => onEvent("pointerenter")}
+      onPointerLeave={() => onEvent("pointerleave")}
+      onFocus={() => onEvent("focus")}
       onBlur={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget)) onEvent("leave");
+        if (!e.currentTarget.contains(e.relatedTarget)) onEvent("blur");
       }}
     >
       <div className="hud-glass">
@@ -58,7 +58,7 @@ export function Hud({ open, notice, pending, doing, turn, sourceError, onEvent, 
             <CloseIcon />
           </button>
         </header>
-        <div className="hud-scroll" ref={scroll} tabIndex={0} role="group" aria-label="Answer">
+        <div className="hud-scroll" data-scroll="" ref={scroll} tabIndex={0} role="group" aria-label="Answer">
           <p className="hud-said">{pending ?? shown?.userText}</p>
           {shown?.answer && <Answer text={shown.answer} sources={shown.sources} onOpenSource={onOpenSource} />}
           {working && !shown?.answer && !shown?.error && (

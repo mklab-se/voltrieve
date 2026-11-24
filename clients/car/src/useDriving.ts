@@ -69,6 +69,7 @@ export function useDriving(
     };
     frame = requestAnimationFrame(onFrame);
     const onHidden = () => {
+      motor.setHidden(document.hidden);
       if (document.hidden) drive.finishParking(); // there are no frames now
     };
     document.addEventListener("visibilitychange", onHidden);

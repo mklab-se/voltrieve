@@ -1,8 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
-import { isField, typesInto } from "../ask";
-import { CENTER_SCREEN, DRIVER_DISPLAY, fitPicture, WINDSCREEN, type Box } from "../layout";
+import { drivesWith, typesInto } from "../ask";
+import { CENTER_SCREEN, DRIVER_DISPLAY, fitPicture, hudHeight, WINDSCREEN, type Box } from "../layout";
 import { hudNotice, type HudEvent, type HudState } from "../hud";
 import type { Pedals } from "../pedals";
+import { spoken } from "../spoken";
 import type { ChatState } from "../turns";
 import type { SourceItem } from "../types";
 import type { Driving } from "../useDriving";
@@ -55,27 +56,26 @@ function useSize(element: RefObject<HTMLElement | null>): { width: number; heigh
 }
 
 /** Typing starts a message, the up and down keys drive, and Escape puts the HUD back. */
-function useKeys(field: RefObject<HTMLInputElement | null>, pedals: Pedals, onHud: (event: HudEvent) => void): void {
+export function useKeys(field: RefObject<HTMLInputElement | null>, pedals: Pedals, onHud: (event: HudEvent) => void): void {
   useEffect(() => {
-    const pedalOf = (key: string) => (key === "ArrowUp" ? "accelerate" : key === "ArrowDown" ? "brake" : undefined);
     const onDown = (e: KeyboardEvent) => {
-      const focused = document.activeElement?.tagName;
+      const focused = document.activeElement;
       if (e.key === "Escape") {
-        if (document.activeElement === field.current) field.current?.blur();
+        if (focused === field.current) field.current?.blur();
         onHud("escape");
         return;
       }
-      const pedal = pedalOf(e.key);
-      if (pedal && !isField(focused) && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      const pedal = drivesWith(e, focused);
+      if (pedal) {
         e.preventDefault(); // nothing scrolls
         pedals.press(pedal, performance.now());
-      } else if (typesInto(e, focused)) {
+      } else if (typesInto(e, focused?.tagName)) {
         field.current?.focus(); // the key itself then goes into the field
       }
     };
     const onUp = (e: KeyboardEvent) => {
-      const pedal = pedalOf(e.key);
-      if (pedal) pedals.release(pedal, performance.now());
+      if (e.key === "ArrowUp") pedals.release("accelerate", performance.now());
+      if (e.key === "ArrowDown") pedals.release("brake", performance.now());
     };
     const onBlur = () => pedals.releaseAll(performance.now());
     window.addEventListener("keydown", onDown);
@@ -89,14 +89,6 @@ function useKeys(field: RefObject<HTMLInputElement | null>, pedals: Pedals, onHu
   }, [field, pedals, onHud]);
 }
 
-/** What a screen reader says: what Runa is doing, and then the whole answer, not each word of it. */
-function spoken({ turns }: ChatState, doing?: string): string {
-  const last = turns.at(-1);
-  if (!last) return "";
-  if (last.status === "streaming") return doing ?? last.activity ?? "Runa is thinking";
-  return last.error ?? `Runa: ${last.answer}`;
-}
-
 export function Cockpit(props: Props) {
   const { canvas, driving, pedals, chat, pending, hud, onHud } = props;
   const frame = useRef<HTMLDivElement>(null);
@@ -105,7 +97,8 @@ export function Cockpit(props: Props) {
   const box = fitPicture(size.width, size.height);
   useKeys(field, pedals, onHud);
 
-  const picture = { left: box.left, top: box.top, width: box.width, height: box.height, "--u": `${box.width / 100}px` } as CSSProperties;
+  const picture = { ...box, "--u": `${box.width / 100}px`, "--hud-max": `${hudHeight(box)}px` } as CSSProperties;
+  const notice = hudNotice(hud);
   return (
     <main className="cockpit" ref={frame}>
       <div className="picture" style={picture} data-street={driving.street}>
@@ -116,7 +109,7 @@ export function Cockpit(props: Props) {
         <CenterScreen {...props} style={place(CENTER_SCREEN)} state={chat} lifted={hud.open} gauges={driving.gauges} sign={driving.sign} field={field} />
         <Hud
           open={hud.open}
-          notice={hudNotice(hud)}
+          notice={notice}
           pending={pending}
           doing={props.doing}
           turn={chat.turns.at(-1)}
@@ -127,6 +120,12 @@ export function Cockpit(props: Props) {
       </div>
       <p className="visually-hidden" aria-live="polite">
         {spoken(chat, props.doing)}
+      </p>
+      <p className="visually-hidden" aria-live="polite">
+        {notice}
+      </p>
+      <p className="visually-hidden" role="alert">
+        {chat.turns.at(-1)?.error ?? props.sourceError}
       </p>
     </main>
   );

@@ -1,5 +1,5 @@
 import { InstancedMesh, Mesh, Texture, type Object3D } from "three";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { newCar, type Car } from "../sim/car";
 import { blurPx, StreetScene, type Renderer } from "./Scene";
 import type { Textures } from "./textures";
@@ -9,7 +9,10 @@ const at = (distanceM: number, speedKmh = 50): Car => ({ ...newCar(), distanceM,
 /** A renderer that only counts what it is given. */
 function fakeRenderer() {
   const counts = { meshes: 0, frames: 0 };
+  const gl = { lost: false };
   const renderer = {
+    getContext: () => ({ isContextLost: () => gl.lost }),
+    readRenderTargetPixelsAsync: vi.fn(async (): Promise<unknown> => undefined),
     render(scene: Object3D) {
       let n = 0;
       scene.traverse((o) => {
@@ -20,12 +23,12 @@ function fakeRenderer() {
     },
     setSize() {},
     setPixelRatio() {},
-    setRenderTarget() {},
+    setRenderTarget: vi.fn(),
     clear() {},
     dispose() {},
     shadowMap: { needsUpdate: false },
   };
-  return { counts, renderer: renderer as unknown as Renderer };
+  return { counts, gl, fake: renderer, renderer: renderer as unknown as Renderer };
 }
 
 const pair = () => ({ map: new Texture(), bump: new Texture() });
@@ -39,11 +42,14 @@ const textures = (): Textures => ({
   sign: () => ({ front: new Texture(), back: new Texture() }),
 });
 
-const canvas = { clientWidth: 1200, clientHeight: 400, width: 1200, height: 400 } as HTMLCanvasElement;
+const canvasOf = (clientWidth: number, clientHeight: number) =>
+  Object.assign(new EventTarget(), { clientWidth, clientHeight }) as unknown as HTMLCanvasElement;
 
 function street() {
-  const { counts, renderer } = fakeRenderer();
-  return { counts, scene: new StreetScene(canvas, { renderer, textures: textures() }) };
+  const { renderer, ...rest } = fakeRenderer();
+  const canvas = canvasOf(1200, 400);
+  const skyLight = vi.fn(() => new Texture());
+  return { ...rest, canvas, skyLight, scene: new StreetScene(canvas, { renderer, textures: textures(), skyLight }) };
 }
 
 describe("the blur of the photo", () => {
@@ -102,8 +108,72 @@ describe("the street", () => {
 
   it("draws nothing when it has no size", () => {
     const { renderer, counts } = fakeRenderer();
-    const scene = new StreetScene({ clientWidth: 0, clientHeight: 0 } as HTMLCanvasElement, { renderer, textures: textures() });
+    const scene = new StreetScene(canvasOf(0, 0), { renderer, textures: textures() });
     scene.render(at(0), "off");
     expect(counts.frames).toBe(0);
+  });
+});
+
+describe("the camera of the signs", () => {
+  it("takes no photo without the graphics card", async () => {
+    const { scene, gl, fake } = street();
+    gl.lost = true;
+    await expect(scene.photo(at(420), 1)).rejects.toThrow("The photo could not be taken.");
+    expect(fake.readRenderTargetPixelsAsync).not.toHaveBeenCalled();
+  });
+
+  it("gives no black photo when the graphics card is lost meanwhile, or nothing was read", async () => {
+    const { scene, gl, fake } = street();
+    await expect(scene.photo(at(420), 1)).rejects.toThrow("The photo could not be taken."); // nothing read
+    fake.readRenderTargetPixelsAsync.mockImplementation(async (...args: unknown[]) => {
+      gl.lost = true;
+      return args[5];
+    });
+    await expect(scene.photo(at(420), 1)).rejects.toThrow("The photo could not be taken.");
+  });
+
+  it("leaves the street as it was when drawing fails", async () => {
+    const { scene, fake } = street();
+    scene.render(at(420), "off");
+    const children = scene.scene.children.length;
+    const draw = fake.render;
+    fake.render = () => {
+      throw new Error("no draw");
+    };
+    await expect(scene.photo(at(420), 1)).rejects.toThrow("no draw");
+    fake.render = draw;
+    expect(scene.scene.children).toHaveLength(children);
+    expect(fake.setRenderTarget).toHaveBeenLastCalledWith(null);
+    let hidden = 0;
+    scene.scene.traverse((o) => {
+      if (o instanceof Mesh && !o.visible) hidden += 1;
+    });
+    expect(hidden).toBe(0);
+  });
+});
+
+describe("a graphics card that comes back", () => {
+  it("gets the light of the sky and the shadows again", () => {
+    const { scene, canvas, skyLight, fake } = street();
+    scene.render(at(100), "off");
+    expect(skyLight).toHaveBeenCalledTimes(1);
+    const old = scene.scene.environment!;
+    const dropped = vi.spyOn(old, "dispose");
+    fake.shadowMap.needsUpdate = false;
+    scene.render(at(100), "off");
+    expect(fake.shadowMap.needsUpdate).toBe(false); // the car stands still
+    canvas.dispatchEvent(new Event("webglcontextrestored"));
+    expect(skyLight).toHaveBeenCalledTimes(2);
+    expect(dropped).toHaveBeenCalled();
+    expect(scene.scene.environment).not.toBe(old);
+    scene.render(at(100), "off");
+    expect(fake.shadowMap.needsUpdate).toBe(true);
+  });
+
+  it("is not listened to after the end", () => {
+    const { scene, canvas, skyLight } = street();
+    scene.dispose();
+    canvas.dispatchEvent(new Event("webglcontextrestored"));
+    expect(skyLight).toHaveBeenCalledTimes(1);
   });
 });

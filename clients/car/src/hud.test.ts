@@ -8,7 +8,7 @@ const run = (events: [HudEvent, number][], from: HudState = initialHud) =>
 describe("the HUD", () => {
   it("is closed until the driver says something", () => {
     expect(initialHud.open).toBe(false);
-    expect(run([["tick", 5], ["delta", 6], ["enter", 7]]).open).toBe(false);
+    expect(run([["tick", 5], ["delta", 6], ["pointerenter", 7]]).open).toBe(false);
   });
 
   it("opens on a message", () => {
@@ -31,17 +31,34 @@ describe("the HUD", () => {
     expect(run([["send", 0], ["done", 1000], ["tick", 13_000]]).open).toBe(false);
   });
 
-  it("stays while the pointer or the focus is in it", () => {
-    const held = run([["send", 0], ["delta", 1000], ["done", 1000], ["enter", 2000]]);
+  it.each([
+    ["pointerenter", "pointerleave"],
+    ["focus", "blur"],
+  ] as const)("stays from %s to %s", (enter, leave) => {
+    const held = run([["send", 0], ["delta", 1000], ["done", 1000], [enter, 2000]]);
     expect(hudReducer(held, "tick", 99_000).open).toBe(true);
-    const left = hudReducer(held, "leave", 99_000);
+    const left = hudReducer(held, leave, 99_000);
     expect(hudReducer(left, "tick", 99_500).open).toBe(true); // the time starts again
     expect(hudReducer(left, "tick", 111_000).open).toBe(false);
   });
 
+  it("stays for the one when only the other has left", () => {
+    const both = run([["send", 0], ["done", 10], ["pointerenter", 20], ["focus", 30]]);
+    for (const [leave, other] of [["pointerleave", "blur"], ["blur", "pointerleave"]] as const) {
+      const one = hudReducer(both, leave, 100);
+      expect(hudReducer(one, "tick", 99_000).open).toBe(true);
+      expect(run([[other, 99_000], ["tick", 111_000]], one).open).toBe(false);
+    }
+  });
+
+  it.each(["pointerenter", "focus"] as const)("is still held after the next message, when nothing has left since %s", (enter) => {
+    const next = run([["send", 0], ["done", 10], [enter, 20], ["send", 30], ["delta", 40], ["done", 50]]);
+    expect(hudReducer(next, "tick", 99_000).open).toBe(true);
+  });
+
   it("goes back on Escape, also while Runa works or it is held", () => {
     expect(run([["send", 0], ["escape", 10]]).open).toBe(false);
-    expect(run([["send", 0], ["enter", 5], ["escape", 10]]).open).toBe(false);
+    expect(run([["send", 0], ["pointerenter", 5], ["focus", 6], ["escape", 10]]).open).toBe(false);
   });
 
   it("does not open again by itself for the rest of the answer", () => {
@@ -52,7 +69,6 @@ describe("the HUD", () => {
     const again = run([["send", 0], ["delta", 10], ["done", 20], ["tick", 13_000], ["send", 14_000]]);
     expect(again.open).toBe(true);
     expect(hudReducer(again, "tick", 14_001).open).toBe(true);
-    expect(again.hold).toBe(false);
   });
 });
 

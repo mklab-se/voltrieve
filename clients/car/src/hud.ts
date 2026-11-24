@@ -4,8 +4,10 @@ export const CLOSE_AFTER_MS = 12_000;
 
 export interface HudState {
   open: boolean;
-  /** The pointer or the keyboard focus is in it. */
-  hold: boolean;
+  /** The pointer is in it. */
+  pointer: boolean;
+  /** The keyboard focus is in it. */
+  focus: boolean;
   /** Runa is working on an answer. */
   working: boolean;
   /** Since when nothing has happened. */
@@ -16,27 +18,33 @@ export interface HudState {
   currentBlock?: number;
 }
 
-export type HudEvent = "send" | "delta" | "done" | "tick" | "escape" | "enter" | "leave";
+export type HudEvent = "send" | "delta" | "done" | "tick" | "escape" | "pointerenter" | "pointerleave" | "focus" | "blur";
 
-export const initialHud: HudState = { open: false, hold: false, working: false };
+export const initialHud: HudState = { open: false, pointer: false, focus: false, working: false };
 
 export function hudReducer(state: HudState, event: HudEvent, nowMs: number): HudState {
   switch (event) {
     case "send":
-      return { open: true, hold: false, working: true, currentBlock: state.currentBlock };
+      // What is in it stays in it: nothing enters again when the HUD was open already.
+      return { ...state, open: true, working: true, quietSince: undefined, askedBlock: undefined };
     case "delta":
       return { ...state, quietSince: nowMs };
     case "done":
       return { ...state, working: false, quietSince: nowMs };
-    case "enter":
-      return { ...state, hold: true };
-    case "leave":
-      return { ...state, hold: false, quietSince: nowMs };
+    case "pointerenter":
+      return { ...state, pointer: true };
+    case "pointerleave":
+      return { ...state, pointer: false, quietSince: nowMs };
+    case "focus":
+      return { ...state, focus: true };
+    case "blur":
+      return { ...state, focus: false, quietSince: nowMs };
     case "escape":
-      return { ...state, open: false, hold: false };
+      return { ...state, open: false, pointer: false, focus: false };
     case "tick": {
       const quiet = state.quietSince !== undefined && nowMs - state.quietSince >= CLOSE_AFTER_MS;
-      return state.open && quiet && !state.hold && !state.working ? { ...state, open: false } : state;
+      const held = state.pointer || state.focus || state.working;
+      return state.open && quiet && !held ? { ...state, open: false } : state;
     }
   }
 }
