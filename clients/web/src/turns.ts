@@ -137,7 +137,11 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
             conversationId: ev.data.conversation_id || state.conversationId,
           };
         case "error":
-          return updateLast(state, (t) => fail(t, ev.data.code, ev.data.message));
+          return {
+            ...updateLast(state, (t) => fail(t, ev.data.code, ev.data.message)),
+            // The conversation may be the one that was refused, so the next message starts another.
+            conversationId: ev.data.code === "http_403" ? undefined : state.conversationId,
+          };
       }
     }
   }

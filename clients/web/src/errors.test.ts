@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { customerText } from "./errors";
+import { customerText, errorOf, withSignIn } from "./errors";
 import { chatReducer, initialChatState } from "./turns";
 
 /** Every code the API and this client give an error, with the text the API sends. */
@@ -29,7 +29,9 @@ describe("the text for the customer", () => {
   });
 
   it("says what a customer can do", () => {
-    expect(customerText("http_403")).toBe("Your account is not allowed to use this chat.");
+    expect(customerText("http_403")).toBe(
+      "Runa cannot open this chat. Choose New chat and ask again. If it keeps happening, your account may not have access.",
+    );
     expect(customerText("network")).toBe("Could not reach Voltrieve. Try again.");
     expect(customerText("conversation_recovery_failed")).toContain("New chat");
     expect(customerText("something_new")).toBe("Runa could not answer. Try again.");
@@ -40,5 +42,22 @@ describe("the text for the customer", () => {
     state = chatReducer(state, { type: "event", event: { type: "error", data: { code, message } } });
     expect(state.turns[0]!.error).toBe(customerText(code));
     expect(state.turns[0]!.entries.at(-1)).toEqual({ kind: "error", code, message });
+  });
+});
+
+describe("what went wrong in a turn", () => {
+  const failedToken = withSignIn(() => Promise.reject(new Error("AADSTS50058")));
+
+  it("is the sign-in only when the token could not be had", async () => {
+    const error = await failedToken().catch(errorOf);
+    expect(error).toEqual({ code: "auth", message: "AADSTS50058" });
+    expect(customerText("auth")).toContain("signed in");
+    expect(await withSignIn(async () => "token")()).toBe("token");
+  });
+
+  it.each([new TypeError("x is undefined"), "text"])("is something else for %s", (e) => {
+    const { code } = errorOf(e);
+    expect(code).toBe("client");
+    expect(customerText(code)).toBe("Something went wrong on this page. Reload it and try again.");
   });
 });

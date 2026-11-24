@@ -47,6 +47,15 @@ describe("a turn", () => {
     expect(turn.status).toBe("done");
   });
 
+  it.each(["after", "before"])("runs no tools when an error comes %s they are asked for", async (when) => {
+    const error: ServerEvent = { type: "error", data: { code: "model_error", message: "" } };
+    const { runTool, resume, turn } = await run([when === "after" ? [asks, error] : [error, asks]]);
+    expect(runTool).not.toHaveBeenCalled();
+    expect(resume).not.toHaveBeenCalled();
+    expect(turn.status).toBe("error");
+    expect(turn.entries.filter((e) => e.kind === "trace")).toEqual([]);
+  });
+
   it("ends with an error when a tool is asked for without saying for which turn", async () => {
     const { runTool, turn } = await run([[{ type: "client_tool_calls", data: { calls } }]]);
     expect(runTool).not.toHaveBeenCalled();

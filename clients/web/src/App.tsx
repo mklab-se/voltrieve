@@ -2,6 +2,7 @@ import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { PhotoNotSent, withPhoto } from "./attachments";
 import { bootAuth, type Auth, type AuthSession } from "./auth";
 import { streamChat, streamToolResults } from "./chat";
+import { errorOf, withSignIn } from "./errors";
 import { fetchSourceUrl, openSource } from "./sources";
 import { Chat } from "./components/Chat";
 import { Header } from "./components/Header";
@@ -96,8 +97,9 @@ export function Workspace({ config, auth, session }: { config: AppConfig; auth: 
       dispatch({ type: "start", message, backend, correlationId, photo: attached?.blob });
       const ctrl = new AbortController();
       abort.current = ctrl;
+      const getToken = withSignIn(() => auth.getToken());
       try {
-        const token = await auth.getToken();
+        const token = await getToken();
         const request = {
           apiUrl: config.apiUrl,
           token,
@@ -113,17 +115,13 @@ export function Workspace({ config, auth, session }: { config: AppConfig; auth: 
           runTool: (call) => runClientTool(call, { setTheme: applyTheme }),
           resume: async ({ conversationId, turnId }, results) =>
             streamToolResults(
-              { apiUrl: config.apiUrl, token: await auth.getToken(), backend, conversationId, turnId, correlationId, results },
+              { apiUrl: config.apiUrl, token: await getToken(), backend, conversationId, turnId, correlationId, results },
               ctrl.signal,
             ),
         });
       } catch (e) {
         if (e instanceof PhotoNotSent) dispatch({ type: "withdraw" }); // the notice beside the field says why
-        else
-          dispatch({
-            type: "event",
-            event: { type: "error", data: { code: "auth", message: e instanceof Error ? e.message : "Could not get a token." } },
-          });
+        else dispatch({ type: "event", event: { type: "error", data: errorOf(e) } });
       } finally {
         setBusy(false);
       }
