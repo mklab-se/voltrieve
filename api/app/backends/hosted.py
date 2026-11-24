@@ -127,6 +127,8 @@ class HostedBackend(ConversationBackend):
                 "oid": ctx.user.oid,
                 "username": ctx.user.username,
                 "roles": sorted(ctx.user.roles),
+                "name": ctx.user.name,
+                "client": ctx.user.client,
             },
             "correlation_id": ctx.correlation_id,
             "parts": ctx.parts,
@@ -212,6 +214,7 @@ class HostedBackend(ConversationBackend):
             outcome.get("client_call_ids") or [],
             kept=kept if isinstance(kept, dict) else None,
             unrecorded=outcome.get("unrecorded") is True,
+            private=outcome.get("private") is not False,  # private unless it says that it is not
         )
 
 

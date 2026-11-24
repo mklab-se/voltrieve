@@ -54,10 +54,12 @@ class PausedTurn:
     kept: dict | None = field(default=None, repr=False)  # what an unstored turn keeps in memory
     context: dict = field(default_factory=dict, repr=False)  # what the client said when the turn began
     expires_at: float = 0.0
+    ordering_client: str = ""  # of the turn so far
+    private_tool: bool = False  # the pending outputs may hold what a private tool said
 
     @property
     def private(self) -> bool:
-        return bool(self.kept is not None or self.context)
+        return bool(self.kept is not None or self.context or self.private_tool)
 
     def abandon_outputs(self) -> list[dict]:
         """Outputs that close every open function_call of this turn. An unstored turn has stored
@@ -178,6 +180,8 @@ class Job:
     context_line: str = field(default="", repr=False)  # goes before the message, to the backend only
     attachments: list[dict] = field(default_factory=list)  # kind, detail and size of each, for the trace
     client: str = ""  # car, web, cli, other or test
+    ordering_client: str = ""  # car, web, cli or other: what the tools are told
+    private_tool: bool = False  # a private tool was called in this turn
 
     @property
     def unstored(self) -> bool:
@@ -186,7 +190,7 @@ class Job:
     @property
     def private(self) -> bool:
         """Whether nothing the turn says may be logged, error texts included."""
-        return bool(self.unstored or self.context)
+        return bool(self.unstored or self.context or self.private_tool)
 
 
 class _Run:
@@ -406,7 +410,13 @@ class TurnService:
             if job.context_line and isinstance(input_, str):
                 input_ = f"{job.context_line}\n{input_}"
             ctx = TurnContext(
-                user=UserContext(oid, job.claims.username, frozenset(job.claims.roles)),
+                user=UserContext(
+                    oid,
+                    job.claims.username,
+                    frozenset(job.claims.roles),
+                    job.claims.name,
+                    job.ordering_client,
+                ),
                 conversation_id=conversation_id,
                 turn_id=job.turn_id,
                 input=input_,
@@ -416,8 +426,10 @@ class TurnService:
                 parts=job.parts,
                 kept=job.kept,
                 context=job.context,
+                private_tool=job.private_tool,
             )
             outcome = await backend.run_turn(ctx, run.emit)
+            job.private_tool = job.private_tool or outcome.private
             usage = merge_usage(job.usage, outcome.usage)
             if outcome.status == "paused":
                 # No await between releasing the conversation and storing the pause, so a
@@ -436,6 +448,8 @@ class TurnService:
                         run.text,
                         kept=outcome.kept,
                         context=job.context,
+                        ordering_client=job.ordering_client,
+                        private_tool=job.private_tool,
                     )
                 )
                 if run.held_tool_calls is not None:

@@ -24,6 +24,8 @@ Event = tuple[str, dict]
 
 # Tells the API that a run is ours, so that it is never counted as use.
 TEST_HEADER = {"X-Voltrieve-Test": "1"}
+# With the value "car" the API treats the run as the car's. It has no other effect.
+CLIENT_HEADER = "X-Voltrieve-Client"
 
 
 def azd_value(name: str) -> str:
@@ -137,9 +139,12 @@ class PhotoTurn:
 
 
 class Api:
-    def __init__(self, base_url: str, token: Callable[[], str], backend: str, timeout: float = 180.0):
+    def __init__(
+        self, base_url: str, token: Callable[[], str], backend: str, timeout: float = 180.0, client: str = ""
+    ):
         self._token = token
         self._backend = backend
+        self._client = client
         self._http = httpx.Client(base_url=base_url, timeout=timeout, headers=TEST_HEADER)
 
     def close(self) -> None:
@@ -179,6 +184,8 @@ class Api:
     def _stream(self, path: str, body: dict, correlation_id: str | None) -> Iterator[Event]:
         headers = {"Authorization": f"Bearer {self._token()}", "X-Agent-Backend": self._backend,
                    **TEST_HEADER}
+        if self._client:
+            headers[CLIENT_HEADER] = self._client
         if correlation_id:
             headers["X-Correlation-Id"] = correlation_id
         try:

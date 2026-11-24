@@ -115,8 +115,9 @@ class ToolSet:
         return tool is None or tool.concurrent
 
     def is_private(self, name: str) -> bool:
+        """An unknown name counts as private: it may be a private tool by the wrong name."""
         tool = self._server.get(name)
-        return tool is not None and tool.private
+        return tool.private if tool is not None else name not in self._client
 
     def validate_client(self, name: str, raw_arguments: str) -> str | None:
         """The error to give the model when a client tool call has invalid arguments, else None.

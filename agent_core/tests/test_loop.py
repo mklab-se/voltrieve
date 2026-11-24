@@ -598,3 +598,38 @@ async def test_the_turn_id_reaches_the_tools_and_is_gone_after(user, events):
     given.correlation_id = "corr-1"
     await run_turn(model, [tool(handler)], given, events)
     assert seen == [("turn-1", "corr-1")] and current_turn_id.get() is None
+
+
+PICK_FILE = ClientTool("pick_file", "Pick", {"type": "object", "properties": {}})
+
+
+@pytest.mark.parametrize(("name", "private"), [("order", True), ("check_stock", False)])
+@pytest.mark.parametrize("pauses", [True, False])
+async def test_the_outcome_says_that_a_private_tool_was_used(user, events, name, private, pauses):
+    call = FunctionCall("c1", name, '{"city": "x"}')
+    client = [FunctionCall("c2", "pick_file", "{}")] if pauses else []
+    model = FakeModel([[call, *client], [TextDelta("ok")]])
+    tools = [ServerTool("order", "d", SCHEMA, echo, private=True), tool()]
+    outcome = await run_turn(model, tools, turn(user, [PICK_FILE]), events)
+    assert outcome.status == ("paused" if pauses else "done") and outcome.private is private
+
+
+async def test_the_outcome_of_a_private_turn_is_private(user, events):
+    given = turn(user, [PICK_FILE])
+    given.private = True
+    outcome = await run_turn(FakeModel([[FunctionCall("c2", "pick_file", "{}")]]), [], given, events)
+    assert outcome.status == "paused" and outcome.private
+
+
+async def test_an_unknown_tool_shows_no_arguments(user, events):
+    arguments = f'{{"address": "{SECRET}"}}'
+    model = FakeModel([[FunctionCall("c1", "prepare_order", arguments)], [TextDelta("ok")]])
+    await run_turn(model, [tool()], turn(user), events)
+    called = next(e.data for e in events.events if e.data.get("step") == "server_tool_called")
+    assert called["tool"] == "prepare_order" and "arguments" not in called
+    assert SECRET not in str([e.data for e in events.events])
+
+
+async def test_a_client_tool_does_not_make_the_turn_private(user, events):
+    outcome = await run_turn(FakeModel([[FunctionCall("c2", "pick_file", "{}")]]), [], turn(user, [PICK_FILE]), events)
+    assert outcome.private is False

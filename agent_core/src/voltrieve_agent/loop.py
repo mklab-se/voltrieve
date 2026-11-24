@@ -89,6 +89,9 @@ class TurnOutcome:
     client_call_ids: list[str] = field(default_factory=list)
     kept: dict | None = field(default=None, repr=False)  # for TurnInput.kept, when paused
     unrecorded: bool = False  # the answer was given but could not be recorded
+    # The turn was private, or became so: a private tool was called, and the pending outputs may hold
+    # what it said. What follows in this turn is private too.
+    private: bool = False
 
 
 def _output_item(call_id: str, output: str) -> dict:
@@ -197,7 +200,9 @@ async def run_turn(
     turn_id = current_turn_id.set(turn.turn_id)
     private = current_private.set(current_private.get() or turn.private)
     try:
-        return await _run(model, server_tools, turn, emit, max_iterations)
+        outcome = await _run(model, server_tools, turn, emit, max_iterations)
+        outcome.private = current_private.get()
+        return outcome
     finally:
         current_private.reset(private)
         current_turn_id.reset(turn_id)

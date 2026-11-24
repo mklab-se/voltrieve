@@ -784,3 +784,54 @@ def test_trace_step_fails_without_the_dealer(monkeypatch):
     step = _trace_step(monkeypatch, ["voltrieve-api", "voltrieve-hosted"])
     assert step.status == "FAIL"
     assert "voltrieve-dealer" in step.note
+
+
+def demo_registry(*rounds):
+    """A registry with the real loop and a scripted model, for denied_demo."""
+    from app.backends import BackendRegistry
+    from app.backends.loop import LoopBackend
+    from app.settings import Settings
+    from test_contract import FakeOpenAI, ScriptedModel
+    from voltrieve_agent.server_tools import build_server_tools
+
+    backend = LoopBackend(ScriptedModel(*rounds), FakeOpenAI(), build_server_tools(None, None))
+    return BackendRegistry(Settings(), {"loop": lambda s: backend})
+
+
+@pytest.mark.parametrize(
+    ("client", "tool", "step"),
+    [(None, "book_test_drive", "authorization_denied"), ("web", "prepare_car_order", "authorization_denied"),
+     ("car", "prepare_car_order", "client_not_allowed")],
+)
+async def test_the_denied_demo_passes_only_on_its_own_refusal(capsys, client, tool, step):
+    import denied_demo
+    from voltrieve_agent.model import Completed, FunctionCall, TextDelta
+
+    arguments = {"model": "fjord"} if client else {"model": "atlas", "city": "Malm\u00f6", "date": "2030-01-05"}
+    calls = [FunctionCall("c1", tool, json.dumps(arguments)), Completed({})]
+    answer = [TextDelta("Sorry."), Completed({})]
+    assert await denied_demo.run("loop", client, demo_registry(calls, answer)) == 0
+    assert f"PASS: {step} emitted" in capsys.readouterr().out
+    assert await denied_demo.run("loop", client, demo_registry(answer)) == 1
+    assert f"FAIL: no {step} event" in capsys.readouterr().out
+
+
+def test_the_denied_demo_asks_to_order_with_a_client_and_to_book_without():
+    import denied_demo
+
+    assert "test drive" in denied_demo.question(None)
+    assert denied_demo.question("web") == denied_demo.question("car") == "I want to order a Fjord."
+
+
+@pytest.mark.parametrize("client", ["", "car"])
+def test_the_script_client_sends_the_client_header_only_when_asked(client):
+    seen = []
+
+    def handle(request):
+        seen.append(request.headers.get("x-voltrieve-client"))
+        return httpx.Response(200, text=sse(("done", {})))
+
+    api = voltrieve_client.Api("http://t", lambda: "tok", "loop", client=client)
+    api._http = httpx.Client(base_url="http://t", transport=httpx.MockTransport(handle))
+    api.turn("hi")
+    assert seen == [client or None]

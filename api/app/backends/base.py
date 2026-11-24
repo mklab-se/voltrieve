@@ -39,11 +39,12 @@ class TurnContext:
     parts: list[dict] = field(default_factory=list, repr=False)
     kept: dict | None = field(default=None, repr=False)
     context: dict = field(default_factory=dict, repr=False)
+    private_tool: bool = False  # a private tool was called in an earlier part of this turn
 
     @property
     def private(self) -> bool:
         """Whether nothing the turn says may be logged, error texts included."""
-        return bool(self.parts or self.kept or self.context)
+        return bool(self.parts or self.kept or self.context or self.private_tool)
 
 
 class Backend(Protocol):

@@ -102,7 +102,9 @@ async def test_relays_events_one_to_one_and_returns_the_outcome(http):
         "input": "hi",
         "client_tools": [{"name": "read_file", "description": "Read", "parameters": {"type": "object"}}],
         "pending_outputs": [],
-        "user": {"oid": "oid-anna", "username": "anna@example.com", "roles": ["Chat.User"]},
+        "user": {
+            "oid": "oid-anna", "username": "anna@example.com", "roles": ["Chat.User"], "name": "", "client": "",
+        },
         "correlation_id": "corr-1",
         "parts": [],
         "kept": None,
@@ -395,3 +397,36 @@ async def test_a_failed_stored_call_still_logs_the_body(http, caplog):
     with caplog.at_level("DEBUG"):
         await make_backend(http).run_turn(ctx(), emit)
     assert "bad detail" in caplog.text
+
+
+async def no_emit(event):
+    pass
+
+
+@respx.mock
+async def test_the_body_has_the_name_and_the_client(http):
+    route = respx.post(INVOKE_URL).respond(200, content=sse(outcome()))
+    context = ctx()
+    context.user = UserContext("oid-anna", "anna@example.com", frozenset(), "Anna A", "web")
+    await make_backend(http).run_turn(context, no_emit)
+    user = json.loads(route.calls.last.request.content)["user"]
+    assert (user["name"], user["client"]) == ("Anna A", "web")
+
+
+@respx.mock
+@pytest.mark.parametrize(
+    ("extra", "private"),
+    [({"private": False}, False), ({"private": True}, True), ({}, True), ({"private": None}, True),
+     ({"private": "no"}, True), ({"private": 0}, True)],
+)
+async def test_an_outcome_is_private_unless_it_says_that_it_is_not(http, extra, private):
+    respx.post(INVOKE_URL).respond(200, content=sse(outcome("paused", call_ids=["c1"], **extra)))
+    result = await make_backend(http).run_turn(ctx(), no_emit)
+    assert result.status == "paused" and result.private is private
+
+
+@respx.mock
+async def test_a_turn_that_used_a_private_tool_is_private_in_the_body(http):
+    route = respx.post(INVOKE_URL).respond(200, content=sse(outcome()))
+    await make_backend(http).run_turn(ctx(input_=[], private_tool=True), no_emit)
+    assert json.loads(route.calls.last.request.content)["private"] is True
