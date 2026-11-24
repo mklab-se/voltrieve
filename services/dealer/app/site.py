@@ -10,7 +10,7 @@ from app.settings import Settings
 
 ENTRA = "https://login.microsoftonline.com"
 POLICY = (
-    f"default-src 'self'; connect-src 'self' {ENTRA}; frame-src {ENTRA}; frame-ancestors 'self'; "
+    f"default-src 'self'; connect-src 'self' {ENTRA}; frame-src 'self' {ENTRA}; frame-ancestors 'self'; "
     "img-src 'self' data:; style-src 'self' 'unsafe-inline'"
 )
 HEADERS = {

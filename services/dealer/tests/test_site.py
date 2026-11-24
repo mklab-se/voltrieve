@@ -9,7 +9,7 @@ from app.main import create_app
 
 POLICY = (
     "default-src 'self'; connect-src 'self' https://login.microsoftonline.com; "
-    "frame-src https://login.microsoftonline.com; frame-ancestors 'self'; img-src 'self' data:; "
+    "frame-src 'self' https://login.microsoftonline.com; frame-ancestors 'self'; img-src 'self' data:; "
     "style-src 'self' 'unsafe-inline'"
 )
 LONG = "public, max-age=31536000, immutable"
