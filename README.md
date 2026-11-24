@@ -204,7 +204,7 @@ Verified live:
 - Where a photo turn leaves its text and its photo, on 2026-11-24: the photo nowhere we looked, the text of prompt and hosted turns in Foundry's tracing (`docs/evidence/photos-privacy.txt`). [Foundry's tracing was then disconnected](docs/decisions.md#closed-foundrys-tracing-is-disconnected), and the marked question and client's line of a turn on each backend left no rows in telemetry (`docs/evidence/tracing-disconnected.txt`).
 - The authorization denied path, on the loop backend, against real Foundry with a fake token validator.
 
-Offline tests pass: `agent_core` 172, `api` 525, `agents/hosted` 49, `search` 67, `services/dealer` 42, `services/insights` 710, `clients/cli` 62, `clients/web` 172, `clients/dashboard` 72, `clients/car` 426, `tests/photos` 229, `tests/contract` 94 and `infra/scripts/entra` 41, plus the 123 of `data/generator` in CI (they need a browser), the Bicep and script checks. Every suite runs in [CI](.github/workflows/tests.yml).
+Offline tests pass: `agent_core` 172, `api` 525, `agents/hosted` 49, `search` 67, `services/dealer` 42, `services/insights` 714, `clients/cli` 62, `clients/web` 172, `clients/dashboard` 74, `clients/car` 426, `tests/photos` 229, `tests/contract` 94 and `infra/scripts/entra` 41, plus the 123 of `data/generator` in CI (they need a browser), the Bicep and script checks. Every suite runs in [CI](.github/workflows/tests.yml).
 
 Not verified:
 
@@ -216,6 +216,7 @@ Not verified:
 - The usage insights on real conversations, their schedule, and the switch from `off` to `on`. The job's identity deleting a conversation that exists (it was refused for an id that is not there).
 - The job at its caps of 1,000 real and 500 made up conversations. At the measured speed both take about 12 minutes of its 25.
 - The queries that take the newest week first (the page and the group names), and the workbook's table of missing nights since the newest night waits for 04:00 UTC: tested, not run live.
+- That the job's deployed model calls accept `store: false`: the next live run checks it.
 - A 403 from `GET /admin/insights` for a user without `Dashboard.View`, and four made up people plus one real: only in tests.
 - The page "What people ask" against the deployed API in a browser, the new sentence in the notice seen in a signed in session, a night of the schedule that failed, and a conversation marked `car` or `web`.
 - The group names over several nights of real use, the labels on real conversations, and the price of the detection of personal data.

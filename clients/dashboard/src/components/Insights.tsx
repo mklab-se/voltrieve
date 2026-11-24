@@ -39,7 +39,7 @@ const SOURCES: [Source, string][] = [["real", "Real"], ["seeded", "Made up"]];
 export function AskPage({ source, state, now = Date.now(), onSource, onRetry }: PageProps) {
   // Right after the switch, the answer is still the other source's. It is never shown under this one's name.
   const data = state.status === "ready" && state.data.source === source ? state.data : undefined;
-  const stale = data ? staleNote(source, data.run, now) : null;
+  const stale = data ? staleNote(data, now) : null;
   return (
     <section className="dash ask" aria-label="What people ask">
       <div className="dash-head">

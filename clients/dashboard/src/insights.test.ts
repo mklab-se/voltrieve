@@ -126,7 +126,7 @@ describe("words", () => {
 
 describe("the age of the last run", () => {
   const run = "2026-11-24T02:30:00Z";
-  const note = (now: string, source: "real" | "seeded" = "real", at: string | null = run) => staleNote(source, at, Date.parse(now));
+  const note = (now: string, source: "real" | "seeded" = "real", at: string | null = run) => staleNote(answer({ source, run: at, rows: [row({})] }), Date.parse(now));
 
   it("is named when it is more than two days, in whole days", () => {
     expect(note("2026-11-26T02:30:00Z")).toBeNull();
@@ -138,6 +138,10 @@ describe("the age of the last run", () => {
     expect(note("2026-12-24T00:00:00Z", "seeded")).toBeNull();
     expect(note("2026-12-24T00:00:00Z", "real", null)).toBeNull();
     expect(note("2026-12-24T00:00:00Z", "real", "soon")).toBeNull();
+  });
+
+  it("is not named without rows to show, since no night may have been due", () => {
+    expect(staleNote(answer({ run, rows: [] }), Date.parse("2026-12-24T00:00:00Z"))).toBeNull();
   });
 });
 

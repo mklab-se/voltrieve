@@ -397,9 +397,9 @@ A count of 1 to 4 shows as `under 5`. No line holds text, an id or a person. The
 
 **Watch the time.** The run ends itself after 25 minutes. 514 conversations took 4. At that speed both sources at their caps, 1,500 in all, take about 12.
 
-**Do not label more at once.** `gpt-6-luna` has a capacity of 150 thousand tokens a minute, shared with Search query planning when `PLANNING_MODEL_NAME=gpt-6-luna`. The measured run used about 130 thousand a minute. If a 429 remains after the retries, the run fails closed.
+**Do not label more at once.** `gpt-6-luna` has a capacity of 150 thousand tokens a minute, shared with Search query planning when `PLANNING_MODEL_NAME=gpt-6-luna`. The measured run used about 146 thousand a minute, 132 of them input. If a 429 remains after the retries, the run fails closed.
 
-**Older weeks, for demos.** A trend needs more than one week. `--window-end` runs a week that ends on a day, for made up conversations only: it reads no real chat and writes no real row. Seed four weeks, then run the three older ones, oldest first, then the newest without the argument. On 2026-11-24 the weeks ended on 1, 8, 15 and 22 November. The commands for a start with an argument are in [Deployment](deploy.md#4-scriptsdeploy-insightssh).
+**Older weeks, for demos.** A trend needs more than one week. `--window-end` runs a week that ends on a day, for made up conversations only: it reads no real chat and writes no real row. It refuses a day after the last settled one (`failed: settings: NotSettled`). Seed four weeks, then run the three older ones, oldest first, then the newest without the argument. On 2026-11-24 the weeks ended on 1, 8, 15 and 22 November. The commands for a start with an argument are in [Deployment](deploy.md#4-scriptsdeploy-insightssh).
 
 ```sh
 uv run scripts/seed_conversations.py                              # says how many, writes nothing

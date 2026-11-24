@@ -138,10 +138,11 @@ export function sampleNote(share: number | null): string | null {
 
 const OLD_DAYS = 2;
 
-/** Says when the last run is old. Real use has a run every night. Made up data has one when somebody starts it. */
-export function staleNote(source: Source, run: string | null, now: number): string | null {
+/** Says when the last run is old. Real use has a run every night, and made up data one when somebody starts it.
+ *  Without rows nothing is said: no night is due while the schedule is off. */
+export function staleNote({ source, run, rows }: Insights, now: number): string | null {
   const days = run === null ? NaN : (now - Date.parse(run)) / DAY_MS;
-  return source === "real" && days > OLD_DAYS ? `The last run was ${Math.floor(days)} days ago. Nights may be missing.` : null;
+  return source === "real" && rows.length > 0 && days > OLD_DAYS ? `The last run was ${Math.floor(days)} days ago. Nights may be missing.` : null;
 }
 
 // What the page shows.

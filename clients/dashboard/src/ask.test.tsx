@@ -134,13 +134,19 @@ describe("the page", () => {
   });
 
   it("says when the last run of real use is more than two days old", () => {
-    const ready = (source: Source, run: string | null): AskState => ({ status: "ready", data: answer(source, { run }) });
+    const ready = (source: Source, run: string | null): AskState => ({ status: "ready", data: answer(source, { run, rows: ROWS }) });
     const show = (source: Source, run: string | null, now: string) => page(source, ready(source, run), now).text;
     const run = "2026-11-24T02:30:00Z";
     expect(show("real", run, "2026-11-28T03:00:00Z")).toContain("The last run was 4 days ago. Nights may be missing.");
     expect(show("real", run, "2026-11-26T02:30:00Z")).not.toContain("Nights may be missing");
     expect(show("seeded", run, "2026-11-28T03:00:00Z")).not.toContain("Nights may be missing");
     expect(show("real", null, "2026-11-28T03:00:00Z")).not.toContain("Nights may be missing");
+  });
+
+  it("says nothing about nights on an empty page, where none may have been due", () => {
+    const { text } = page("real", { status: "ready", data: answer("real") }, "2026-12-24T03:00:00Z");
+    expect(text).toContain("Not enough people yet.");
+    expect(text).not.toContain("Nights may be missing");
   });
 
   const { html, text } = page("real", {

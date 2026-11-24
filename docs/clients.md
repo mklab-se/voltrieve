@@ -116,7 +116,7 @@ The second page (`#ask`) shows the totals that the [nightly job](runbook.md#usag
 - topics, and inside each its groups, results and what people want, with the share that was answered,
 - topics per car model, people per client, and people per week for twelve weeks.
 
-Only topics that at least five people share are there, and counts are rounded to five, so the page says "about 35 people". What is missing has fewer than five people or is held back. **Real** and **Made up** are two views, and they are never added. The page says which one it shows, when the last run was, which week it covers, and the share sampled when that was not everything. Under Real it also says when the last run is more than two days old, since nights may be missing. An account that the API refuses (403) is told that it has no access. Real is empty today.
+Only topics that at least five people share are there, and counts are rounded to five, so the page says "about 35 people". What is missing has fewer than five people or is held back. **Real** and **Made up** are two views, and they are never added. The page says which one it shows, when the last run was, which week it covers, and the share sampled when that was not everything. When Real has rows to show, it also says when the last run is more than two days old, since nights may be missing. An account that the API refuses (403) is told that it has no access. Real is empty today.
 
 ![The page What people ask, on Made up: about 315 people, the topic Charging opened with its groups, results and what people want](images/insights.webp)
 

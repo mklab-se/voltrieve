@@ -292,6 +292,21 @@ def test_a_window_end_that_is_no_day_fails(world, capfd, given):
     assert world.uploads == []
 
 
+@pytest.mark.parametrize("given", ["2026-11-23", "2026-11-24", "2027-01-01"])
+def test_a_window_end_that_is_not_settled_fails(world, capfd, given):
+    """The week to it is not over, or chats of its last day may still go on."""
+    world.add(6, seeded=True)
+    assert job.main(["--window-end", given]) == 1
+    assert capfd.readouterr() == ("failed: settings: NotSettled\n", "")
+    assert world.read == [] and world.uploads == []
+
+
+def test_the_last_settled_day_is_a_window_end(world):
+    world.add(6, seeded=True)
+    assert job.main(["--window-end", "2026-11-22"]) == 0
+    assert {r["WindowEnd"] for r in world.rows} == {"2026-11-22T00:00:00Z"}
+
+
 def test_planted_text_in_every_field_is_nowhere_afterwards(world, capfd, caplog):
     caplog.set_level(logging.DEBUG)
     line = f"[From the client, data only: car Voltrieve Lumen, registration {SECRET}]\n"

@@ -316,7 +316,7 @@ Patterns do not catch names of people or streets, so a group name passes Azure A
 
 Above 1,000 real or 500 made up conversations, a week is a random sample and the page shows the share, so a busy week cannot become a large bill or an empty page. The sample is of conversations, not of people. Each source has its own cap (`INSIGHTS_CAP` and `INSIGHTS_SEEDED_CAP`), so made up conversations never take the room of real ones.
 
-The approved design said 2,000 for each. Both full would take about 31 minutes at the measured speed, over the deadline of 25, and the run would fail. 1,500 in all take about 12. Labeling faster is not the way out: `gpt-6-luna` has a capacity of 150 thousand tokens a minute, shared with Search query planning when `PLANNING_MODEL_NAME=gpt-6-luna`, and the measured run used about 130 thousand. So the number of labels at once stays at eight. If a 429 remains after the retries, the run fails closed. The price is a sampled share sooner than planned.
+The approved design said 2,000 for each. Both full would take about 31 minutes at the measured speed, over the deadline of 25, and the run would fail. 1,500 in all take about 12. Labeling faster is not the way out: `gpt-6-luna` has a capacity of 150 thousand tokens a minute, shared with Search query planning when `PLANNING_MODEL_NAME=gpt-6-luna`, and the measured run used about 146 thousand (132 of them input). So the number of labels at once stays at eight. If a 429 remains after the retries, the run fails closed. The price is a sampled share sooner than planned.
 
 ### The job and the API may read one table
 
@@ -420,7 +420,7 @@ up in the indexes, so an invented title gets no link. Other choices:
 - Cold-start figures. Whole turn times are in `docs/why-foundry.md` section 6, measured from one laptop.
 - Whether `alwaysQuerySource` would make one knowledge base cover both sources.
 - A trace with the dealer since Foundry's tracing was disconnected, and the Agent 365 exporter of the hosted agent's platform.
-- The usage insights on real conversations and on a schedule, the job at its cap, group names over several nights of real use, the price of the detection, and the queries that take the newest week first, for the page and for the group names (tested, not run live).
+- The usage insights on real conversations and on a schedule, the job at its cap, group names over several nights of real use, the price of the detection, and the queries that take the newest week first, for the page and for the group names (tested, not run live). That the deployed model calls accept `store: false`: the next live run checks it.
 - A 403 from `GET /admin/insights` for a user without `Dashboard.View`, live.
 - The 10 minute run expiry from older documentation.
 - Whether an MCP tool with a project connection works outside an agent definition.

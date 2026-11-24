@@ -8,7 +8,7 @@ run ends with exit code 1. It prints one line a step, with counts, and for a fai
 the type of the error. It never prints a message, a traceback or a line of a library: they could hold text.
 
 --window-end is the last day, included, of a week to run for made up conversations only. Such a run
-reads no real chat and writes no real row.
+reads no real chat and writes no real row. A day after the last settled one is refused.
 """
 
 import argparse
@@ -55,6 +55,10 @@ _DAY = re.compile(r"\d{4}-\d{2}-\d{2}", re.ASCII)
 
 class TooManyRefused(Exception):
     """The service refused so many conversations that the totals would mislead."""
+
+
+class NotSettled(Exception):
+    """The week asked for ends after the last settled day."""
 
 
 @dataclass(frozen=True)
@@ -189,6 +193,8 @@ async def _run(settings: Settings, now: datetime, window_end: date | None, progr
     if window_end is None:
         (first, last), sources, notice = window(now), SOURCES, settings.notice
     else:  # without a notice date no real conversation is selected
+        if window_end > window(now)[1]:
+            raise NotSettled
         (first, last), sources, notice = (window_end - timedelta(days=6), window_end), (SEEDED,), None
     credential = _credential(settings.client_id)
 
