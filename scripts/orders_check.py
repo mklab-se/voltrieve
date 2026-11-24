@@ -107,7 +107,7 @@ class Case:
     conversation: str | None = None
     turns: int = 0
     correlation_ids: list[str] = field(default_factory=list)
-    proven: bool = False  # the log of the dealer service had the calls of our turns
+    proven: frozenset[str] = frozenset()  # ids of our turns that the log of the dealer service had
     mark: str = ""
 
     def __post_init__(self) -> None:
@@ -174,10 +174,10 @@ class Case:
     def prove(self) -> None:
         """Our correlation ids reach the log, so a turn that is not there did not call."""
         kinds = {e["kind"] for e in self.logged()}
-        missing = [kind for kind in ORDER_KINDS if kind not in kinds]
+        missing = [kind for kind in ("offer", "order") if kind not in kinds]
         if missing:
             raise Failed(f"the log of the dealer service has no {', '.join(missing)} of ours")
-        self.proven = True
+        self.proven = frozenset(e["correlation_id"] for e in self.logged())
 
     def nothing_reached(self, since: int = 0) -> None:
         """Prices and stock may be asked for. Nothing about an order may."""
@@ -358,7 +358,7 @@ def clean_up(case: Case) -> tuple[list[str], list[str]]:
     return left, sorted(str(o.get("number")) for o in case.new_orders() if str(o.get("number")) not in left)
 
 
-def run_case(name: str, case: Case, say: Callable[[str], None], proven: bool) -> bool:
+def run_case(name: str, case: Case, say: Callable[[str], None], proven: frozenset[str]) -> bool:
     problem = ""
     try:
         CASES[name][0](case)
@@ -379,6 +379,14 @@ def run_case(name: str, case: Case, say: Callable[[str], None], proven: bool) ->
         problems.append(f"ordered without the mark: {', '.join(ours)}")
     if left:
         problems.append(f"orders left to delete by hand: {', '.join(left)}")
+    if not problems and name in NEED_PROOF and proven:
+        # The log is in memory: a reset or a restart would leave it empty, and prove nothing.
+        try:
+            log = case.staff.state().get("log", [])
+        except ApiError:
+            log = []
+        if not proven & {e.get("correlation_id") for e in log}:
+            problems.append("not proven, the log of the dealer service was emptied since `whole`")
     if not problems and name in NEED_PROOF and not proven:
         problems.append("not proven, `whole` did not show that our turns are in the log of the dealer service")
     problem = "; ".join(problems)
@@ -416,7 +424,7 @@ def run(backends: list[str], names: list[str], base: str, token: Callable[[], st
     claims, cases, good = claims_of(token()), [], True
     try:
         for backend in backends:
-            proven = False
+            proven = frozenset()
             for name in sorted(names, key=list(CASES).index):  # `whole` first, it proves the log
                 try:
                     before = {o.get("number") for o in staff.state().get("orders", [])}

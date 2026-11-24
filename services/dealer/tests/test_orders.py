@@ -109,10 +109,15 @@ async def test_an_order_takes_an_offer_and_a_later_turn(client):
     }  # fmt: skip
     first, again = await place(client, offer), await place(client, offer, turn="t3")
     assert (first.status_code, again.status_code) == (201, 200)
-    assert first.json() == again.json() == {
+    assert first.json() == {
         "order_number": "VO-1001", "model": "fjord", "price": 529000, "currency": "SEK", "name": NAME,
         "address": ADDRESS, "ordered": "2026-11-24T12:00:00+00:00",
         "message": "Thank you for your order. Voltrieve will be in touch about delivery.",
+    }  # fmt: skip
+    # The same order, and Runa is told so: otherwise "one more" would look like a new one.
+    assert again.json() == first.json() | {
+        "message": "This offer was already placed. It is the same order as before, not a new one. Another car needs "
+                   "a new offer, also of the same model and to the same address.",
     }  # fmt: skip
     assert (await place(client, await make_offer(client))).json()["order_number"] == "VO-1002"
 
@@ -135,13 +140,21 @@ async def test_an_expired_offer_is_410(client, clock):
     offer = await make_offer(client)
     clock.now += timedelta(minutes=30)
     r = await place(client, offer)
-    assert (r.status_code, r.json()) == (410, {"detail": "The offer has expired. Make a new one."})
+    assert (r.status_code, r.json()) == (
+        410,
+        {"detail": "The offer has expired. Nothing was ordered. Make a new one with prepare_car_order, read it back "
+                   "and ask."},
+    )
 
 
 @pytest.mark.parametrize("customer, offer", [("oid-2", None), ("oid-1", "unknown"), ("oid-1", "a/b#?|c")])
 async def test_an_unknown_offer_is_404(client, customer, offer):
     r = await place(client, offer or await make_offer(client), customer=customer)
-    assert (r.status_code, r.json()) == (404, {"detail": "Unknown offer."})
+    assert (r.status_code, r.json()) == (
+        404,
+        {"detail": "Unknown offer, or it has expired. Nothing was ordered. Make a new one with prepare_car_order, "
+                   "read it back and ask."},
+    )
 
 
 LONG = "x" * 201

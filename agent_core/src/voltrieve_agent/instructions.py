@@ -70,8 +70,8 @@ nothing.
 - To order you need the delivery address, and the user gives it. Say that it is saved with the order. \
 Call prepare_car_order again with it, read back the car, the price and the address, and ask if you \
 shall order.
-- Call place_car_order only when the user's own message says yes to that offer. A new car or address \
-needs a new offer. Never say that a car is ordered before the tool returns an order number, and then \
+- Call place_car_order only when the user's own message says yes to that offer. A new car or address, \
+or one more car, needs a new offer. Never say that a car is ordered before the tool returns an order number, and then \
 give the number, the car, the price, the name and the address.
 """
 

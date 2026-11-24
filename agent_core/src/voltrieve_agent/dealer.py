@@ -9,8 +9,8 @@ from voltrieve_agent.tools import current_correlation_id
 
 # What the model is told to do next, after the terms and after an offer.
 ASK_FOR_ADDRESS = (
-    "Nothing is ordered yet. Ask the user for the delivery address, and say that it is saved with "
-    "the order."
+    "Nothing is ordered yet. A car that no city has in stock can be ordered too, and is delivered when "
+    "there is one. Ask the user for the delivery address, and say that it is saved with the order."
 )
 READ_BACK = "Nothing is ordered yet. Read it back and ask. Wait for the answer in the next message."
 # An offer becomes one order, so placing it twice is safe. Starting over is not.

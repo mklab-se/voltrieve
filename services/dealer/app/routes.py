@@ -26,6 +26,10 @@ PARTS_STOCK_PATH = Path(__file__).parent / "parts-stock.json"  # written by the 
 RUNA = "Runa"  # the one caller of the machine routes
 CURRENCY = "SEK"
 THANKS = "Thank you for your order. Voltrieve will be in touch about delivery."
+ALREADY = (
+    "This offer was already placed. It is the same order as before, not a new one. Another car needs a new "
+    "offer, also of the same model and to the same address."
+)
 # Why there is no order: the status, what Runa is told, and what the log says.
 REFUSALS = {
     SameTurn: (
@@ -33,8 +37,17 @@ REFUSALS = {
         "The customer has not answered yet. Read back the car, the price and the address, and ask.",
         "The customer has not answered yet",
     ),
-    OfferExpired: (410, "The offer has expired. Make a new one.", "The offer has expired"),
-    NotFound: (404, "Unknown offer.", "Unknown offer"),
+    OfferExpired: (
+        410,
+        "The offer has expired. Nothing was ordered. Make a new one with prepare_car_order, read it back and ask.",
+        "The offer has expired",
+    ),
+    NotFound: (
+        404,
+        "Unknown offer, or it has expired. Nothing was ordered. Make a new one with prepare_car_order, "
+        "read it back and ask.",
+        "Unknown offer",
+    ),
 }
 
 Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
@@ -97,7 +110,7 @@ class OrderRequest(BaseModel):
     turn: Text
 
 
-def confirmation(order: Order) -> dict:
+def confirmation(order: Order, new: bool) -> dict:
     return {
         "order_number": order.number,
         "model": order.model,
@@ -106,7 +119,7 @@ def confirmation(order: Order) -> dict:
         "name": order.name,
         "address": order.address,
         "ordered": order.created.isoformat(),
-        "message": THANKS,
+        "message": THANKS if new else ALREADY,
     }
 
 
@@ -222,7 +235,7 @@ def build_router(data: DealerData) -> APIRouter:
         request.app.state.hub.changed()  # also a repeated one: the first may have been lost on its way
         if not new:
             response.status_code = 200
-        return confirmation(order)
+        return confirmation(order, new)
 
     router.include_router(protected)
     return router

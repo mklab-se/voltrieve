@@ -165,7 +165,7 @@ A representative's page beside the website. A customer orders a car through Runa
 | --- | --- | --- |
 | 1 | `just warm-up`, then `just keep-warm` if you want it to stay | The API, the dealer and the backends answer. A cold dealer takes about 30 seconds |
 | 2 | Open the page: the address is printed by `just dealer`, or is `DEALER_URL`. Sign in as the deployer | Orders, the inventory and the live log. "Live" in the header |
-| 3 | **Reset the demo**, and confirm | Stock as in the data file, no orders, an empty log |
+| 3 | **Reset the demo**, and confirm | Stock as in the data file, no orders, and one line in the log |
 | 4 | In another window, open the website (`just open`). Sign in and write `I want to buy a Fjord` | The log gets "Looked up the terms for Fjord". Runa gives the price, says that the address is saved with the order and asks for it |
 | 5 | Give a made up address | The log gets "Asked for an offer". Runa reads back car, price and address and asks whether to order it. Nothing is ordered yet |
 | 6 | Say `Yes` | The signing plays on the page: the paper, the signature, the stamp with `VO-1001`. Then the order is in the list and the log says "Placed order VO-1001". Runa gives the number |

@@ -189,10 +189,9 @@ def test_all_cases_pass_and_only_the_own_orders_are_deleted(check):
         ("car_offers", "cartools", "the dealer service was called: offer"),
         ("car_orders_log", "resumed", "the dealer service was called: order"),
         ("no_event", "resumed", "no client_not_allowed event"),
-        ("no_terms", "whole", "the log of the dealer service has no terms of ours"),
         ("no_offer", "whole", "the log of the dealer service has no offer of ours"),
         ("no_order", "whole", "the log of the dealer service has no order of ours"),
-        ("no_ids", "whole", "the log of the dealer service has no terms, offer, order of ours"),
+        ("no_ids", "whole", "the log of the dealer service has no offer, order of ours"),
         ("car_reaches", "car", "the dealer service was called: terms"),
         ("car_reaches", "resumed", "the dealer service was called: terms"),
         ("car_orders", "car", "no client_not_allowed event"),
@@ -211,7 +210,7 @@ def test_each_wrong_is_found_and_its_orders_are_deleted(check, wrong, name, prob
         assert world.orders == [OTHER]
 
 
-@pytest.mark.parametrize("wrong", ["no_ids", "no_terms", "no_order"])
+@pytest.mark.parametrize("wrong", ["no_ids", "no_order"])
 def test_the_car_cases_are_not_proven_without_our_ids_in_the_log(check, wrong):
     good, text, _ = check(wrong, ["whole", "car", "cartools", "resumed", "one"])
     assert not good and text.count("not proven") == 3 and "PASS loop   one" in text
@@ -233,7 +232,8 @@ def test_the_proof_of_one_backend_is_not_the_proof_of_another(check, monkeypatch
 
     def whole(case):
         original(case)
-        case.proven = case.backend == "prompt"
+        if case.backend != "prompt":
+            case.proven = frozenset()
 
     monkeypatch.setitem(orders_check.CASES, "whole", (whole, 4))
     _, text, _ = check(names=["whole", "car"], backends=("prompt", "loop"))
@@ -356,3 +356,15 @@ def test_an_unknown_case_is_refused(monkeypatch):
     monkeypatch.setattr(sys, "argv", ["orders_check.py", "--only", "whole,nope", "--dry"])
     with pytest.raises(SystemExit, match="Unknown cases: nope"):
         orders_check.main()
+
+
+def test_a_log_that_was_emptied_proves_nothing(check, monkeypatch):
+    original = orders_check.whole
+
+    def whole(case):
+        original(case)
+        case.proven = frozenset({"orders-of-another-time"})  # what a reset or a restart would leave
+
+    monkeypatch.setitem(orders_check.CASES, "whole", (whole, 4))
+    good, text, _ = check(names=["whole", "car"], backends=("loop",))
+    assert not good and "FAIL loop   car" in text and "emptied" in text

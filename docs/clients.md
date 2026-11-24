@@ -48,7 +48,7 @@ Not verified:
 
 ## What the clients share
 
-- **Sign-in.** Each browser client is a public client with its own app registration (`voltrieve-web`, `voltrieve-car`, `voltrieve-dashboard`, `voltrieve-dealer-site`) and the same delegated scope, `access_as_user`. The CLI has `voltrieve-cli`. Users need the `Chat.User` role. The dashboard needs `Dashboard.View`. See [Deployment](deploy.md).
+- **Sign-in.** Each browser client is a public client with its own app registration (`voltrieve-web`, `voltrieve-car`, `voltrieve-dashboard`) and the same delegated scope, `access_as_user`. The dealer page has `voltrieve-dealer-site`, with the dealer's own scope `manage_as_user` and nothing on the API. The CLI has `voltrieve-cli`. Users need the `Chat.User` role. The dashboard needs `Dashboard.View`. See [Deployment](deploy.md).
 - **One stream.** All chat clients read the same server-sent events and answer the same `client_tool_calls` through `/chat/tool-results`. The car and the website are copies of one another in their sign-in, stream parser, turn state and answer rendering, with a comment in each that says where its twin lives.
 - **Tools run on the client.** A client declares the tools it offers in every request. The API never runs them. What a tool does is decided in the client.
 - **Which backend answers.** The header `X-Agent-Backend` picks one of the three. For the prompt agent, the API picks the agent whose tools include every declared one: web, then CLI, then car. No match gives `unsupported_client_tool`.
@@ -142,7 +142,7 @@ The page of a Voltrieve representative, for users with the `Dealer.Manage` role.
 
 *The dealer page with mock data from a mock server, in a test session. The names, orders and numbers are made up. One address holds markup on purpose, to show that the page prints it as text.*
 
-- **Purchase orders** with number, car, price, the customer's name, the address and the client. **Deliver** lists the cities that have the model, with the count, and starts on the one with the most. With none, it says "None in stock" and comes on by itself when a car is added. A delivery takes one car from the chosen city. **Delete** removes an order and leaves the stock alone. Both ask first.
+- **Purchase orders** with number, car, price, the customer's name, the address and the client. **Deliver** lists the cities that have the model, with the count, and starts on the one with the most. With none, it says "None in stock" and comes on by itself when a car is added. A delivery takes one car from the chosen city. **Delete** removes an order and leaves the stock alone. **Delete** asks first.
 - **Inventory** per model and city. One click on plus or minus changes the number, never below 0, and the number flashes when Runa or a delivery changes it.
 - **The live log** shows every call to the dealer service: stock, parts stock, prices, terms, offers, orders, test drives, refused calls and what staff change. It holds the latest 200 entries, in memory. It names the model, city and order number, and who and from which client. It never holds an address.
 - **The signing.** When an order arrives while the page is open, the page dims and a purchase order slides in with a made up signature, a stamp with the number and the words "Demo order, not a real purchase". Then it flies into the list. A click or Escape skips it, and orders that arrive together queue. It never plays for the orders that were there when the page loaded. It waits while the tab is hidden, so it plays when you look again.
