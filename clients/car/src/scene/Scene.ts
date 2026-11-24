@@ -379,7 +379,7 @@ export class StreetScene {
     this.fog.near = 70 - 60 * wet;
     this.fog.far = 300 - 95 * wet;
     this.sun.intensity = SUN_LIGHT * (1 - 0.86 * wet);
-    this.hemisphere.intensity = SKY_LIGHT * (1 - 0.28 * wet);
+    this.hemisphere.intensity = SKY_LIGHT * (1 - 0.05 * wet);
     this.hemisphere.color.lerpColors(SKY_COLOR.dry, SKY_COLOR.rain, wet);
     this.hemisphere.groundColor.lerpColors(GROUND_COLOR.dry, GROUND_COLOR.rain, wet);
     this.skyline.material.opacity = 1 - 0.75 * wet;
