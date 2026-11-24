@@ -31,7 +31,7 @@ function liveFeed(req, res, prompts) {
     const [backend, prompt, tools, kbs] = SAMPLE[n % SAMPLE.length];
     const turn_id = `mock-${n++}`;
     const at = Date.now() / 1000;
-    send("turn", { turn_id, at, user: randomUUID().slice(0, 12), backend, prompt: prompts ? prompt : null, kind: "message", outcome: "running" });
+    send("turn", { turn_id, at, user: randomUUID().slice(0, 12), backend, client: ["car", "web", "cli"][n % 3], prompt: prompts ? prompt : null, kind: "message", outcome: "running" });
     setTimeout(() => {
       const first = backend === "hosted" ? 7000 + Math.random() * 3000 : 1500 + Math.random() * 2500;
       send("turn", {

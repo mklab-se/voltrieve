@@ -25,6 +25,7 @@ class Claims:
     oid: str
     username: str
     roles: list[str]
+    azp: str = ""  # the app registration the token was issued to
 
 
 class TokenValidator:
@@ -137,4 +138,5 @@ class TokenValidator:
             oid=oid,
             username=str(payload.get("preferred_username") or ""),
             roles=[str(r) for r in roles],
+            azp=str(payload.get("azp") or ""),
         )

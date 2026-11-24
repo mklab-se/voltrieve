@@ -24,6 +24,7 @@ from voltrieve_agent.unstored import head_outputs
 from app.auth import Claims
 from app.backends import BackendRegistry
 from app.backends.base import ABANDONED_OUTPUT, TurnContext
+from app.clients import conversation_metadata
 from app.logging_setup import bind_log_context, correlation_id
 from app.sources import LOOKUP_TIMEOUT_SECONDS, SourceService
 from app.insights import LiveFeed, TurnRecorder, mask_prompt
@@ -176,6 +177,7 @@ class Job:
     context: dict = field(default_factory=dict, repr=False)
     context_line: str = field(default="", repr=False)  # goes before the message, to the backend only
     attachments: list[dict] = field(default_factory=list)  # kind, detail and size of each, for the trace
+    client: str = ""  # car, web, cli, other or test
 
     @property
     def unstored(self) -> bool:
@@ -266,7 +268,8 @@ class TurnService:
         user = pseudonym(job.claims.oid)
         kind = "message" if isinstance(job.input, str) else "tool_results"
         # An expired turn runs nothing, and its turn id is client input: it stays off the feed.
-        recorder = None if job.turn_expired else TurnRecorder(job.backend, self._model, user, cold_start=cold, kind=kind)
+        recorder = None if job.turn_expired else TurnRecorder(
+            job.backend, self._model, user, cold_start=cold, kind=kind, client=job.client)
         run = _Run(recorder, job.private)
         run.text = job.text
         if job.turn_expired:
@@ -277,6 +280,7 @@ class TurnService:
         else:
             self.feed.publish({
                 "turn_id": job.turn_id, "user": user, "backend": job.backend, "kind": kind,
+                "client": job.client,
                 "prompt": mask_prompt(job.input) if kind == "message" else None, "outcome": "running",
             })
         # A turn_expired job runs nothing, and its conversation id is unvalidated client input.
@@ -383,7 +387,9 @@ class TurnService:
                 await run.emit(trace("conversation_repaired", "api", conversation_id))
 
             if conversation_id is None:
-                conversation_id = await backend.create_conversation(oid)
+                conversation_id = await backend.create_conversation(
+                    conversation_metadata(oid, job.client, job.backend, (job.context.get("car") or {}).get("model"))
+                )
                 self.store.register_conversation(conversation_id, oid)
                 self._running[conversation_id] = run
                 bind_log_context(conversation_id=conversation_id)

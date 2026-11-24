@@ -6,6 +6,7 @@ export interface FeedTurn {
   at: number;
   user: string;
   backend: string;
+  client?: string; // car, web, cli, other or test; absent on a turn from an older API
   prompt: string | null;
   kind?: "message" | "tool_results";
   outcome: "running" | "answered" | "curated" | "client_tool" | "error";

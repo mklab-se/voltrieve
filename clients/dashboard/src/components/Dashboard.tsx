@@ -99,6 +99,7 @@ export function Dashboard({ apiUrl, auth, liveMetricsUrl, workbookUrl }: Props) 
               <div className="feed-top">
                 <time>{clock(t.at)}</time>
                 <span className="pill" data-backend={t.backend}>{t.backend}</span>
+                {t.client && <span className="who-id" title="Which app the turn came from">{t.client}</span>}
                 <span className="who-id" title="A pseudonym, not the user's identity">user {t.user.slice(0, 6)}</span>
                 <span className={`state ${t.outcome}`}>{OUTCOME[t.outcome]}{t.error_code ? `: ${t.error_code}` : ""}</span>
                 <span className="timing" title="First text / whole answer">{seconds(t.first_text_ms)} / {seconds(t.duration_ms)}</span>

@@ -138,3 +138,12 @@ def test_mask_prompt_masks_swedish_mobile_numbers_in_common_forms():
 def test_span_attributes_carry_the_kind_of_request():
     rec = TurnRecorder("loop", "gpt-6.1-terra", "u", kind="tool_results")
     assert rec.finish().span_attributes()["voltrieve.kind"] == "tool_results"
+
+
+def test_client_is_on_the_span_and_the_feed_and_the_car_data_is_not():
+    rec = TurnRecorder("loop", "gpt-6.1-terra", "abc", client="car")
+    summary = rec.finish()
+    assert summary.span_attributes()["voltrieve.client"] == "car"
+    assert summary.feed_fields()["client"] == "car"
+    text = str(summary.span_attributes()) + str(summary.feed_fields())
+    assert "registration" not in text and "odometer" not in text

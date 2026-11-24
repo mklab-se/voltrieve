@@ -548,3 +548,92 @@ async def test_turn_expired_job_does_not_touch_running_marker(client, auth, back
     assert r.status_code == 409
     gate.set()
     await running
+
+
+CAR_BODY = {"message": "hi", "context": {"car": {"model": "Voltrieve Spark", "registration": "ABC123", "odometer_km": 4000}}}
+
+
+@pytest.fixture
+def three_backends(validator, backend, clock):
+    from app.attachments.store import AttachmentStore
+    from app.backends import BackendRegistry
+    from app.main import create_app
+    from app.settings import Settings
+    from app.turns import TurnStore
+
+    settings = Settings(cors_origins="http://localhost:5173", cli_client_id="cli", car_client_id="car-app")
+    registry = BackendRegistry(settings, {name: (lambda s: backend) for name in ("loop", "prompt", "hosted")})
+    return create_app(
+        settings, validator, registry, TurnStore(clock=clock), attachments=AttachmentStore(clock=clock)
+    )
+
+
+@pytest.fixture
+async def multi(three_backends):
+    import httpx
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=three_backends), base_url="http://test") as c:
+        yield c
+
+
+@pytest.mark.parametrize("name", ["loop", "prompt", "hosted"])
+async def test_the_test_header_marks_the_conversation_as_test(multi, auth, backend, name):
+    backend.script = [answer()]
+    await chat(multi, auth, CAR_BODY, **{"X-Agent-Backend": name, "X-Voltrieve-Test": "1"})
+    assert backend.metadata == [
+        {"owner_oid": "oid-anna", "client": "test", "backend": name, "car_model": "spark"}
+    ]
+
+
+async def test_without_the_header_the_client_comes_from_azp(multi, auth, backend, make_token):
+    backend.script = [answer(), answer()]
+    await chat(multi, auth)
+    await chat(multi, {"Authorization": f"Bearer {make_token(azp='car-app')}"})
+    assert [m["client"] for m in backend.metadata] == ["cli", "car"]
+    assert "car_model" not in backend.metadata[0]
+
+
+@pytest.mark.parametrize("value", ["0", "true", "yes", "", "11"])
+async def test_any_other_value_of_the_test_header_is_ignored(multi, auth, backend, value):
+    backend.script = [answer()]
+    await chat(multi, auth, **{"X-Voltrieve-Test": value})
+    assert backend.metadata[0]["client"] == "cli"
+
+
+async def test_a_later_message_does_not_create_metadata_again(multi, auth, backend):
+    backend.script = [answer(), answer()]
+    first = parse_sse((await chat(multi, auth)).text)[-1][1]
+    await chat(multi, auth, {"message": "more", "conversation_id": first["conversation_id"]})
+    assert len(backend.metadata) == 1
+
+
+async def test_the_turn_span_and_the_feed_carry_the_client(multi, auth, backend, spans):
+    backend.script = [answer()]
+    await chat(multi, auth, CAR_BODY, **{"X-Voltrieve-Test": "1"})
+    await multi._transport.app.state.turns.drain()
+    attrs = next(s for s in spans.get_finished_spans() if s.name == "chat.turn").attributes
+    assert attrs["voltrieve.client"] == "test"
+    feed = multi._transport.app.state.turns.feed.recent(False)
+    assert [e["client"] for e in feed] == ["test"]
+
+
+async def test_the_test_header_is_not_a_cors_header(multi):
+    r = await multi.options(
+        "/chat",
+        headers={"Origin": "http://localhost:5173", "Access-Control-Request-Method": "POST",
+                 "Access-Control-Request-Headers": "x-voltrieve-test"},
+    )
+    assert r.status_code == 400
+
+
+async def test_the_test_header_also_marks_the_tool_results_round(multi, auth, backend, spans):
+    paused = await paused_turn(multi, auth, backend)
+    backend.script.append(answer())
+    r = await multi.post(
+        "/chat/tool-results", headers={**auth, "X-Voltrieve-Test": "1"}, json=results_body(paused, "call_1")
+    )
+    assert parse_sse(r.text)[-1][0] == "done"
+    await multi._transport.app.state.turns.drain()
+    rounds = [s.attributes for s in spans.get_finished_spans() if s.attributes.get("voltrieve.kind") == "tool_results"]
+    assert [a["voltrieve.client"] for a in rounds] == ["test"]
+    assert len(backend.metadata) == 1  # only the first message created a conversation

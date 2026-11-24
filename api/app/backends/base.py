@@ -47,9 +47,10 @@ class TurnContext:
 
 
 class Backend(Protocol):
-    async def create_conversation(self, owner_oid: str) -> str:
+    async def create_conversation(self, metadata: dict[str, str]) -> str:
         """Create the server-side conversation for a first turn and return its id.
-        The owner is stored with the conversation, so ownership survives restarts."""
+        The metadata holds the owner, so ownership survives restarts, and what the nightly
+        count groups by (app/clients.py)."""
         ...
 
     async def get_conversation_owner(self, conversation_id: str) -> str | None:
@@ -85,8 +86,8 @@ class ConversationBackend:
         self._openai = openai_client  # AsyncOpenAI; only its conversations API is used here
         self._closers = closers
 
-    async def create_conversation(self, owner_oid: str) -> str:
-        conversation = await self._openai.conversations.create(metadata={"owner_oid": owner_oid})
+    async def create_conversation(self, metadata: dict[str, str]) -> str:
+        conversation = await self._openai.conversations.create(metadata=metadata)
         return conversation.id
 
     async def get_conversation_owner(self, conversation_id: str) -> str | None:

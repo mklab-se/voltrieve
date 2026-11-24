@@ -27,6 +27,10 @@ param principalId string
 param tenantId string = ''
 param dealerClientId string = ''
 param apiClientId string = ''
+@description('The app registrations of the car, the website and the command line, to tell their tokens apart in the usage count. Empty counts a client as other.')
+param carClientId string = ''
+param webClientId string = ''
+param cliClientId string = ''
 @description('True when the API Container App already exists (azd sets SERVICE_API_RESOURCE_EXISTS), so provision keeps its deployed image.')
 param apiExists bool = false
 @description('West Europe rejected new Static Web Apps; East US 2 holds only metadata, content is served globally.')
@@ -272,6 +276,9 @@ module apiApp 'modules/api-app.bicep' = {
     pullIdentityId: apiIdentity.outputs.id
     tenantId: tenantId
     apiClientId: apiClientId
+    carClientId: carClientId
+    webClientId: webClientId
+    cliClientId: cliClientId
     dealerUrl: dealerApp.outputs.url
     dealerClientId: dealerClientId
     foundryProjectEndpoint: foundry.outputs.projectEndpoint

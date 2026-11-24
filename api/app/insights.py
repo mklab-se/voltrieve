@@ -83,6 +83,7 @@ class TurnSummary:
     cost_sek: float | None
     cold_start: bool = False
     kind: str = "message"  # message, or tool_results: a client tool round of an earlier message
+    client: str = ""  # car, web, cli, other or test
 
     def span_attributes(self) -> dict:
         """OpenTelemetry GenAI names where one exists, voltrieve.* for the rest. No text."""
@@ -102,6 +103,7 @@ class TurnSummary:
             "voltrieve.search_reasoning_tokens": self.search_reasoning_tokens,
             "voltrieve.cold_start": self.cold_start,
             "voltrieve.kind": self.kind,
+            "voltrieve.client": self.client,
         }
         optional = {
             "voltrieve.error_code": self.error_code,
@@ -118,6 +120,7 @@ class TurnSummary:
             "first_text_ms": self.first_text_ms, "duration_ms": self.duration_ms,
             "tools": self.tools, "knowledge_bases": self.knowledge_bases,
             "cost_sek": self.cost_sek, "model_calls": self.model_calls,
+            "client": self.client,
         }
 
 
@@ -131,6 +134,7 @@ class TurnRecorder:
     clock: Callable[[], float] = time.perf_counter
     cold_start: bool = False
     kind: str = "message"
+    client: str = ""
     _start: float = field(init=False)
     _first_status: float | None = field(default=None, init=False)
     _first_text: float | None = field(default=None, init=False)
@@ -190,7 +194,7 @@ class TurnRecorder:
                 list(self._tools), list(self._kbs), self._usage.get("input_tokens", 0), cached,
                 self._usage.get("output_tokens", 0), self._planning[2],
                 estimate_cost_sek(self.model, self._usage, *self._planning, self._planning_model),
-                self.cold_start, self.kind,
+                self.cold_start, self.kind, self.client,
             )
         return self._summary
 

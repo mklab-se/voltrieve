@@ -101,7 +101,7 @@ async def test_client_tool_round_trip_through_loop(validator, auth):
         events = parse_sse(r.text)
     assert [d["text"] for t, d in events if t == "delta"] == ["It says hi."]
     assert events[-1][1]["usage"] == {"total_tokens": 7}  # the whole turn
-    assert openai.conversations.metadata == {"owner_oid": "oid-anna"}
+    assert openai.conversations.metadata["owner_oid"] == "oid-anna"
     assert model.inputs[1] == [{"type": "function_call_output", "call_id": "call_9", "output": "hi"}]
 
 
@@ -119,7 +119,7 @@ async def test_abandon_adds_items_without_model_call():
 async def test_owner_is_read_from_conversation_metadata():
     openai = FakeOpenAI()
     backend = LoopBackend(ScriptedModel(), openai, [])
-    await backend.create_conversation("oid-anna")
+    await backend.create_conversation({"owner_oid": "oid-anna"})
     assert await backend.get_conversation_owner("conv_real") == "oid-anna"
     assert await backend.get_conversation_owner("conv_missing") is None
 
@@ -218,3 +218,11 @@ async def test_abandoning_with_nothing_to_close_does_not_call_foundry():
     openai = FakeOpenAI()
     await LoopBackend(ScriptedModel(), openai, []).abandon("conv_real", [])
     assert openai.conversations.items.created == []
+
+
+async def test_the_conversation_is_created_with_the_metadata_it_is_given():
+    openai = FakeOpenAI()
+    backend = LoopBackend(ScriptedModel(), openai, [])
+    metadata = {"owner_oid": "oid-anna", "client": "car", "backend": "loop", "car_model": "spark"}
+    await backend.create_conversation(metadata)
+    assert openai.conversations.metadata == metadata

@@ -22,6 +22,11 @@ class Settings(BaseSettings):
     storage_account_name: str = ""
     source_containers: str = ""  # comma separated
 
+    # The app registrations of the three clients, to tell their tokens apart (the azp claim).
+    car_client_id: str = ""
+    web_client_id: str = ""
+    cli_client_id: str = ""
+
     # Backend A: the names of the three prompt agents the API drives.
     prompt_agent_cli: str = "voltrieve-prompt-cli"
     prompt_agent_web: str = "voltrieve-prompt-web"

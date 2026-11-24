@@ -24,6 +24,11 @@ grep -q "stapp-voltrieve-car-" main.bicep && grep -q "stapp-voltrieve-dashboard-
 for out in WEB_URL CAR_URL DASHBOARD_URL; do
   grep -q "^output $out string" main.bicep || { echo "main.bicep lacks output $out"; exit 1; }
 done
+for c in CAR WEB CLI; do
+  grep -q "name: '${c}_CLIENT_ID'" modules/api-app.bicep || { echo "api-app lacks ${c}_CLIENT_ID"; exit 1; }
+  grep -q "\"$(echo $c | tr A-Z a-z)ClientId\": { \"value\": \"\${${c}_CLIENT_ID=}\" }" main.parameters.json || { echo "main.parameters.json lacks ${c}_CLIENT_ID"; exit 1; }
+done
+grep -q "carClientId: carClientId" main.bicep && grep -q "webClientId: webClientId" main.bicep && grep -q "cliClientId: cliClientId" main.bicep || { echo "main.bicep does not pass the client ids on"; exit 1; }
 grep -q "param promptAgentCar string" modules/api-app.bicep || { echo "api-app lacks promptAgentCar"; exit 1; }
 grep -q "PROMPT_AGENT_CAR" modules/api-app.bicep || { echo "api-app lacks PROMPT_AGENT_CAR"; exit 1; }
 grep -q "promptAgentCar: 'voltrieve-prompt-car'" main.bicep || { echo "main.bicep lacks the car prompt agent"; exit 1; }

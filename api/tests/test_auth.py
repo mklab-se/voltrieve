@@ -142,3 +142,13 @@ async def test_hs256_is_401(validator):
     with pytest.raises(AuthError) as e:
         await validator.validate(f"Bearer {token}")
     assert e.value.status_code == 401
+
+
+async def test_azp_is_read_from_the_token(validator, make_token):
+    claims = await validator.validate(f"Bearer {make_token(azp='car-app')}")
+    assert claims.azp == "car-app"
+
+
+async def test_a_token_without_azp_gives_an_empty_one(validator, make_token):
+    claims = await validator.validate(f"Bearer {make_token(azp='')}")
+    assert claims.azp == ""

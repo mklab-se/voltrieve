@@ -177,7 +177,7 @@ async def test_failures_become_a_generic_error_event_and_a_failed_outcome(http, 
 async def test_conversation_methods_use_foundry_conversations(http):
     openai = FakeOpenAI()
     backend = make_backend(http, openai)
-    assert await backend.create_conversation("oid-anna") == "conv_real"
+    assert await backend.create_conversation({"owner_oid": "oid-anna"}) == "conv_real"
     assert await backend.get_conversation_owner("conv_real") == "oid-anna"
     await backend.abandon("conv_real", [{"type": "function_call_output", "call_id": "c", "output": "x"}])
     assert len(openai.conversations.items.created) == 1

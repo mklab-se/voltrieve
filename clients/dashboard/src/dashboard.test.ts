@@ -30,6 +30,13 @@ describe("feedReducer", () => {
     expect(s.turns[1]).toMatchObject({ outcome: "answered", duration_ms: 3000, backend: "loop" });
   });
 
+  it("keeps the client when the end of a turn is merged, and shows none for a turn without one", () => {
+    let s = feedReducer(initialFeed, { event: "turn", data: turn({ turn_id: "a", client: "car" }) });
+    s = feedReducer(s, { event: "turn", data: { turn_id: "a", outcome: "answered" } as FeedTurn });
+    s = feedReducer(s, { event: "turn", data: turn({ turn_id: "b", at: 2 }) });
+    expect(s.turns.map((t) => t.client)).toEqual([undefined, "car"]);
+  });
+
   it("takes the summary and caps the feed", () => {
     let s = feedReducer(initialFeed, { event: "summary", data: { active_users: 3, turns: 9 } });
     for (let n = 0; n < 60; n += 1) s = feedReducer(s, { event: "turn", data: turn({ turn_id: `t${n}`, at: n }) });

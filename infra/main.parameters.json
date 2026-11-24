@@ -13,6 +13,9 @@
     "dealerClientId": { "value": "${DEALER_CLIENT_ID}" },
     "apiExists": { "value": "${SERVICE_API_RESOURCE_EXISTS=false}" },
     "apiClientId": { "value": "${API_CLIENT_ID}" },
+    "carClientId": { "value": "${CAR_CLIENT_ID=}" },
+    "webClientId": { "value": "${WEB_CLIENT_ID=}" },
+    "cliClientId": { "value": "${CLI_CLIENT_ID=}" },
     "hostedAgentPrincipalId": { "value": "${HOSTED_AGENT_PRINCIPAL_ID=}" }
   }
 }

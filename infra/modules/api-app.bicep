@@ -8,6 +8,9 @@ param image string
 param pullIdentityId string
 param tenantId string
 param apiClientId string
+param carClientId string = ''
+param webClientId string = ''
+param cliClientId string = ''
 param dealerUrl string
 param dealerClientId string
 param foundryProjectEndpoint string
@@ -67,6 +70,9 @@ resource api 'Microsoft.App/containerApps@2026-07-01' = {
           env: [
             { name: 'TENANT_ID', value: tenantId }
             { name: 'API_CLIENT_ID', value: apiClientId }
+            { name: 'CAR_CLIENT_ID', value: carClientId }
+            { name: 'WEB_CLIENT_ID', value: webClientId }
+            { name: 'CLI_CLIENT_ID', value: cliClientId }
             { name: 'DEALER_URL', value: dealerUrl }
             { name: 'DEALER_CLIENT_ID', value: dealerClientId }
             { name: 'FOUNDRY_PROJECT_ENDPOINT', value: foundryProjectEndpoint }

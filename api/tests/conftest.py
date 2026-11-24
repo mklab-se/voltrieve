@@ -40,6 +40,7 @@ def jwks(rsa_key):
 def make_token(rsa_key):
     def _make(**overrides) -> str:
         now = int(time.time())
+        overrides = {"azp": "cli", **overrides}
         claims = {
             "iss": f"https://login.microsoftonline.com/{os.environ['TENANT_ID']}/v2.0",
             "aud": overrides.get("aud", os.environ["API_CLIENT_ID"]),
@@ -47,7 +48,7 @@ def make_token(rsa_key):
             "roles": overrides.get("roles", ["Chat.User"]),
             "oid": overrides.get("oid", "oid-anna"),
             "preferred_username": "anna@example.com",
-            "azp": "cli",
+            **({"azp": overrides["azp"]} if overrides.get("azp") != "" else {}),
             "nbf": now - 10,
             "exp": now + overrides.get("exp_delta_seconds", 300),
         }
@@ -78,10 +79,12 @@ class FakeBackend:
         self.abandon_error = None
         self.closed = False
         self.created = 0
+        self.metadata = []  # what each conversation was created with
 
-    async def create_conversation(self, owner_oid: str) -> str:
+    async def create_conversation(self, metadata: dict[str, str]) -> str:
         self.created += 1
-        self.owners[f"conv_{self.created}"] = owner_oid
+        self.owners[f"conv_{self.created}"] = metadata["owner_oid"]
+        self.metadata.append(metadata)
         return f"conv_{self.created}"
 
     async def get_conversation_owner(self, conversation_id):
