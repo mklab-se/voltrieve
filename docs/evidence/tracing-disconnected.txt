@@ -1,0 +1,39 @@
+Foundry's tracing after Application Insights was disconnected from the project, 2026-11-24 (UTC).
+
+scripts/tracing_check.py sends one turn per backend with a random marker in the question and in the line from the
+client, then counts the rows that hold a marker in every table of the workspace (search, as a substring). Only counts
+leave the query. A baseline before the change shows that the check can see the problem.
+
+Baseline, marked 14:03, searched 14:19
+  own loop      no rows
+  prompt agent  AppDependencies 3, AppGenAIContent 3
+  hosted agent  AppDependencies 4, AppGenAIContent 4
+
+Then, in this order: provision, agents (hosted agent version 34), the connection `appinsights` deleted at 14:25 (its
+category was AppInsights, and only that connection was deleted), the API deployed.
+
+Version 34, marked 14:29
+  searched 14:45 (16 minutes)   no rows on any backend
+  searched 15:14 (45 minutes)   no rows on any backend
+  But the hosted agent sent no telemetry at all after the disconnect, so this did not yet prove much for it: the
+  exporter also parses the variable APPLICATIONINSIGHTS_CONNECTION_STRING, in which the platform leaves a value that does
+  not parse. Fixed in main.py (be222eb), version 35 at 14:53.
+
+Version 35, marked 14:56
+  searched 15:12 (16 minutes)   no rows on any backend
+  searched 15:43 (47 minutes)   no rows on any backend
+
+What the hosted agent sends now: its own logs and spans arrive, 31 AppTraces, 2 AppDependencies and 1 AppExceptions from
+version 35. One trace id joins the API and the hosted agent. A trace across the API, the hosted agent and the dealer was
+not looked at.
+
+Conversations: the newest one per backend carries client `test`, its backend, and car_model `spark` where the client
+stated the car. Spans: 137 turns carry voltrieve.client, all `test`, which were our own runs.
+
+Smoke test 10 of 10. Routing suite, one question at a time, once per question on each backend: right as before. prompt
+parts 77 % (88 % before, the same kind of miss, known noise). First text: hosted p95 13.6 s (12.6 s over the days before),
+over the 10 s limit as it was before. Own loop and prompt agent under it.
+
+Not verified: the trace with the dealer, and what Foundry keeps for itself. The hosted agent's platform also turns on an
+Agent 365 exporter, which reported that it had nothing to export. Nobody at Voltrieve asked for it, and it is not ours
+to change here.
