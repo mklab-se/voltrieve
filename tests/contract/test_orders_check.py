@@ -29,6 +29,18 @@ def token(name=NAME) -> str:
     body = base64.urlsafe_b64encode(json.dumps({"name": name, "preferred_username": "zq@example.com"}).encode())
     return f"h.{body.decode().rstrip('=')}.s"
 
+# What the car gets wrong, or only seems to.
+CAR_LOG = {"car_reaches": ["terms"], "car_offers": ["offer"], "car_orders_log": ["order"],
+           "car_prices": ["prices", "stock", "part_stock"]}
+CAR_ANSWERS = {
+    "car_asks": "Not in the car, use the website. Where shall it be delivered?",
+    "car_asks_address": "See the website. What is your address? Thanks.",
+    "car_asks_sv": "Se webbplatsen. Vilken leveransadress vill du ha?",
+    "car_says": "You cannot give an address here. Nothing is delivered from the car. Use our site. Anything else?",
+    "car_sv": "Det g\u00e5r inte i bilen. V\u00e4lkommen till Voltrieves webbplats.",
+    "car_no_site": "Not in the car.",
+}
+
 
 class World:
     """The API, Runa and the dealer service. `wrong` names what Runa or the service gets wrong."""
@@ -44,6 +56,11 @@ class World:
             return self.chat(request)
         assert request.headers["authorization"] == "Bearer staff"
         return self.staff(request.method, request.url.path, request)
+
+    def note(self, kind, cid, number=None):
+        if self.wrong == "no_ids" or self.wrong == f"no_{kind}":
+            cid = None
+        self.log.append({"kind": kind, "correlation_id": cid, "number": number, "result": None})
 
     def place(self, address, client="cli"):
         order = {**OTHER, "number": f"VO-{self.next}", "name": NAME, "address": address, "client": client}
@@ -67,12 +84,16 @@ class World:
         if self.wrong == "error":
             return "", [("error", {"code": "model_error"})]
         if car:
-            events = [] if self.wrong == "no_event" else [("trace", {"step": "client_not_allowed"})]
-            if self.wrong == "car_reaches":
-                self.log.append({"kind": "terms", "correlation_id": cid})
-            asks = " Where shall it be delivered?" if self.wrong == "car_asks" else ""
-            return f"Not in the car. See the Voltrieve website.{asks}", events
-        self.log.append({"kind": "terms", "correlation_id": cid})
+            called = ("trace", {"step": "server_tool_called", "tool": "place_car_order"})
+            events = [called, ("trace", {"step": "client_not_allowed"})]
+            if self.wrong == "no_event":
+                events = [called]
+            if self.wrong == "not_called":
+                events = []
+            for kind in CAR_LOG.get(self.wrong, ()):
+                self.note(kind, cid)
+            return CAR_ANSWERS.get(self.wrong, "Not in the car. See the Voltrieve website."), events
+        self.note("terms", cid)
         found = ADDRESS.search(text)
         events = []
         if found:
@@ -81,12 +102,19 @@ class World:
                 new = state["address"]
             state["address"] = new if self.wrong == "raw" else " ".join(
                 "".join(c if c.isprintable() else " " for c in new).split())[: 10_000 if self.wrong == "raw" else 200]
+            self.note("offer", cid)
             if self.wrong == "leak":
                 events.append(("trace", {"step": "server_tool_called", "arguments": new}))
         eager = self.wrong == "eager" and found
-        yes = text.startswith("Yes, please") or (self.wrong == "ignores_no" and text.startswith("No"))
+        yes = text.startswith("Yes, please") or (self.wrong in ("ignores_no", "mangled_no") and text.startswith("No"))
         if state.get("address") and (yes or eager):
-            number = self.place(state.pop("address"), "web" if self.wrong == "client" else "cli")
+            address = state.pop("address")
+            if self.wrong == "mangled" or self.wrong == "mangled_no" and text.startswith("No"):
+                address = "Another street 5, Teststad"
+            if self.wrong == "spaces":
+                address = address.replace("123 45 ", "12345, ")
+            number = self.place(address, "web" if self.wrong == "client" else "cli")
+            self.note("order", cid, number)
             if self.wrong == "twice":
                 self.place(self.orders[0]["address"])
             return (f"Thank you {NAME}, " + ("it" if self.wrong == "no_number" else number) + " is ordered."), events
@@ -154,7 +182,17 @@ def test_all_cases_pass_and_only_the_own_orders_are_deleted(check):
         ("leak", "whole", "the address is in an event"),
         ("no_event", "car", "no client_not_allowed event"),
         ("no_event", "cartools", "no client_not_allowed event"),
-        ("car_asks", "car", "speaks of an address"),
+        ("car_asks", "car", "asks for an address"),
+        ("car_asks_address", "car", "asks for an address"),
+        ("car_asks_sv", "cartools", "asks for an address"),
+        ("car_no_site", "car", "does not name the website"),
+        ("car_offers", "cartools", "the dealer service was called: offer"),
+        ("car_orders_log", "resumed", "the dealer service was called: order"),
+        ("no_event", "resumed", "no client_not_allowed event"),
+        ("no_terms", "whole", "the log of the dealer service has no terms of ours"),
+        ("no_offer", "whole", "the log of the dealer service has no offer of ours"),
+        ("no_order", "whole", "the log of the dealer service has no order of ours"),
+        ("no_ids", "whole", "the log of the dealer service has no terms, offer, order of ours"),
         ("car_reaches", "car", "the dealer service was called: terms"),
         ("car_reaches", "resumed", "the dealer service was called: terms"),
         ("car_orders", "car", "no client_not_allowed event"),
@@ -171,6 +209,61 @@ def test_each_wrong_is_found_and_its_orders_are_deleted(check, wrong, name, prob
     assert not good and f"FAIL loop   {name}" in text and problem in text
     if wrong != "no_delete":
         assert world.orders == [OTHER]
+
+
+@pytest.mark.parametrize("wrong", ["no_ids", "no_terms", "no_order"])
+def test_the_car_cases_are_not_proven_without_our_ids_in_the_log(check, wrong):
+    good, text, _ = check(wrong, ["whole", "car", "cartools", "resumed", "one"])
+    assert not good and text.count("not proven") == 3 and "PASS loop   one" in text
+
+
+@pytest.mark.parametrize("name", ["car", "cartools", "resumed"])
+def test_a_car_case_alone_is_not_proven(check, name):
+    good, text, _ = check(names=[name])
+    assert not good and f"FAIL loop   {name}" in text and "not proven" in text
+
+
+def test_the_proof_is_per_backend_and_whole_comes_first(check):
+    good, text, _ = check(names=["car", "whole"], backends=("prompt", "loop"))
+    assert good and [line.split()[2] for line in text.splitlines()[1:5]] == ["whole", "car", "whole", "car"]
+
+
+def test_the_proof_of_one_backend_is_not_the_proof_of_another(check, monkeypatch):
+    original = orders_check.whole
+
+    def whole(case):
+        original(case)
+        case.proven = case.backend == "prompt"
+
+    monkeypatch.setitem(orders_check.CASES, "whole", (whole, 4))
+    _, text, _ = check(names=["whole", "car"], backends=("prompt", "loop"))
+    assert "PASS prompt car" in text and "FAIL loop   car" in text
+
+
+@pytest.mark.parametrize("wrong", ["car_prices", "car_says", "car_sv"])
+def test_what_is_allowed_in_the_car_passes(check, wrong):
+    good, text, _ = check(wrong, ["whole", "car", "cartools", "resumed"])
+    assert good, text
+
+
+def test_resumed_says_whether_the_tool_was_called(check):
+    _, text, _ = check(names=["whole", "resumed"])
+    assert "the model called the tool and was refused" in text
+    good, text, _ = check("not_called", ["whole", "resumed"])
+    assert good and "the model did not call the tool" in text
+
+
+def test_a_postal_code_without_its_space_is_the_same_address(check):
+    good, text, world = check("spaces", ["whole", "changed"])
+    assert good, text
+    assert world.orders == [OTHER]
+
+
+@pytest.mark.parametrize(("wrong", "name"), [("mangled", "whole"), ("mangled_no", "no")])
+def test_an_order_of_ours_without_the_mark_fails_and_is_not_deleted(check, wrong, name):
+    good, text, world = check(wrong, [name])
+    assert not good and "ordered without the mark: VO-1002" in text
+    assert world.deleted == [] and len(world.orders) == 2
 
 
 def test_the_lines_never_have_the_name_or_more_than_a_preview(check):
@@ -205,8 +298,8 @@ def test_an_order_that_comes_after_its_case_is_found_and_deleted(check, monkeypa
     first = []
     original = orders_check.run_case
 
-    def run_case(name, case, say):
-        good = original(name, case, say)
+    def run_case(name, case, say, proven):
+        good = original(name, case, say, proven)
         if not first:
             first.append(case)
         else:
