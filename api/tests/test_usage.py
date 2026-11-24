@@ -181,11 +181,22 @@ async def test_the_queries_take_the_latest_run_of_each_window_end_and_are_limite
     queries = [json.loads(c.request.content)["query"] for c in route.calls]
     rows_q = next(q for q in queries if "join" not in q)
     weeks_q = next(q for q in queries if "join" in q)
-    assert "Run == last_run_at" in rows_q
+    assert "WindowEnd == last_end and Run == last_run_at" in rows_q
     assert "summarize Run = max(Run) by WindowEnd" in weeks_q and "top " not in weeks_q
     assert "ago(84d)" in weeks_q and "max(Run))" in rows_q and "arg_max" not in rows_q
     for q in queries:
         assert "take 2001" in q and "ago(400d)" in q and 'Source == "real"' in q
+
+
+def test_the_page_shows_the_newest_window_and_then_its_newest_run():
+    """An older week can be run after a newer one, with --window-end."""
+    from app.usage import _rows_query
+
+    ins, end, run, rows = _rows_query("seeded").split(";\n")
+    assert ins.startswith("let ins = ") and ins.count('Source == "seeded"') == 1
+    assert end == "let last_end = toscalar(ins | summarize max(WindowEnd))"
+    assert run == "let last_run_at = toscalar(ins | where WindowEnd == last_end | summarize max(Run))"
+    assert rows.startswith("ins | where WindowEnd == last_end and Run == last_run_at |")
 
 
 @respx.mock

@@ -11,8 +11,6 @@ if grep -rn -i "listKeys\|apiKey\|accountKey" modules/ main.bicep | grep -v "not
 grep -q "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT', value: 'false'" modules/api-app.bicep || { echo "api-app may record message content"; exit 1; }
 grep -q "AZURE_EXPERIMENTAL_ENABLE_GENAI_TRACING" modules/api-app.bicep || { echo "api-app lacks the GenAI tracing setting"; exit 1; }
 if grep -q "KB_CONNECTION_NAME\|kbConnectionName" modules/api-app.bicep; then echo "api-app still takes the knowledge base connection name"; exit 1; fi
-# Foundry is not connected to Application Insights: that would start its server-side tracing of chat text
-if grep -q "AppInsights" modules/foundry.bicep; then echo "Foundry is connected to Application Insights"; exit 1; fi
 # three browser apps, each a Free Static Web App tagged for azd by a required serviceName
 grep -q "^param serviceName string$" modules/static-web-app.bicep || { echo "static-web-app lacks a required serviceName"; exit 1; }
 grep -q "'azd-service-name': serviceName" modules/static-web-app.bicep || { echo "static-web-app does not tag by serviceName"; exit 1; }
@@ -83,6 +81,7 @@ grep -q '"insightsImage": { "value": "${INSIGHTS_IMAGE=}" }' main.parameters.jso
 grep -q "^param schedule string = 'off'$" modules/insights.bicep && grep -q "^param noticeDate string = ''$" modules/insights.bicep || { echo "insights.bicep has other defaults"; exit 1; }
 grep -q "name: 'LOG_ANALYTICS_WORKSPACE_ID', value: logAnalyticsWorkspaceId" modules/api-app.bicep || { echo "api-app lacks LOG_ANALYTICS_WORKSPACE_ID"; exit 1; }
 grep -q "'__WORKSPACE_ID__', workspaceId" modules/dashboard-workbook.bicep || { echo "the workbook does not get the workspace"; exit 1; }
-# what is compiled: the roles and their condition, the identity, the table and the rule
+# what is compiled: the roles and their condition, the identity, the table and the rule, and that no module
+# connects Foundry to Application Insights: that would start its server-side tracing of chat text
 az bicep build --file main.bicep --stdout 2>/dev/null | python3 tests/check_insights.py || { echo "check_insights.py failed"; exit 1; }
 echo "bicep ok"

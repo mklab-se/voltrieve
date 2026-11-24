@@ -119,7 +119,8 @@ async def test_the_request_stores_nothing_and_names_nobody(mock, model):
     route = mock.post(PATH).mock(return_value=fits())
     await label(model, conversation(), USER, ())
     request = route.calls.last.request
-    assert set(sent(route)) == {"model", "messages", "response_format", "reasoning_effort", "max_completion_tokens"}
+    assert set(sent(route)) == {"model", "messages", "response_format", "reasoning_effort", "max_completion_tokens", "store"}
+    assert sent(route)["store"] is False
     assert sent(route)["model"] == "gpt-6-luna"
     assert request.headers["authorization"] == "Bearer made-up-token"
     assert str(request.url) == ENDPOINT + PATH

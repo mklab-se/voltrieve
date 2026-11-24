@@ -1,4 +1,4 @@
-"""Save the totals of a run, and read back the group names of the run before.
+"""Save the totals of a run, and read back the group names that were saved last.
 
 A run is one upload, so it is saved whole or not at all. Nothing here logs or prints a row, and an
 error holds fixed words and at most a status. The caller's HTTP clients carry the tokens.
@@ -101,13 +101,15 @@ async def save(http: httpx.AsyncClient, endpoint: str, rule: str, rows: list[dic
         raise StoreError(f"saving failed with status {status}")
 
 
-def _names_query(source: str) -> str:
-    """The group names of the latest run that saved any for this source."""
-    rows = f"{TABLE} | where Source == '{source}' and Cut == 'group'"
+def _names_query(source: str, last: date) -> str:
+    """The group names of one run for this source: of the newest window up to `last` that has any, its newest
+    run. Not simply the newest run: an older week can be run after a newer one."""
     return (
-        f"let last_run_at = toscalar({rows} | summarize max(Run));\n"
-        f"{rows} and Run == last_run_at and GroupName !in ('{OTHER}', '{UNNAMED}')\n"
-        "| distinct Topic, GroupName"
+        f"let ins = {TABLE} | where Source == '{source}' and Cut == 'group' "
+        f"and GroupName !in ('{OTHER}', '{UNNAMED}') and WindowEnd <= datetime({last.isoformat()});\n"
+        "let last_end = toscalar(ins | summarize max(WindowEnd));\n"
+        "let last_run_at = toscalar(ins | where WindowEnd == last_end | summarize max(Run));\n"
+        "ins | where WindowEnd == last_end and Run == last_run_at | distinct Topic, GroupName"
     )
 
 
@@ -128,11 +130,12 @@ def _names(body: object) -> list[list[str]] | None:
     return rows
 
 
-async def previous_names(http: httpx.AsyncClient, workspace: str, source: str) -> dict[str, list[str]]:
-    """The group names of each topic in the run before, for one source."""
+async def previous_names(http: httpx.AsyncClient, workspace: str, source: str, last: date) -> dict[str, list[str]]:
+    """The group names of each topic for one source, from before the window that ends at `last`, or from an
+    earlier run of that same window."""
     if source not in SOURCES:
         raise ValueError("unknown source")
-    response = await send(http, f"{QUERY_URL}/{workspace}/query", {"query": _names_query(source)}, {}, TIMEOUT)
+    response = await send(http, f"{QUERY_URL}/{workspace}/query", {"query": _names_query(source, last)}, {}, TIMEOUT)
     if response is None:
         raise StoreError("reading the names failed before an answer")
     if response.status_code != 200:

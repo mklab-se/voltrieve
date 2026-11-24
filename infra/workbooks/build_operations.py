@@ -36,7 +36,7 @@ MESSAGES = TURNS + """| where request_kind == "message"
 
 MONTH = {"durationMs": 2678400000}  # 31 days: the month tile filters to the calendar month itself
 
-BUDGET_SEK = 990
+BUDGET_SEK = 2000
 
 
 def text(markdown: str) -> dict:
@@ -136,7 +136,7 @@ def ask_section() -> list[dict]:
 | order by People desc""", "barchart", "50"),
         ask_query("Groups of the latest window", LATEST + """newest_rows
 | where Cut == "group"
-| project GroupName, Conversations, People
+| project Topic, GroupName, Conversations, People
 | order by People desc""", "table", "50"),
         ask_query("Topics per car model", LATEST + """newest_rows
 | where Cut == "topic_model"
@@ -155,11 +155,12 @@ topics
 | join kind=inner ends on WindowEnd
 | summarize People = max(People) by Week, Topic
 | order by Week asc""", "timechart", "100"),
-        ask_query("Missing nights: days of the last 30 with no run, where a night's window ends the day before yesterday",
+        ask_query("Missing nights: days of the last 30 with no run. A night's window ends the day before yesterday, "
+                  "and is listed from 04:00 UTC",
                   INSIGHTS + """let runs = ins | where Cut == "run";
 let first_end = toscalar(runs | summarize min(WindowEnd));
 let seen = runs | distinct WindowEnd;
-range Day from startofday(now()) - 31d to startofday(now()) - 2d step 1d
+range Day from startofday(now()) - 31d to startofday(now() - 4h) - 2d step 1d
 | where Day >= first_end
 | join kind=leftanti seen on $left.Day == $right.WindowEnd
 | project Date = format_datetime(Day, "yyyy-MM-dd")

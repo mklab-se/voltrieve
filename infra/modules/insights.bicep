@@ -178,7 +178,8 @@ resource job 'Microsoft.App/jobs@2026-07-01' = {
             { name: 'AZURE_CLIENT_ID', value: identityClientId }
             { name: 'INSIGHTS_NOTICE_DATE', value: noticeDate }
             { name: 'INSIGHTS_LIMIT', value: '5' }
-            { name: 'INSIGHTS_CAP', value: '2000' }
+            { name: 'INSIGHTS_CAP', value: '1000' }
+            { name: 'INSIGHTS_SEEDED_CAP', value: '500' }
             { name: 'MODEL_DEPLOYMENT', value: modelDeployment }
           ]
         }

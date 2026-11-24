@@ -22,6 +22,11 @@ def test_month_tile_reads_the_whole_month_not_the_time_range():
     assert "timeContextFromParameter" not in month and month["timeContext"]["durationMs"] >= 31 * 86400000
 
 
+def test_the_budget_is_the_one_of_the_resource_group():
+    assert BUILD["BUDGET_SEK"] == 2000
+    assert '"value", 2000.0' in items()["This month against the budget"]["content"]["query"]
+
+
 def test_speed_and_turn_counts_use_messages_only():
     for title in ("At a glance", "First text per backend, median and p95 (s)", "Speed per backend", "Users and turns per day"):
         assert 'request_kind == "message"' in items()[title]["content"]["query"], title
@@ -132,10 +137,17 @@ def test_missing_nights_rule():
     query = ask_queries()
     title, content = next((t, c) for t, c in query.items() if t.startswith("Missing nights"))
     assert 'Cut == "run"' in content["query"]
-    assert "startofday(now()) - 31d to startofday(now()) - 2d" in content["query"]
+    # before 04:00 UTC the newest night may still run, or its rows may not be in yet
+    assert "startofday(now()) - 31d to startofday(now() - 4h) - 2d" in content["query"]
+    assert "04:00 UTC" in title
     assert "min(WindowEnd)" in content["query"] and "leftanti" in content["query"]
     assert "day before yesterday" in title and "last 30" in title
     assert "| project Date = " in content["query"]
+
+
+def test_a_group_is_shown_with_its_topic():
+    """Two topics can hold a group with the same name."""
+    assert "| project Topic, GroupName, Conversations, People" in ask_queries()["Groups of the latest window"]["query"]
 
 
 def test_the_text_says_real_and_made_up_are_never_added():

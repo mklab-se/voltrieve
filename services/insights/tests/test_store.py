@@ -120,23 +120,32 @@ async def test_the_previous_names_of_one_source_per_topic(mock, http):
     route = mock.post(QUERY_URL).mock(
         return_value=table(["charging", "Home charging"], ["fault", "Red light"], ["charging", "Slow charging"])
     )
-    found = await previous_names(http, "ws-1", "seeded")
+    found = await previous_names(http, "ws-1", "seeded", LAST)
     assert found == {"charging": ["Home charging", "Slow charging"], "fault": ["Red light"]}
     query = json.loads(route.calls.last.request.content)["query"]
-    assert query.count("Source == 'seeded'") == 2 and "'real'" not in query
-    assert "max(Run)" in query and "Run == last_run_at" in query
+    assert query.count("Source == 'seeded'") == 1 and "'real'" not in query
+    assert "WindowEnd <= datetime(2026-11-22)" in query
     assert "'other'" in query and "'unnamed group'" in query
+
+
+def test_the_names_are_of_the_newest_window_and_then_of_its_newest_run():
+    """An older week that was run later is not the run before."""
+    named, end, run, rows = store._names_query("seeded", LAST).split(";\n")
+    assert "GroupName !in ('other', 'unnamed group')" in named  # a run without a named group is passed over
+    assert end == "let last_end = toscalar(ins | summarize max(WindowEnd))"
+    assert run == "let last_run_at = toscalar(ins | where WindowEnd == last_end | summarize max(Run))"
+    assert rows.startswith("ins | where WindowEnd == last_end and Run == last_run_at")
 
 
 async def test_no_names_yet(mock, http):
     mock.post(QUERY_URL).mock(return_value=table())
-    assert await previous_names(http, "ws-1", "real") == {}
+    assert await previous_names(http, "ws-1", "real", LAST) == {}
 
 
 async def test_an_unknown_source_is_not_asked_for(mock, http):
     route = mock.post(QUERY_URL).mock(return_value=table())
     with pytest.raises(ValueError):
-        await previous_names(http, "ws-1", "x' or 1==1")
+        await previous_names(http, "ws-1", "x' or 1==1", LAST)
     assert route.call_count == 0
 
 
@@ -157,14 +166,14 @@ async def test_an_unknown_source_is_not_asked_for(mock, http):
 async def test_an_answer_that_does_not_fit_raises(mock, http, answer):
     mock.post(QUERY_URL).mock(return_value=answer)
     with pytest.raises(StoreError) as caught:
-        await previous_names(http, "ws-1", "real")
+        await previous_names(http, "ws-1", "real", LAST)
     assert SECRET not in "".join(traceback.format_exception(caught.value))
     assert caught.value.__context__ is None
 
 
 async def test_reading_back_is_tried_again(mock, http):
     route = mock.post(QUERY_URL).mock(side_effect=[httpx.Response(503), table(["charging", "Home charging"])])
-    assert await previous_names(http, "ws-1", "real") == {"charging": ["Home charging"]}
+    assert await previous_names(http, "ws-1", "real", LAST) == {"charging": ["Home charging"]}
     assert route.call_count == 2
 
 
@@ -175,6 +184,6 @@ def test_the_stream_is_the_one_of_the_table():
 def test_the_query_names_nothing_the_engine_refuses():
     import re
 
-    query = store._names_query("real")
+    query = store._names_query("real", LAST)
     assert not re.search(r"\blatest\b", query)
     assert not re.search(r"(?:\blet|\bextend|\bsummarize|,)\s*last\b", query)

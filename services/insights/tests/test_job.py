@@ -29,7 +29,8 @@ ENV = {
     "AZURE_CLIENT_ID": "client-1",
     "INSIGHTS_NOTICE_DATE": "2026-11-01",
     "INSIGHTS_LIMIT": "5",
-    "INSIGHTS_CAP": "2000",
+    "INSIGHTS_CAP": "1000",
+    "INSIGHTS_SEEDED_CAP": "500",
     "MODEL_DEPLOYMENT": "gpt-6-luna",
 }
 SECRET = "Plantedsecretword"
@@ -51,6 +52,7 @@ class World:
         self.read = []  # ids whose text was read
         self.names = {"real": [], "seeded": []}
         self.asked_names = []
+        self.names_queries = []
         self.group_data = []
         self.uploads = []
         self.labels = lambda data: GOOD
@@ -126,6 +128,7 @@ class World:
         query = json.loads(request.content)["query"]
         (source,) = [s for s in self.names if f"Source == '{s}'" in query]
         self.asked_names.append(source)
+        self.names_queries.append(query)
         columns = [{"name": "Topic"}, {"name": "GroupName"}]
         return httpx.Response(200, json={"tables": [{"columns": columns, "rows": self.names[source]}]})
 
@@ -211,6 +214,7 @@ BROKEN = [
     ("list", httpx.ConnectError(SECRET), "list", "FetchError"),
     ("read", REFUSED_KEY, "read", "FetchError"),
     ("label", SERVER_DOWN, "label", "ModelError"),
+    ("label", httpx.Response(429, text=SECRET), "label", "ModelError"),
     ("previous names", REFUSED_KEY, "previous names", "StoreError"),
     ("group", SERVER_DOWN, "group", "ModelError"),
     ("detection", SERVER_DOWN, "group", "PersonalDataError"),
@@ -278,6 +282,7 @@ def test_a_window_end_reads_made_up_conversations_only_and_writes_no_real_row(wo
     assert {r["Source"] for r in world.rows} == {"seeded"}
     assert {(r["WindowStart"], r["WindowEnd"]) for r in world.rows} == {("2026-11-02T00:00:00Z", "2026-11-08T00:00:00Z")}
     assert world.asked_names == ["seeded"]
+    assert "WindowEnd <= datetime(2026-11-08)" in world.names_queries[0]
 
 
 @pytest.mark.parametrize("given", ["yesterday", "20261108", "2026-11-31", ""])
@@ -362,6 +367,29 @@ def test_the_sample_is_per_source_and_its_share_is_saved(world, monkeypatch):
     assert len(world.read) == 10
     assert {r["SampleShare"] for r in world.rows if r["Source"] == "real"} == {0.5}
     assert {r["SampleShare"] for r in world.rows if r["Source"] == "seeded"} == {1.0}
+
+
+def test_made_up_conversations_keep_to_their_own_cap_and_take_nothing_from_the_real(world, monkeypatch):
+    monkeypatch.setenv("INSIGHTS_CAP", "10")
+    monkeypatch.setenv("INSIGHTS_SEEDED_CAP", "5")
+    world.add(20, seeded=True, said_by="made-up-")
+    world.add(10)
+    assert job.main([]) == 0
+    read = [int(ident.removeprefix("conv_")) for ident in world.read]
+    assert sum(n < 20 for n in read) == 5 and sum(n >= 20 for n in read) == 10
+    assert {r["SampleShare"] for r in world.rows if r["Source"] == "real"} == {1.0}
+    assert {r["SampleShare"] for r in world.rows if r["Source"] == "seeded"} == {0.25}
+
+
+def test_made_up_conversations_do_not_use_room_that_the_real_leave(world, monkeypatch):
+    monkeypatch.setenv("INSIGHTS_CAP", "30")
+    monkeypatch.setenv("INSIGHTS_SEEDED_CAP", "5")
+    world.add(20, seeded=True, said_by="made-up-")
+    assert job.main([]) == 0
+    assert len(world.read) == 5
+    world.read.clear()
+    assert job.main(["--window-end", "2026-11-22"]) == 0
+    assert len(world.read) == 5
 
 
 def test_a_conversation_with_no_user_text_is_dropped_before_the_model(world):
@@ -585,6 +613,9 @@ def test_the_job_uses_its_own_identity_and_a_developer_their_own(monkeypatch):
         ("INSIGHTS_LIMIT", "five"),
         ("INSIGHTS_CAP", "0"),
         ("INSIGHTS_CAP", "-1"),
+        ("INSIGHTS_SEEDED_CAP", "0"),
+        ("INSIGHTS_SEEDED_CAP", "-1"),
+        ("INSIGHTS_SEEDED_CAP", "many"),
     ],
 )
 def test_settings_that_do_not_fit_stop_the_run(world, monkeypatch, capfd, name, value):
@@ -601,7 +632,9 @@ def test_the_defaults(monkeypatch):
     for name in list(ENV)[:6]:
         monkeypatch.setenv(name, ENV[name])
     got = job.read_settings(os.environ)
-    assert (got.client_id, got.notice, got.limit, got.cap, got.deployment) == ("", None, 5, 2000, "gpt-6-luna")
+    assert (got.client_id, got.notice, got.limit, got.deployment) == ("", None, 5, "gpt-6-luna")
+    assert got.caps == {"real": 1000, "seeded": 500}
+    assert (job.CAP, job.SEEDED_CAP) == (1000, 500)
 
 
 def test_the_settings_are_used(world, monkeypatch):

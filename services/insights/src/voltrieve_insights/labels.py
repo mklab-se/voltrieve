@@ -264,6 +264,7 @@ class Model:
             },
             "reasoning_effort": "low",
             "max_completion_tokens": max_output,
+            "store": False,
         }
         answer = await self._post(body, max(TIMEOUT, max_output / TOKENS_PER_SECOND))
         self._add(answer.get("usage") if isinstance(answer, dict) else None)

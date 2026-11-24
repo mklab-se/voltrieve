@@ -1,5 +1,5 @@
 """Reads the compiled template on stdin (test_bicep.sh): what the insights job may do, when it runs,
-and where its totals go."""
+where its totals go, and that nothing connects Application Insights to Foundry."""
 
 import json
 import sys
@@ -9,6 +9,29 @@ modules = {
     name: r for name, r in template["resources"].items() if r["type"].endswith("/deployments")
 }
 assert "insights" in modules, "no insights module"
+
+
+def connections(node):
+    """The category of every connection resource, however deep its module is."""
+    if isinstance(node, dict):
+        kind = node.get("type")
+        if isinstance(kind, str) and kind.lower().split("/")[-1] == "connections":
+            yield str(node.get("properties", {}).get("category", ""))
+        node = list(node.values())
+    if isinstance(node, list):
+        for value in node:
+            yield from connections(value)
+
+
+# Foundry is not connected to Application Insights: that would start its server-side tracing of chat text.
+# A category that is not plain text, or not there, could be it, so it fails too.
+planted = {"modules": [{"type": "A/b/projects/Connections", "properties": {"category": "appinsights"}}]}
+assert list(connections(planted)) == ["appinsights"]
+found = list(connections(template))
+assert "RemoteTool" in found, "the connection of the knowledge base is not seen, so this check sees nothing"
+for category in found:
+    assert category and not category.startswith("["), f"a connection whose category cannot be read: {category!r}"
+    assert category.lower() != "appinsights", "Foundry is connected to Application Insights"
 
 
 def arguments(module):
@@ -135,8 +158,11 @@ assert [e["name"] for e in container["env"]] == [
     "INSIGHTS_NOTICE_DATE",
     "INSIGHTS_LIMIT",
     "INSIGHTS_CAP",
+    "INSIGHTS_SEEDED_CAP",
     "MODEL_DEPLOYMENT",
 ]
+caps = {e["name"]: e["value"] for e in container["env"] if e["name"].endswith("_CAP")}
+assert caps == {"INSIGHTS_CAP": "1000", "INSIGHTS_SEEDED_CAP": "500"}, caps
 assert "logAnalyticsWorkspaceId" in arguments("apiApp") and "workspaceId" in arguments("dashboardWorkbook")
 for name in ("INSIGHTS_JOB_NAME", "LOG_ANALYTICS_WORKSPACE_ID"):
     assert name in template["outputs"], name

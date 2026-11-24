@@ -33,6 +33,7 @@ from voltrieve_insights.quiet import hush
 from voltrieve_insights.store import (
     INGESTION_SCOPE,
     QUERY_SCOPE,
+    REAL,
     SEEDED,
     SOURCES,
     previous_names,
@@ -44,7 +45,10 @@ from voltrieve_insights.totals import MIN_PEOPLE, totals
 PROJECT_SCOPE = "https://ai.azure.com/.default"
 DEADLINE = 25 * 60  # seconds: the platform stops the job after 30 minutes
 TIMEOUT = 60.0  # seconds, for one try of a request
-CAP = 2_000  # conversations of each source
+# Conversations of each source. Both full take about 12 of the 25 minutes at the measured speed. The quota of the
+# model is shared and nearly used then, so do not raise PARALLEL. A 429 that stays after the retries fails the run.
+CAP = 1_000  # real
+SEEDED_CAP = 500  # made up: a cap of their own, so they never take the room of real ones
 MAX_REFUSED = 10  # percent of the conversations of one source that were sent to be labelled
 _DAY = re.compile(r"\d{4}-\d{2}-\d{2}", re.ASCII)
 
@@ -64,7 +68,7 @@ class Settings:
     client_id: str
     notice: date | None
     limit: int
-    cap: int
+    caps: Mapping[str, int]  # by source
     deployment: str
 
 
@@ -89,8 +93,9 @@ def read_settings(env: Mapping[str, str]) -> Settings:
             raise ValueError("an endpoint is not https")
         return value
 
-    notice, cap = given("INSIGHTS_NOTICE_DATE"), int(given("INSIGHTS_CAP") or CAP)
-    if cap < 1:
+    notice = given("INSIGHTS_NOTICE_DATE")
+    caps = {REAL: int(given("INSIGHTS_CAP") or CAP), SEEDED: int(given("INSIGHTS_SEEDED_CAP") or SEEDED_CAP)}
+    if min(caps.values()) < 1:
         raise ValueError("the cap is too low")
     return Settings(
         project=endpoint("FOUNDRY_PROJECT_ENDPOINT"),
@@ -102,7 +107,7 @@ def read_settings(env: Mapping[str, str]) -> Settings:
         client_id=given("AZURE_CLIENT_ID"),
         notice=_day(notice) if notice else None,
         limit=max(int(given("INSIGHTS_LIMIT") or MIN_PEOPLE), MIN_PEOPLE),
-        cap=cap,
+        caps=caps,
         deployment=given("MODEL_DEPLOYMENT") or DEPLOYMENT,
     )
 
@@ -214,7 +219,7 @@ async def _run(settings: Settings, now: datetime, window_end: date | None, progr
         progress.done(_counts(_lengths(picked)))
 
         progress.start("sample")
-        sampled = {source: sample(found, settings.cap) for source, found in picked.items()}
+        sampled = {source: sample(found, settings.caps[source]) for source, found in picked.items()}
         shares = {source: share for source, (_, share) in sampled.items()}
         picked = {source: found for source, (found, _) in sampled.items()}
         progress.done(_counts(_lengths(picked)))
@@ -242,7 +247,7 @@ async def _run(settings: Settings, now: datetime, window_end: date | None, progr
         progress.done(f"{_shown(len(labelled))} labelled, {_shown(len(with_text) - len(labelled))} refused")
 
         progress.start("previous names")
-        previous = {source: await previous_names(logs, settings.workspace, source) for source in sources}
+        previous = {source: await previous_names(logs, settings.workspace, source, last) for source in sources}
         progress.done(_counts({source: sum(map(len, names.values())) for source, names in previous.items()}))
 
         progress.start("group")

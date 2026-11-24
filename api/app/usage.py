@@ -41,11 +41,12 @@ class UsageNotConfigured(Exception):
 
 
 def _rows_query(source: str) -> str:
+    """The newest window, and its newest run. Not simply the newest run: an older week can be run after a newer one."""
     return (
-        f'let last_run_at = toscalar({TABLE} | where TimeGenerated > ago({MAX_AGE_DAYS}d) '
-        f'| where Source == "{source}" | summarize max(Run));\n'
-        f'{TABLE} | where TimeGenerated > ago({MAX_AGE_DAYS}d) | where Source == "{source}" '
-        f"| where Run == last_run_at | project {_PROJECT} | take {ROW_LIMIT + 1}"
+        f'let ins = {TABLE} | where TimeGenerated > ago({MAX_AGE_DAYS}d) | where Source == "{source}";\n'
+        "let last_end = toscalar(ins | summarize max(WindowEnd));\n"
+        "let last_run_at = toscalar(ins | where WindowEnd == last_end | summarize max(Run));\n"
+        f"ins | where WindowEnd == last_end and Run == last_run_at | project {_PROJECT} | take {ROW_LIMIT + 1}"
     )
 
 

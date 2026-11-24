@@ -267,7 +267,7 @@
    "type": 3,
    "content": {
     "version": "KqlItem/1.0",
-    "query": "dependencies\n| where name == \"chat.turn\"\n| extend backend = tostring(customDimensions[\"voltrieve.backend\"]),\n    user = tostring(customDimensions[\"voltrieve.user\"]),\n    outcome = tostring(customDimensions[\"voltrieve.outcome\"]),\n    error_code = tostring(customDimensions[\"voltrieve.error_code\"]),\n    first_text = todouble(customDimensions[\"voltrieve.first_text_ms\"]) / 1000.0,\n    total = todouble(customDimensions[\"voltrieve.duration_ms\"]) / 1000.0,\n    cost = todouble(customDimensions[\"voltrieve.cost_sek\"]),\n    tools = tostring(customDimensions[\"voltrieve.tools\"]),\n    kbs = tostring(customDimensions[\"voltrieve.knowledge_bases\"]),\n    model_calls = toint(customDimensions[\"voltrieve.model_calls\"]),\n    input_tokens = toint(customDimensions[\"gen_ai.usage.input_tokens\"]),\n    output_tokens = toint(customDimensions[\"gen_ai.usage.output_tokens\"]),\n    cold_start = tostring(customDimensions[\"voltrieve.cold_start\"]) == \"True\",\n    request_kind = tostring(customDimensions[\"voltrieve.kind\"])\n| where \"{Backend}\" == \"all\" or backend == \"{Backend}\"\n| where timestamp >= startofmonth(now())\n| summarize cost = sum(cost), turns = countif(request_kind == \"message\")\n| project pack = pack_array(\n    pack(\"metric\", \"Estimated token cost this month (SEK)\", \"value\", round(cost, 2), \"note\", \"estimate\"),\n    pack(\"metric\", \"Monthly budget (SEK)\", \"value\", 990.0, \"note\", \"all Azure costs, see Cost Management\"),\n    pack(\"metric\", \"Cost per message (öre)\", \"value\", round(100.0 * cost / max_of(turns, 1), 2), \"note\", \"estimate\"))\n| mv-expand pack\n| project metric = tostring(pack.metric), value = todouble(pack.value), note = tostring(pack.note)",
+    "query": "dependencies\n| where name == \"chat.turn\"\n| extend backend = tostring(customDimensions[\"voltrieve.backend\"]),\n    user = tostring(customDimensions[\"voltrieve.user\"]),\n    outcome = tostring(customDimensions[\"voltrieve.outcome\"]),\n    error_code = tostring(customDimensions[\"voltrieve.error_code\"]),\n    first_text = todouble(customDimensions[\"voltrieve.first_text_ms\"]) / 1000.0,\n    total = todouble(customDimensions[\"voltrieve.duration_ms\"]) / 1000.0,\n    cost = todouble(customDimensions[\"voltrieve.cost_sek\"]),\n    tools = tostring(customDimensions[\"voltrieve.tools\"]),\n    kbs = tostring(customDimensions[\"voltrieve.knowledge_bases\"]),\n    model_calls = toint(customDimensions[\"voltrieve.model_calls\"]),\n    input_tokens = toint(customDimensions[\"gen_ai.usage.input_tokens\"]),\n    output_tokens = toint(customDimensions[\"gen_ai.usage.output_tokens\"]),\n    cold_start = tostring(customDimensions[\"voltrieve.cold_start\"]) == \"True\",\n    request_kind = tostring(customDimensions[\"voltrieve.kind\"])\n| where \"{Backend}\" == \"all\" or backend == \"{Backend}\"\n| where timestamp >= startofmonth(now())\n| summarize cost = sum(cost), turns = countif(request_kind == \"message\")\n| project pack = pack_array(\n    pack(\"metric\", \"Estimated token cost this month (SEK)\", \"value\", round(cost, 2), \"note\", \"estimate\"),\n    pack(\"metric\", \"Monthly budget (SEK)\", \"value\", 2000.0, \"note\", \"all Azure costs, see Cost Management\"),\n    pack(\"metric\", \"Cost per message (öre)\", \"value\", round(100.0 * cost / max_of(turns, 1), 2), \"note\", \"estimate\"))\n| mv-expand pack\n| project metric = tostring(pack.metric), value = todouble(pack.value), note = tostring(pack.note)",
     "size": 0,
     "title": "This month against the budget",
     "timeContext": {
@@ -469,7 +469,7 @@
    "type": 3,
    "content": {
     "version": "KqlItem/1.0",
-    "query": "let ins = VoltrieveInsights_CL | where Source == \"{Source}\";\nlet last_end = toscalar(ins | summarize max(WindowEnd));\nlet last_run = toscalar(ins | where WindowEnd == last_end | summarize max(Run));\nlet newest_rows = ins | where WindowEnd == last_end and Run == last_run;\nnewest_rows\n| where Cut == \"group\"\n| project GroupName, Conversations, People\n| order by People desc",
+    "query": "let ins = VoltrieveInsights_CL | where Source == \"{Source}\";\nlet last_end = toscalar(ins | summarize max(WindowEnd));\nlet last_run = toscalar(ins | where WindowEnd == last_end | summarize max(Run));\nlet newest_rows = ins | where WindowEnd == last_end and Run == last_run;\nnewest_rows\n| where Cut == \"group\"\n| project Topic, GroupName, Conversations, People\n| order by People desc",
     "size": 0,
     "title": "Groups of the latest window",
     "timeContext": {
@@ -549,9 +549,9 @@
    "type": 3,
    "content": {
     "version": "KqlItem/1.0",
-    "query": "let ins = VoltrieveInsights_CL | where Source == \"{Source}\";\nlet runs = ins | where Cut == \"run\";\nlet first_end = toscalar(runs | summarize min(WindowEnd));\nlet seen = runs | distinct WindowEnd;\nrange Day from startofday(now()) - 31d to startofday(now()) - 2d step 1d\n| where Day >= first_end\n| join kind=leftanti seen on $left.Day == $right.WindowEnd\n| project Date = format_datetime(Day, \"yyyy-MM-dd\")\n| order by Date desc",
+    "query": "let ins = VoltrieveInsights_CL | where Source == \"{Source}\";\nlet runs = ins | where Cut == \"run\";\nlet first_end = toscalar(runs | summarize min(WindowEnd));\nlet seen = runs | distinct WindowEnd;\nrange Day from startofday(now()) - 31d to startofday(now() - 4h) - 2d step 1d\n| where Day >= first_end\n| join kind=leftanti seen on $left.Day == $right.WindowEnd\n| project Date = format_datetime(Day, \"yyyy-MM-dd\")\n| order by Date desc",
     "size": 0,
-    "title": "Missing nights: days of the last 30 with no run, where a night's window ends the day before yesterday",
+    "title": "Missing nights: days of the last 30 with no run. A night's window ends the day before yesterday, and is listed from 04:00 UTC",
     "timeContext": {
      "durationMs": 31622400000
     },
