@@ -250,7 +250,7 @@ This was open as *The product owner decides what Foundry's tracing may record*. 
 | **Protect the table** | Only those with the role Privileged Monitoring Data Reader can read [`AppGenAIContent`](https://learn.microsoft.com/azure/foundry/observability/how-to/traces-sensitive-content). The traces stay | The text is still recorded, so rule 4 must be overruled on purpose. It is a preview. Our rows were in `dependencies` too |
 | **Accept it** | Nothing to build, and full traces | Anyone who can read the Application Insights resource can read the chats. Rule 4 must be overruled on purpose, and people who chat must be told |
 
-**What was done.** The connection is gone from Bicep, and a check in `infra/tests/test_bicep.sh` keeps it out. Bicep is incremental and does not delete, so the deployed connection `appinsights` was deleted by hand at 14:25 UTC, and nothing else was. An older deployment of your own needs the same step.
+**What was done.** The connection is gone from Bicep, and a check of the compiled template (`infra/tests/check_insights.py`, run by `test_bicep.sh`) keeps it out of every module. Bicep is incremental and does not delete, so the deployed connection `appinsights` was deleted by hand at 14:25 UTC, and nothing else was. An older deployment of your own needs the same step, and so does any deployment after a provision from before 2026-11-24, which [recreates it](deploy.md#order-for-an-update-with-the-usage-insights).
 
 **What was found.** The hosted agent went silent after the disconnect. The platform leaves a value that does not parse in `APPLICATIONINSIGHTS_CONNECTION_STRING`, and the exporter also parses that variable. So the first searches proved little for the hosted agent. It is fixed in `agents/hosted/main.py`, in version 35 of the agent.
 
@@ -289,7 +289,7 @@ The product owner chose labels and a short intent sentence, not labels only. The
 
 ### Log Analytics instead of a database
 
-The totals are a custom table, `VoltrieveInsights_CL`, kept for 12 months while the workspace stays at 30 days. It adds no service to run and close to no cost (a few MB a year), and the workbook reads it directly. A run is one upload, so it is saved whole or not at all. The price: rows cannot be changed, so a new run for a week adds rows and each reader takes the latest, and a query waits a few minutes after ingestion.
+The totals are a custom table, `VoltrieveInsights_CL`, kept for 12 months while the workspace stays at 30 days. It adds no service to run and close to no cost (a few MB a year), and the workbook reads it directly. A run is one upload, so it is saved whole or not at all. The price: rows cannot be changed, so a new run for a week adds rows, and each reader takes the newest week and then the newest run of it (an older week can be run later, for a demo). And a query waits a few minutes after ingestion.
 
 ### The rule of five, and what it still leaves readable
 
@@ -314,7 +314,9 @@ Patterns do not catch names of people or streets, so a group name passes Azure A
 
 ### A cap and a random sample
 
-Above 2,000 conversations of one source, a week is a random sample and the page shows the share, so a busy week cannot become a large bill or an empty page. The sample is of conversations, not of people. The cap does not fit the deadline when both sources are full: see [the runbook](runbook.md#usage-insights).
+Above 1,000 real or 500 made up conversations, a week is a random sample and the page shows the share, so a busy week cannot become a large bill or an empty page. The sample is of conversations, not of people. Each source has its own cap (`INSIGHTS_CAP` and `INSIGHTS_SEEDED_CAP`), so made up conversations never take the room of real ones.
+
+The approved design said 2,000 for each. Both full would take about 31 minutes at the measured speed, over the deadline of 25, and the run would fail. 1,500 in all take about 12. Labeling faster is not the way out: `gpt-6-luna` has a capacity of 150 thousand tokens a minute, shared with Search query planning when `PLANNING_MODEL_NAME=gpt-6-luna`, and the measured run used about 130 thousand. So the number of labels at once stays at eight. If a 429 remains after the retries, the run fails closed. The price is a sampled share sooner than planned.
 
 ### The job and the API may read one table
 
@@ -418,7 +420,7 @@ up in the indexes, so an invented title gets no link. Other choices:
 - Cold-start figures. Whole turn times are in `docs/why-foundry.md` section 6, measured from one laptop.
 - Whether `alwaysQuerySource` would make one knowledge base cover both sources.
 - A trace with the dealer since Foundry's tracing was disconnected, and the Agent 365 exporter of the hosted agent's platform.
-- The usage insights on real conversations and on a schedule, the job at its cap, group names over several nights of real use, the price of the detection, and the job's own model calls leaving no text in telemetry.
+- The usage insights on real conversations and on a schedule, the job at its cap, group names over several nights of real use, the price of the detection, and the queries that take the newest week first, for the page and for the group names (tested, not run live).
 - A 403 from `GET /admin/insights` for a user without `Dashboard.View`, live.
 - The 10 minute run expiry from older documentation.
 - Whether an MCP tool with a project connection works outside an agent definition.

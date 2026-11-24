@@ -154,7 +154,7 @@ The connection between Application Insights and the Foundry project is removed f
 | The same conversation read on seven nights | 0.0014 USD, so about 1.40 USD per 1,000 conversations |
 | Grouping | Not measured, expected to be smaller than labeling |
 | Detecting personal data in group names | Group names only, so a few hundred short texts a night. The price is checked in step 2. |
-| The most labeling can cost: 2,000 conversations every night | About 0.40 USD a night, 12 USD a month |
+| The most labeling can cost: 1,000 real and 500 seeded conversations every night ([changed](#14-changes-while-building), was 2,000) | About 0.30 USD a night, 9 USD a month |
 | A Container Apps job, one run a night | Idle: 0. Runs are expected to fit in the free grant. |
 | Log Analytics, a few MB a year | Close to 0 |
 | Measuring steps 1 to 3 | At most 5 USD |
@@ -181,7 +181,7 @@ Left to the builder: module layout, prompts, the topic list, table columns, char
 
 ## 14. Changes while building
 
-The approved text above is not rewritten. This is what was built differently, or was not in it.
+The approved text above is not rewritten, apart from one row of section 10 that follows the cap. This is what was built differently, or was not in it.
 
 - **Suppression (section 6, step 8).** Where the missing labels are few and known, the saved parts of a row never leave a rest of one to four people: the smallest part is held back too. Client, car model, result and kind follow it, and the results of a group follow it towards both the group and the topic. Topics and groups hold nothing back.
 - **At most three conversations per person per row.** A person counts as at most three in each number, so the parts can add up to more than the whole.
@@ -191,7 +191,9 @@ The approved text above is not rewritten. This is what was built differently, or
 - **The `run` row.** Every run saves one row without counts for each source, so a night with nobody to show is not missing.
 - **A refused conversation is skipped (section 6, "The job fails closed").** The model's service refuses some, and 1 of 100 made up ones was. More than 10 % refused in one source fails the run. A refused grouping call leaves its conversations without a group.
 - **A lost answer at the upload.** The run is one upload with one try. If only its answer is lost, the run reads as failed but may have been saved, whole.
-- **The sample** is per source, so made up conversations do not crowd out real ones. The price is that both at 2,000 take longer than the deadline of 25 minutes.
+- **The cap is 1,000 real and 500 seeded conversations (section 6).** The text says 2,000 counted conversations. The sample is per source, so made up conversations never take the room of real ones, and both at 2,000 would take about 31 minutes, over the deadline of 25. 1,500 in all take about 12 at the measured speed, and cost at most about 9 USD a month at the estimate of section 10. Faster labeling is not the way: `gpt-6-luna` has a capacity of 150 thousand tokens a minute, shared with Search query planning when `PLANNING_MODEL_NAME=gpt-6-luna`, and the measured run used about 130 thousand. If a 429 remains after the retries, the run fails closed. The settings are `INSIGHTS_CAP` and `INSIGHTS_SEEDED_CAP`.
+- **The newest window comes first.** The page and the workbook show the newest window, and the newest run of it. The names a run is given are from the newest window up to its own that has named groups, and its newest run. An older week that is run later changes neither.
+- **The newest night counts as missing from 04:00 UTC**, since the run starts at 02:30 and its rows take a few minutes. The dashboard says when the last run of real use is more than two days old.
 - **`--window-end`** runs an older week of made up conversations, for demos. It reads no real chat and writes no real row.
 
-Not met or not verified of section 9: the notice being live, the job's own calls leaving no text (the search ran on a call from the deployer), 403 live for a user without the role, four made up people plus one real (a test only), a failed run showing as missing in the workbook, and the 10 s limit on the hosted agent, which was over it before and after.
+Met since then, in `docs/evidence/insights-acceptance.txt`: the job's own calls leave no text, the notice is in the deployed files, and the query for missing nights runs live. Not met or not verified of section 9: the notice seen in a signed in session, 403 live for a user without the role, four made up people plus one real (a test only), a failed night of the schedule showing as missing in the workbook, and the 10 s limit on the hosted agent, which was over it before and after.

@@ -168,9 +168,19 @@ az containerapp job start -n "$(azd env get-value INSIGHTS_JOB_NAME)" -g "$(azd 
   --yaml "$week"
 ```
 
-Run older weeks before newer ones: the page shows the latest run. The workbook takes the latest window, whichever run was last.
+The page and the workbook show the newest week, whichever week was run last. Still run older weeks first: a week takes over group names from the weeks before it.
 
-**Off until it is approved.** `INSIGHTS_SCHEDULE` stays `off` and `INSIGHTS_NOTICE_DATE` stays empty until the product owner says yes to both. To read real chats, the notice has to be live first. After the yes, set both values (the date is the first full UTC day after the notice went live) and provision:
+**Off until it is approved.** `INSIGHTS_SCHEDULE` stays `off` and `INSIGHTS_NOTICE_DATE` stays empty until the product owner says yes to both. To read real chats, the notice has to be live first. With the notice date set and the schedule off, starting the job by hand reads real chats and saves totals.
+
+**First check the marks.** Make one signed in turn in the car and one on the website, and look at the metadata of the newest conversation after each: the client has to be `car` and then `web`. Otherwise every conversation is `other`, none is counted, and the page is empty in the same way as after a quiet week. This prints the newest one's client and backend, and no text (the command was not run when it was written):
+
+```sh
+TOKEN="$(az account get-access-token --resource https://ai.azure.com --query accessToken -o tsv)"
+curl -s "$(azd env get-value FOUNDRY_PROJECT_ENDPOINT)/openai/v1/conversations?limit=1&order=desc" -H "Authorization: Bearer $TOKEN" \
+  | python3 -c 'import json, sys; m = json.load(sys.stdin)["data"][0]["metadata"]; print(m.get("client"), m.get("backend"))'
+```
+
+After the yes and the check, set both values (the date is the first full UTC day after the notice went live) and provision:
 
 ```sh
 azd env set INSIGHTS_NOTICE_DATE 2026-12-01
@@ -205,11 +215,13 @@ When an environment already runs an older version, deploy the hosted agent befor
 
 **Rollback** goes in reverse, the API first, then the agents, so a new API never meets an older agent.
 
+**A rollback of the infrastructure starts Foundry's tracing again.** A provision from a version of this repository from before 2026-11-24 recreates the connection `appinsights` in the Foundry project, and chat text reaches telemetry again. A later provision does not remove it, so [delete it by hand](decisions.md#closed-foundrys-tracing-is-disconnected) again and run `scripts/tracing_check.py` ([how](runbook.md#the-operations-dashboard)).
+
 **An empty environment** starts with `azd up`, then `scripts/deploy-agents.sh`, then an API restart. Photos count as unavailable until then.
 
 ## Order for an update with the usage insights
 
-1. `azd provision`: the table, the data collection rule, the job with its identity and roles, and the API's access to the table. Then `scripts/deploy-agents.sh` at once, as after every provision. An older deployment still has the connection `appinsights` in the Foundry project. Bicep does not delete it, so [delete it by hand](decisions.md#closed-foundrys-tracing-is-disconnected) after the agents.
+1. `azd provision`: the table, the data collection rule, the job with its identity and roles, and the API's access to the table. Then `scripts/deploy-agents.sh` at once, as after every provision. An older deployment still has the connection `appinsights` in the Foundry project. Bicep does not delete it, so [delete it by hand](decisions.md#closed-foundrys-tracing-is-disconnected) after the agents. Do the same after any provision from before 2026-11-24, which recreates it and starts the tracing again, and run `scripts/tracing_check.py` ([how](runbook.md#the-operations-dashboard)).
 2. `scripts/deploy-insights.sh`: the job's image. It starts no run.
 3. `azd deploy api`: conversations are marked with the client, and `GET /admin/insights` answers.
 4. The dashboard, [with the container](#2-apple-silicon-without-rosetta-scriptsdeploy-websh) where the SWA CLI cannot run.
@@ -259,7 +271,7 @@ The API and the dealer scale to zero after 5 idle minutes. A cold start took 34 
 
 ## Budget alert
 
-The resource group has a budget named `voltrieve-monthly` of 990 SEK a month, which is about USD 100, because the subscription bills in SEK. It sends an email when actual cost goes over the budget. It was created by hand, so it is not part of `azd up`. An alert does not stop any spending, and cost data can lag by up to a day.
+The resource group has a budget named `voltrieve-monthly` of 2000 SEK a month, which is about USD 200, because the subscription bills in SEK. It sends an email when actual cost goes over the budget. It was created by hand, so it is not part of `azd up`. An alert does not stop any spending, and cost data can lag by up to a day.
 
 ## Teardown
 
