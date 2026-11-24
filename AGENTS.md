@@ -30,7 +30,7 @@ Small fixes and changes to something that already exists do not need a written f
 - **Measure it.** Run the routing suite against the 10 s time-to-first-token limit, and keep live results in `docs/evidence/`. List what you could not verify as not verified.
 - **Document it.** Update the docs, add a decision for each real choice, add at least one diagram, screenshot or interactive view, and update the status in the README.
 - **Keyless and least privilege.** No secrets in source, roles in Bicep, checks that fail closed.
-- **Private by default.** No prompts, answers, photos or signed links in telemetry or logs. Not met yet for prompt and hosted turns: [the decision is open](docs/decisions.md#open-the-product-owner-decides-what-foundrys-tracing-may-record).
+- **Private by default.** No prompts, answers, photos or signed links in telemetry or logs. Not met yet for prompt and hosted turns: [the decision is open](docs/decisions.md#open-the-product-owner-decides-what-foundrys-tracing-may-record). One job may read stored chats. Only groups shared by at least five people may leave it.
 - **Made up data only.** Never name a real client or put a real client situation in the repository. Use a neutral stand-in.
 - **Cost first.** State any new idle cost, and get bulk generation approved before it runs.
 

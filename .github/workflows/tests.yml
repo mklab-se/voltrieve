@@ -30,6 +30,7 @@ jobs:
           - infra/scripts/entra
           - search
           - services/dealer
+          - services/insights
           - tests/contract
           - tests/photos
     defaults:
