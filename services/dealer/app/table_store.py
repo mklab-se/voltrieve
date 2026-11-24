@@ -1,16 +1,19 @@
 """The store in Table Storage. All rows are in one partition, so a transaction can hold any of them.
 
-A row or a message from the SDK never leaves this module: an error holds fixed words, the log has its type
-and status, and the calls make no spans, because a span of a failed call would hold the message.
+A row, a key or a message from the SDK never leaves this module. An error holds fixed words, the log has its
+type and status, and the calls make no spans: a span has the key in its URL, and the message of a failed call.
 """
 
+import asyncio
 import logging
+import random
 import re
 from collections.abc import Awaitable, Callable
 from dataclasses import fields
 from datetime import datetime
 
 from azure.core import MatchConditions
+from azure.core.pipeline.policies import DistributedTracingPolicy, SansIOHTTPPolicy
 from azure.data.tables import TableEntity, TableErrorCode, UpdateMode
 from azure.data.tables.aio import TableClient
 from azure.identity.aio import DefaultAzureCredential
@@ -34,28 +37,55 @@ logger = logging.getLogger(__name__)
 
 PARTITION = "voltrieve"
 COUNTER = "counter"
-KEY = re.compile(r"[\w|. -]{1,200}")  # a key this service can have made
+# The keys this service can have made. Nothing else is sent.
+KEY = re.compile(
+    r"counter|offer\|[A-Za-z0-9_-]{12}|order\|VO-[0-9]{1,9}|stock\|[\w. -]{1,50}\|[\w. -]{1,50}"
+)
 RETRIES = 5  # after a conflict
 TRANSACTION = 100  # operations, the limit of Table Storage
-QUIET = {"tracing_options": {"enabled": False}}
+# The SDK never sends a call again: we do, so that each is sent with these options.
+CALL = {"retry_total": 0, "tracing_options": {"enabled": False}}
 
 
 def open_table_store(endpoint: str, table: str) -> "TableStore":
     credential = DefaultAzureCredential(managed_identity_client_id=None)  # the system-assigned identity
-    client = TableClient(
-        endpoint, table, credential=credential, retry_total=1, connection_timeout=5, read_timeout=10
-    )
+    client = QuietTableClient(endpoint, table, credential=credential, connection_timeout=5, read_timeout=10)
     return TableStore(client, credential)
 
 
+class _NoSpans(SansIOHTTPPolicy):
+    def on_request(self, request) -> None:
+        request.context.options.pop("tracing_options", None)
+
+
+class QuietTableClient(TableClient):
+    """The policy of the SDK forgets `tracing_options` after the first send, and a call can be sent again after
+    a redirect or a 401 for an old token. So the policy is not in the pipeline at all."""
+
+    def _configure_policies(self, **kwargs) -> list:
+        policies = super()._configure_policies(**kwargs)
+        return [_NoSpans() if isinstance(policy, DistributedTracingPolicy) else policy for policy in policies]
+
+
+async def _short_wait() -> None:
+    await asyncio.sleep(random.uniform(0.02, 0.2))
+
+
 class TableStore:
-    def __init__(self, client: TableClient, credential: DefaultAzureCredential | None = None):
+    def __init__(
+        self,
+        client: TableClient,
+        credential: DefaultAzureCredential | None = None,
+        wait: Callable[[], Awaitable[None]] = _short_wait,
+    ):
         self._client = client
         self._credential = credential
+        self._wait = wait  # after a conflict
 
     async def seed(self, stock: dict[str, dict[str, int]]) -> None:
         async def attempt():
-            return await self._rows("stock") or await self._commit([("create", row) for row in _stock_rows(stock)])
+            if not await self._rows("stock"):
+                await self._commit([("create", row) for row in _stock_rows(stock)])
 
         await self._until_done(attempt)
 
@@ -71,15 +101,14 @@ class TableStore:
             if row is None:
                 raise NotFound
             left = stock_after(row["in_stock"], change)
-            return [left] if await self._commit([_update(row, in_stock=left)]) else None
+            await self._commit([_update(row, in_stock=left)])
+            return left
 
-        (left,) = await self._until_done(attempt)
-        return left
+        return await self._until_done(attempt)
 
     async def save_offer(self, offer: Offer) -> None:
         await self.purge(offer.created)
-        if not await self._commit([("create", _row(offer, "offer", offer.id))]):
-            raise StoreUnavailable("the offer was not saved")
+        await self._until_done(lambda: self._commit([("create", _row(offer, "offer", offer.id))]))
 
     async def place(self, offer_id: str, customer: str, turn: str, now: datetime) -> tuple[Order, bool]:
         async def attempt():
@@ -95,8 +124,8 @@ class TableStore:
             counting = _update(counter, next=number + 1) if counter else ("create", _new(COUNTER, next=number + 1))
             order_row = {**_row(order, "order", order.number), "offer": offer.id}
             offer_update = _update(offer_row, **_row(placed(offer, order.number)))
-            saved = await self._commit([counting, ("create", order_row), offer_update])
-            return (order, True) if saved else None
+            await self._commit([counting, ("create", order_row), offer_update])
+            return order, True
 
         return await self._until_done(attempt)
 
@@ -109,8 +138,8 @@ class TableStore:
             stock = await self._get("stock", row["model"], city)
             in_stock = stock["in_stock"] if stock else 0
             order = delivered(_read(Order, row), in_stock, city, by, now)
-            changes = [_update(row, **_row(order)), _update(stock, in_stock=in_stock - 1)]
-            return order if await self._commit(changes) else None
+            await self._commit([_update(row, **_row(order)), _update(stock, in_stock=in_stock - 1)])
+            return order
 
         return await self._until_done(attempt)
 
@@ -118,8 +147,8 @@ class TableStore:
         async def attempt():
             row = await self._order(number)
             offer = await self._get("offer", row["offer"])
-            gone = await self._commit([_delete(found) for found in (row, offer) if found])
-            return _read(Order, row) if gone else None
+            await self._commit([_delete(found) for found in (row, offer) if found])
+            return _read(Order, row)
 
         return await self._until_done(attempt)
 
@@ -127,12 +156,11 @@ class TableStore:
         """Safe to repeat. The stock is last, so a delivery in between does not change it."""
 
         async def attempt():
-            if not await self._commit([_delete(row) for row in await self._rows("offer", "order")]):
-                return None
+            await self._commit([_delete(row) for row in await self._rows("offer", "order")])
             wanted = {row["RowKey"]: row for row in _stock_rows(stock)}
             other = [row for row in await self._rows("stock") if row["RowKey"] not in wanted]
             put = [("upsert", row, {"mode": UpdateMode.REPLACE}) for row in wanted.values()]
-            return await self._commit([*map(_delete, other), *put])
+            await self._commit([*map(_delete, other), *put])
 
         await self._until_done(attempt)
 
@@ -144,7 +172,7 @@ class TableStore:
             old = [row for row in orders if order_expired(_read(Order, row), now)]
             kept = {row["number"] for row in orders} - {row["number"] for row in old}
             stale = [row for row in offers if offer_is_stale(_read(Offer, row), kept, now)]
-            return await self._commit([_delete(row) for row in old + stale])
+            await self._commit([_delete(row) for row in old + stale])
 
         await self._until_done(attempt)
 
@@ -163,7 +191,7 @@ class TableStore:
         key = "|".join(parts)
         if not KEY.fullmatch(key):
             return None
-        row, failed = await _ask(self._client.get_entity(PARTITION, key, **QUIET))
+        row, failed = await _ask_twice(lambda: self._client.get_entity(PARTITION, key, **CALL))
         if failed and failed.code != TableErrorCode.RESOURCE_NOT_FOUND:
             raise failed.unavailable()
         return row
@@ -172,32 +200,36 @@ class TableStore:
         found: list[TableEntity] = []
         for kind in kinds:
             query = f"PartitionKey eq '{PARTITION}' and RowKey ge '{kind}|' and RowKey lt '{kind}}}'"  # } is after |
-            rows, failed = await _ask(_all(self._client.query_entities(query, **QUIET)))
+            rows, failed = await _ask_twice(lambda: _all(self._client.query_entities(query, **CALL)))
             if failed:
                 raise failed.unavailable()
             found += rows
         return found
 
-    async def _commit(self, operations: list[tuple]) -> bool:
-        """Whether it was saved. False is a conflict: read again.
+    async def _commit(self, operations: list[tuple]) -> None:
+        """Up to 100 operations are whole or nothing. Raises _Conflict when a row is not as it was read.
 
-        Up to 100 operations are whole or nothing. It is sent once: sent again after a lost answer, it would
-        look like a conflict, and then one click could count twice.
+        It is sent once: sent again after a lost answer, it would look like a conflict, and then one click
+        could count twice.
         """
         for start in range(0, len(operations), TRANSACTION):
             part = operations[start : start + TRANSACTION]
-            _, failed = await _ask(self._client.submit_transaction(part, retry_total=0, **QUIET))
+            _, failed = await _ask(self._client.submit_transaction(part, **CALL))
             if failed and failed.conflict:
-                return False
+                raise _Conflict(failed)
             if failed:
                 raise failed.unavailable()
-        return True
 
     async def _until_done[T](self, attempt: Callable[[], Awaitable[T]]) -> T:
-        for _ in range(1 + RETRIES):
-            if done := await attempt():
-                return done
-        raise StoreUnavailable("too many conflicts")
+        """Each attempt reads again."""
+        for tries in range(1 + RETRIES):
+            if tries:
+                await self._wait()
+            try:
+                return await attempt()
+            except _Conflict as conflict:
+                failed = conflict.failed
+        raise failed.unavailable()
 
 
 class _Failure:
@@ -207,12 +239,26 @@ class _Failure:
         self.type = type(exc).__name__
         self.status = getattr(exc, "status_code", None)
         self.code = getattr(exc, "error_code", None)
-        # 404: a row that was read is gone. The table itself is another matter.
-        self.conflict = self.status in (404, 409, 412) and self.code != TableErrorCode.TABLE_NOT_FOUND
+
+    @property
+    def conflict(self) -> bool:
+        """Another call changed or made a row, or (404) a row that was read is gone."""
+        gone = self.status == 404 and self.code == TableErrorCode.RESOURCE_NOT_FOUND
+        return gone or self.status in (409, 412)
+
+    @property
+    def may_pass(self) -> bool:
+        return self.status is None or self.status >= 500 or self.status in (408, 429)
 
     def unavailable(self) -> StoreUnavailable:
         logger.warning("The store failed: %s, status %s", self.type, self.status)
         return StoreUnavailable("the store gave no answer")
+
+
+class _Conflict(Exception):
+    def __init__(self, failed: _Failure):
+        super().__init__()
+        self.failed = failed
 
 
 async def _ask(call: Awaitable) -> tuple:
@@ -221,6 +267,13 @@ async def _ask(call: Awaitable) -> tuple:
         return await call, None
     except Exception as exc:  # whatever the SDK raises can hold a row
         return None, _Failure(exc)
+
+
+async def _ask_twice(read: Callable[[], Awaitable]) -> tuple:
+    answer, failed = await _ask(read())
+    if failed and failed.may_pass:
+        answer, failed = await _ask(read())
+    return answer, failed
 
 
 async def _all(rows) -> list[TableEntity]:

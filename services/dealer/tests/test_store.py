@@ -6,6 +6,7 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from azure.core import MatchConditions
 from azure.core.exceptions import HttpResponseError, ResourceNotFoundError
 from azure.data.tables import TableEntity, TableErrorCode, TableTransactionError
 
@@ -100,6 +101,8 @@ class FakeTable:
 
     def _check(self, name: str, key: str, options: dict) -> None:
         exists = key in self.rows
+        if "etag" in options or "match_condition" in options:  # the SDK refuses one without the other
+            assert options["etag"] and options["match_condition"] is MatchConditions.IfNotModified
         if name == "create" and exists:
             raise failure(409, TableErrorCode.ENTITY_ALREADY_EXISTS, error=TableTransactionError)
         if name in ("update", "delete") and not exists:
@@ -111,9 +114,13 @@ class FakeTable:
         self.closed = True
 
 
+async def no_wait() -> None:
+    await asyncio.sleep(0)
+
+
 @pytest.fixture(params=["memory", "table"])
 async def store(request):
-    made = MemoryStore() if request.param == "memory" else TableStore(FakeTable())
+    made = MemoryStore() if request.param == "memory" else TableStore(FakeTable(), wait=no_wait)
     await made.seed(STOCK)
     yield made
     await made.close()
@@ -199,7 +206,7 @@ async def test_an_offer_cannot_be_placed_in_its_own_turn(store):
 async def test_an_offer_is_for_its_customer(store):
     offer = an_offer()
     await store.save_offer(offer)
-    for offer_id, customer in [(offer.id, "customer-2"), ("unknown", "customer-1"), (f"x/{offer.id}#?", "customer-1")]:
+    for offer_id, customer in [(offer.id, "customer-2"), ("unknown", "customer-1"), (f"x/{offer.id}#?", "customer-1"), ("a" * 12, "customer-1")]:
         with pytest.raises(NotFound):
             await store.place(offer_id, customer, "turn-2", NOW)
     await store.place(offer.id, "customer-1", "turn-2", NOW)
@@ -394,7 +401,7 @@ async def test_an_offer_and_an_order_do_not_print_personal_data(store):
 
 
 def settings(**changes) -> Settings:
-    return Settings(tenant_id="t", dealer_client_id="c", **changes)
+    return Settings(tenant_id="t", dealer_client_id="c", **{"store": "table", **changes})
 
 
 def test_the_memory_store_is_only_used_when_asked_for(monkeypatch):
@@ -402,6 +409,6 @@ def test_the_memory_store_is_only_used_when_asked_for(monkeypatch):
         monkeypatch.delenv(name, raising=False)
     assert isinstance(build_store(settings(store="memory")), MemoryStore)
     with pytest.raises(ValueError, match="TABLE_ENDPOINT"):
-        build_store(settings())
+        build_store(Settings(tenant_id="t", dealer_client_id="c"))
     with pytest.raises(ValueError):
         settings(store="Memory")

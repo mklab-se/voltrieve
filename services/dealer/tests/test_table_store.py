@@ -9,15 +9,15 @@ import pytest
 from aiohttp import web
 from azure.core.credentials import AzureSasCredential
 from azure.core.exceptions import ClientAuthenticationError, HttpResponseError, ServiceRequestError
+from azure.core.pipeline.policies import DistributedTracingPolicy
 from azure.core.settings import settings as azure_settings
 from azure.core.tracing.ext.opentelemetry_span import OpenTelemetrySpan
 from azure.data.tables import TableErrorCode
-from azure.data.tables.aio import TableClient
-from test_store import NOW, STOCK, FakeTable, an_offer, an_order, failure, settings
+from test_store import NOW, STOCK, FakeTable, an_offer, an_order, failure, no_wait, settings
 
-from app.model import StoreUnavailable
+from app.model import NotFound, StoreUnavailable
 from app.store import build_store
-from app.table_store import RETRIES, TableStore
+from app.table_store import RETRIES, QuietTableClient, TableStore
 
 MARKER = "Hemliga gatan 7"
 
@@ -29,7 +29,7 @@ async def table():
 
 @pytest.fixture
 async def store(table):
-    made = TableStore(table)
+    made = TableStore(table, wait=no_wait)
     await made.seed(STOCK)
     return made
 
@@ -40,7 +40,7 @@ def calls(store):
         "stock": lambda: store.stock(),
         "change_stock": lambda: store.change_stock("spark", "Malmö", 1),
         "save_offer": lambda: store.save_offer(an_offer(address=MARKER)),
-        "place": lambda: store.place("unknown", "customer-1", "turn-2", NOW),
+        "place": lambda: store.place("a" * 12, "customer-1", "turn-2", NOW),
         "orders": lambda: store.orders(),
         "deliver": lambda: store.deliver("VO-1001", "Malmö", "Bo", NOW),
         "delete": lambda: store.delete("VO-1001"),
@@ -120,7 +120,13 @@ async def test_a_delivery_and_a_delete_at_once(store, table):
 
 
 @pytest.mark.parametrize("name", ["change_stock", "place", "deliver", "delete"])
-async def test_a_conflict_is_tried_again_five_times(store, table, name):
+async def test_a_conflict_is_tried_again_five_times(store, table, caplog, name):
+    waits = []
+
+    async def wait():
+        waits.append(1)
+
+    store._wait = wait
     waiting = an_offer()
     await an_order(store)
     await store.save_offer(waiting)
@@ -131,6 +137,8 @@ async def test_a_conflict_is_tried_again_five_times(store, table, name):
     with pytest.raises(StoreUnavailable):
         await call()
     assert table.rows == before and table.conflicts == 0
+    assert len(waits) == 5  # between the tries
+    assert [r.getMessage() for r in caplog.records] == ["The store failed: TableTransactionError, status 412"]
     table.conflicts = 5
     await call()
     assert table.rows != before
@@ -175,17 +183,71 @@ async def test_a_failed_write_does_not_show_its_row(store, table):
     assert raised.value.__context__ is None and MARKER not in "".join(traceback.format_exception(raised.value))
 
 
-async def test_a_missing_table_is_not_a_conflict(store, table):
+@pytest.mark.parametrize("code", [TableErrorCode.TABLE_NOT_FOUND, "Something", None])
+async def test_only_a_missing_row_is_a_conflict_among_the_404s(store, table, code):
     sent = []
 
     async def submit_transaction(operations, **_):
         sent.append(operations)
-        raise failure(404, TableErrorCode.TABLE_NOT_FOUND)
+        raise failure(404, code)
 
     table.submit_transaction = submit_transaction
     with pytest.raises(StoreUnavailable):
         await store.change_stock("spark", "Malmö", 1)
     assert len(sent) == 1
+
+
+async def test_a_row_that_is_gone_is_a_conflict(store, table):
+    async def vanish():
+        del table.rows["stock|spark|Malmö"]
+
+    table.before_commit = vanish
+    with pytest.raises(NotFound):
+        await store.change_stock("spark", "Malmö", 1)
+
+
+async def test_the_default_wait_is_short(monkeypatch):
+    slept = []
+
+    async def sleep(seconds):
+        slept.append(seconds)
+
+    monkeypatch.setattr("app.table_store.asyncio.sleep", sleep)
+    store = TableStore(FakeTable())
+    for _ in range(50):
+        await store._wait()
+    assert 0 < min(slept) < max(slept) <= 0.2
+
+
+@pytest.mark.parametrize("error, reads", [(ERRORS["busy"], 2), (ERRORS["unreachable"], 2), (ERRORS["forbidden"], 1)])
+async def test_a_failed_read_is_repeated_once(store, table, error, reads):
+    table.error, count, get = error, 0, table.get_entity
+
+    async def counted(*args, **options):
+        nonlocal count
+        count += 1
+        return await get(*args, **options)
+
+    table.get_entity = counted
+    with pytest.raises(StoreUnavailable):
+        await store.change_stock("spark", "Malmö", 1)
+    assert count == reads
+
+
+BAD_OFFERS = ["", "a" * 11, "a" * 13, "a" * 11 + "/", "a" * 11 + "å", "a" * 12 + "\n", "a" * 5000, "Storgatan 12"]
+BAD_NUMBERS = ["", "1001", "VO-", "VO-1x", "vo-1001", "VO-1001\n", "VO-" + "1" * 10, "VO-١٠٠١", "VO-1001|x"]
+
+
+async def test_what_is_not_an_id_is_never_sent(store, table):
+    table.error = AssertionError("a request was made")
+    for offer in BAD_OFFERS:
+        with pytest.raises(NotFound):
+            await store.place(offer, "customer-1", "turn-2", NOW)
+    for number in BAD_NUMBERS:
+        with pytest.raises(NotFound):
+            await store.delete(number)
+        with pytest.raises(NotFound):
+            await store.deliver(number, "Malmö", "Bo", NOW)
 
 
 async def test_close_closes_the_client_and_the_credential(table):
@@ -204,74 +266,172 @@ def test_a_table_endpoint_without_tls_is_refused():
         build_store(settings(table_endpoint="http://example.table.core.windows.net"))
 
 
-@pytest.fixture
-async def service():
-    """A table service on this machine that answers 503 to a transaction, for the real SDK."""
-    seen = []
-    entity = {"PartitionKey": "voltrieve", "in_stock": 2, "odata.etag": "W/\"datetime'2026'\""}
+ETAG = "W/\"datetime'2026'\""
+CONFLICT = '{"odata.error": {"code": "UpdateConditionNotSatisfied", "message": {"lang": "en", "value": "0:no"}}}'
 
-    async def answer(request: web.Request):
-        seen.append((request.method, request.raw_path, await request.text()))
+
+def parts(*answers: str) -> web.Response:
+    """The answer to a transaction: one part for each operation, or one for the one that failed."""
+    part = "--changeset_1\r\nContent-Type: application/http\r\nContent-Transfer-Encoding: binary\r\n\r\n{}\r\n"
+    inner = "".join(part.format(answer) for answer in answers) + "--changeset_1--\r\n"
+    body = f"--batch_1\r\nContent-Type: multipart/mixed; boundary=changeset_1\r\n\r\n{inner}--batch_1--\r\n"
+    return web.Response(status=202, body=body.encode(), headers={"Content-Type": "multipart/mixed; boundary=batch_1"})
+
+
+def saved() -> web.Response:
+    return parts(f"HTTP/1.1 204 No Content\r\nETag: {ETAG}\r\n\r\n")
+
+
+def conflict() -> web.Response:
+    return parts(f"HTTP/1.1 412 Precondition Failed\r\nContent-Type: application/json\r\n\r\n{CONFLICT}")
+
+
+class Service:
+    """A table service on this machine, for the real SDK. `gets` and `posts` are the next answers."""
+
+    def __init__(self):
+        self.seen, self.gets, self.posts = [], [], []
+
+    async def answer(self, request: web.Request):
+        self.seen.append((request.method, request.raw_path, await request.text()))
+        planned = self.posts if request.method == "POST" else self.gets
+        if planned:
+            return planned.pop(0)(request)
         if request.method == "POST":
-            return web.Response(status=503)
-        if "VO-" in request.raw_path:
+            return saved()
+        path = request.raw_path
+        row = {"PartitionKey": "voltrieve", "odata.etag": ETAG}
+        if "VO-1002" in path:
+            order = {"number": "VO-1002", "model": "spark", "price_sek": 1, "name": "n", "address": "a", "client": "web"}
+            created = {"status": "open", "created": NOW.isoformat(), "offer": "b" * 12}
+            return web.json_response({**row, "RowKey": "order|VO-1002", **order, **created})
+        if "VO-" in path or "offer" in path:
             error = {"odata.error": {"code": "ResourceNotFound", "message": {"lang": "en", "value": "no"}}}
             return web.json_response(error, status=404)
-        key = {"RowKey": "stock|spark|Malmö", "model": "spark", "city": "Malmö"}
-        if "PartitionKey=" in request.raw_path:
-            return web.json_response({**entity, **key})
-        return web.json_response({"value": [{**entity, **key}]})
+        row |= {"RowKey": "stock|spark|Malmö", "model": "spark", "city": "Malmö", "in_stock": 2}
+        return web.json_response(row if "PartitionKey=" in path else {"value": [row]})
 
+    def methods(self):
+        return [method for method, *_ in self.seen]
+
+
+def busy(_):
+    return web.Response(status=503)
+
+
+def redirect(request):
+    return web.Response(status=307, headers={"Location": str(request.url.with_query({"again": "1"}))})
+
+
+def drop(request):
+    request.transport.close()
+    return web.Response()
+
+
+@pytest.fixture
+async def service():
+    made = Service()
     app = web.Application()
-    app.router.add_route("*", "/{path:.*}", answer)
+    app.router.add_route("*", "/{path:.*}", made.answer)
     runner = web.AppRunner(app)
     await runner.setup()
     await web.TCPSite(runner, "127.0.0.1", 0).start()
     endpoint = f"http://127.0.0.1:{runner.addresses[0][1]}"
-    client = TableClient(endpoint, "dealer", credential=AzureSasCredential("sig=test"), retry_backoff_factor=0)
-    store = TableStore(client)
-    yield store, seen
-    await store.close()
+    client = QuietTableClient(endpoint, "dealer", credential=AzureSasCredential("sig=test"), retry_backoff_factor=0)
+    made.store = TableStore(client, wait=no_wait)
+    yield made
+    await made.store.close()
     await runner.cleanup()
 
 
+@pytest.fixture
+def spans(monkeypatch):
+    """The spans that the SDK starts."""
+    started, start = [], OpenTelemetrySpan.__init__
+
+    def counted(self, *args, **named):
+        started.append(named)
+        start(self, *args, **named)
+
+    monkeypatch.setattr(OpenTelemetrySpan, "__init__", counted)
+    azure_settings.tracing_implementation = OpenTelemetrySpan
+    yield started
+    azure_settings.tracing_implementation.unset_value()
+
+
 async def test_keys_are_encoded_by_the_sdk(service):
-    store, seen = service
-    assert await store.stock() == {"spark": {"Malmö": 2}}
-    with pytest.raises(StoreUnavailable):
-        await store.change_stock("spark", "Malmö", 1)
-    read, (_, path, body) = seen[1], seen[2]
+    assert await service.store.stock() == {"spark": {"Malmö": 2}}
+    assert await service.store.change_stock("spark", "Malmö", 1) == 3
+    read, (_, path, body) = service.seen[1], service.seen[2]
     key = "(PartitionKey='voltrieve',RowKey='stock%7Cspark%7CMalm%C3%B6')"
     assert f"/dealer{key}" in read[1] and path.startswith("/$batch")
     assert re.search(rf"PUT http://127.0.0.1:\d+/dealer{re.escape(key)}", body)
-    assert "If-Match: W/\"datetime'2026'\"" in body and '"in_stock": 3' in body
+    assert f"If-Match: {ETAG}" in body and '"in_stock": 3' in body
+
+
+async def test_a_delete_has_the_etag_of_what_was_read(service):
+    assert (await service.store.delete("VO-1002")).number == "VO-1002"
+    (body,) = [body for method, _, body in service.seen if method == "POST"]
+    assert re.search(r"DELETE http://127.0.0.1:\d+/dealer\(.*RowKey='order%7CVO-1002'\)", body)
+    assert f"If-Match: {ETAG}" in body
+
+
+async def test_a_conflict_of_the_real_sdk_is_read_and_tried_again(service):
+    service.posts = [lambda _: conflict()]
+    assert await service.store.change_stock("spark", "Malmö", 1) == 3
+    assert service.methods() == ["GET", "POST", "GET", "POST"]
 
 
 async def test_a_write_is_sent_once(service):
     """The SDK would send it again after a lost answer, and then one click could count twice."""
-    store, seen = service
+    service.posts = [busy]
     with pytest.raises(StoreUnavailable):
-        await store.change_stock("spark", "Malmö", 1)
-    assert [method for method, *_ in seen] == ["GET", "POST"]
+        await service.store.change_stock("spark", "Malmö", 1)
+    assert service.methods() == ["GET", "POST"]
 
 
-async def test_the_calls_make_no_spans(service, monkeypatch):
-    """A span of a failed call would hold the message of the SDK."""
-    store, seen = service
-    spans = []
-    monkeypatch.setattr(OpenTelemetrySpan, "__init__", lambda self, *args, **named: spans.append(named))
-    azure_settings.tracing_implementation = OpenTelemetrySpan
-    try:
-        await store.stock()
+@pytest.mark.parametrize("answer", [busy, drop, redirect])
+async def test_a_call_that_is_sent_again_makes_no_span(service, spans, answer):
+    """A span has the key in its URL, and the message of the SDK when the call failed."""
+    service.gets = [answer]
+    assert await service.store.change_stock("spark", "Malmö", 1) == 3
+    assert service.methods() == ["GET", "GET", "POST"]
+    service.gets = [answer]
+    assert await service.store.stock() == {"spark": {"Malmö": 2}}
+    assert spans == []
+
+
+async def test_a_call_that_fails_makes_no_span(service, spans):
+    service.gets = [busy, busy]
+    with pytest.raises(StoreUnavailable):
+        await service.store.stock()
+    service.gets = [drop] * 4  # aiohttp can send a GET again by itself
+    with pytest.raises(StoreUnavailable):
+        await service.store.change_stock("spark", "Malmö", 1)
+    service.gets, service.posts = [], [busy, drop]
+    for _ in range(2):
         with pytest.raises(StoreUnavailable):
-            await store.change_stock("spark", "Malmö", 1)
-    finally:
-        azure_settings.tracing_implementation.unset_value()
-    assert len(seen) == 3 and spans == []
+            await service.store.change_stock("spark", "Malmö", 1)
+    with pytest.raises(NotFound):
+        await service.store.delete("VO-1001")
+    assert spans == []
+
+
+async def test_the_span_fixture_sees_a_span(service, spans):
+    """So the tests above are not empty."""
+    with pytest.raises(HttpResponseError):
+        await service.store._client.get_entity("voltrieve", "order|VO-1001")
+    assert spans
+
+
+def test_the_client_in_azure_has_no_tracing_in_its_pipeline():
+    """A call is also sent again after a 401 for an old token, where the options of the call are used up."""
+    made = build_store(settings(table_endpoint="https://example.table.core.windows.net"))
+    policies = made._client._policies
+    assert policies and not [policy for policy in policies if isinstance(policy, DistributedTracingPolicy)]
 
 
 async def test_a_missing_row_is_told_from_a_missing_table(service):
-    store, _ = service
-    with pytest.raises(Exception) as raised:
-        await store.delete("VO-1001")
-    assert type(raised.value).__name__ == "NotFound" and raised.value.__context__ is None
+    with pytest.raises(NotFound) as raised:
+        await service.store.delete("VO-1001")
+    assert raised.value.__context__ is None
