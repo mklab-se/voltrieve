@@ -92,7 +92,7 @@ WEB_TOOLS = [
 
 
 # The car's tools, the counterpart of CLI_TOOLS: CAR_AGENT_TOOL_NAMES in the API. The car client
-# declares the same schemas (plan B), and tests/contract compares the names.
+# declares the same tools, and tests/contract compares all of it: names, descriptions and parameters.
 CAR_TOOLS = [
     {
         "name": "set_speed",

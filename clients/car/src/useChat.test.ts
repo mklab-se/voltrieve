@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ServerEvent } from "./types";
-import { MAX_TOOL_ROUNDS, runTurn, type TurnInput } from "./useChat";
+import { chatReducer, initialChatState, type ChatAction } from "./turns";
+import { createSession, MAX_TOOL_ROUNDS, runTurn, type ChatOptions, type TurnInput } from "./useChat";
 
 type Frame = [event: string, data: unknown];
 
@@ -138,6 +139,30 @@ describe("runTurn", () => {
     expect(events.at(-1)!.type).toBe("done");
   });
 
+  it.each(["after", "before"])("runs no tools when an error comes %s they are asked for", async (when) => {
+    const error: Frame = ["error", { code: "model_error", message: "x" }];
+    const { requests, fetchImpl } = api(() => (when === "after" ? sse(calls("honk"), error) : sse(error, calls("honk"))));
+    const runTool = vi.fn(async () => ({ output: "ok" }));
+    const events = await run({ runTool }, fetchImpl);
+    expect(runTool).not.toHaveBeenCalled();
+    expect(requests).toHaveLength(1);
+    expect(events.map((e) => e.type)).toEqual(["error"]); // and no tool in the timeline
+  });
+
+  it("does not say that tools ran which did not", async () => {
+    const { fetchImpl } = api(() => sse(calls("honk")));
+    const events = await run({}, fetchImpl);
+    expect(events.filter((e) => e.type === "client_tool_calls")).toHaveLength(MAX_TOOL_ROUNDS);
+  });
+
+  it("calls it the sign-in only when no token could be had", async () => {
+    const { fetchImpl } = api(() => sse(DONE));
+    const context = () => {
+      throw new TypeError("x is undefined");
+    };
+    expect(await run({ context }, fetchImpl)).toEqual([{ type: "error", data: { code: "client", message: "x is undefined" } }]);
+  });
+
   it("ends with an error when no token can be had", async () => {
     const { requests, fetchImpl } = api(() => sse(DONE));
     const getToken = async () => {
@@ -228,5 +253,78 @@ describe("a photo that the API has lost", () => {
     expect(await run({ attachments: ["old"], renew }, busy.fetchImpl)).toMatchObject([{ data: { code: "busy" } }]);
     expect(renew).not.toHaveBeenCalled();
     expect(busy.requests).toHaveLength(1);
+  });
+});
+
+describe("the chat", () => {
+  /** A session whose turns end when the test says so. */
+  function session(over: Partial<ChatOptions> = {}) {
+    const actions: ChatAction[] = [];
+    const turns: { input: TurnInput; emit: (e: ServerEvent) => void; end: () => void }[] = [];
+    const busy: boolean[] = [];
+    let state = initialChatState;
+    const { message: _, correlationId: __, ...options } = input();
+    const made = createSession(
+      () => ({ options: { ...options, ...over }, conversationId: state.conversationId }),
+      (action) => {
+        actions.push(action);
+        state = chatReducer(state, action);
+      },
+      (value) => busy.push(value),
+      (turn, emit) => new Promise<void>((end) => turns.push({ input: turn, emit, end })),
+    );
+    return { ...made, actions, turns, busy, state: () => state };
+  }
+
+  it("takes one message at a time", () => {
+    const chat = session();
+    chat.send("one");
+    chat.send("two");
+    expect(chat.turns.map((t) => t.input.message)).toEqual(["one"]);
+    expect(chat.state().turns.map((t) => t.userText)).toEqual(["one"]);
+  });
+
+  it("is free again when the turn has ended", async () => {
+    const chat = session();
+    chat.send("one", ["att1"]);
+    expect(chat.turns[0]!.input.attachments).toEqual(["att1"]);
+    expect(chat.busy).toEqual([true]);
+    chat.turns[0]!.end();
+    await vi.waitFor(() => expect(chat.busy).toEqual([true, false]));
+    chat.send("two");
+    expect(chat.turns).toHaveLength(2);
+  });
+
+  it("goes on in the conversation", async () => {
+    const chat = session();
+    chat.send("one");
+    chat.turns[0]!.emit({ type: "done", data: { conversation_id: "c1", turn_id: "t1", backend: "loop" } });
+    chat.turns[0]!.end();
+    await vi.waitFor(() => expect(chat.busy.at(-1)).toBe(false));
+    chat.send("two");
+    expect(chat.turns[1]!.input.conversationId).toBe("c1");
+  });
+
+  it("takes a new message at once after a reset in the middle of a turn", async () => {
+    const onStop = vi.fn();
+    const chat = session({ onStop });
+    chat.send("one");
+    chat.reset();
+    expect(chat.turns[0]!.input.signal!.aborted).toBe(true);
+    expect(onStop).toHaveBeenCalledTimes(1);
+    expect(chat.busy.at(-1)).toBe(false);
+    expect(chat.state().turns).toEqual([]);
+    chat.send("two");
+    expect(chat.turns[1]!.input.message).toBe("two");
+    chat.turns[0]!.end(); // the old turn ends late, and that says nothing about the new one
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(chat.busy.at(-1)).toBe(true);
+  });
+
+  it("has nothing to stop when it is reset between turns", () => {
+    const onStop = vi.fn();
+    session({ onStop }).reset();
+    expect(onStop).not.toHaveBeenCalled();
   });
 });

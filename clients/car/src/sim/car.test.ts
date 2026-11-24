@@ -122,6 +122,14 @@ describe("parking", () => {
     expect(run(out, 10)).toMatchObject({ mode: "driving", lateral: 0, speedKmh: 30 });
   });
 
+  it("finishes pulling out when it is told to stop half way, and stops in the lane", () => {
+    const halfOut = run(setSpeed(parked(), 30), 1.5);
+    expect(halfOut.lateral).toBeGreaterThan(0);
+    const stopped = run(setSpeed(halfOut, 0), 20);
+    expect(stopped).toMatchObject({ mode: "driving", lateral: 0, speedKmh: 0 });
+    expect(stopped.distanceM - halfOut.distanceM).toBeLessThan(15);
+  });
+
   it("parks again while it is still leaving", () => {
     const leaving = run(setSpeed(parked(), 30), 1.5);
     expect(leaving.lateral).toBeGreaterThan(0);

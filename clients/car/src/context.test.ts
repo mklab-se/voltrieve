@@ -6,7 +6,7 @@ const CLOCK = new Date(2026, 1, 3, 9, 5, 7);
 describe("carContext", () => {
   it("tells which car it is, how fast it drives and what the clock shows", () => {
     expect(carContext({ distanceM: 2600, speedKmh: 47.4 }, CLOCK)).toMatchObject({
-      car: { model: "Voltrieve Spark", trim: "Prime", drive: "RWD", model_year: 2026, registration: "SPARK", odometer_km: START_ODOMETER_KM + 2 },
+      car: { model: "Voltrieve Spark", trim: "Plus", drive: "RWD", model_year: 2026, registration: "SPARK", odometer_km: START_ODOMETER_KM + 2 },
       speed_kmh: 47,
     });
   });

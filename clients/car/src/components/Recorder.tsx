@@ -31,7 +31,7 @@ export function Recorder({ state }: { state: ChatState }) {
       </div>
       <div className="rec-scroll">
         {state.turns.length === 0 && (
-          <p className="muted rec-empty">Nothing recorded yet. Events from the API appear here as they arrive, grouped per turn.</p>
+          <p className="muted rec-empty">Nothing has happened yet. Events from the API appear here as they arrive, grouped per turn.</p>
         )}
         {state.turns.map((t) => (
           <article className="rec-turn" key={t.id}>

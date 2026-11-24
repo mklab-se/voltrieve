@@ -3,7 +3,7 @@ import type { ClientContext } from "./types";
 /** What the made-up Spark had driven before the trip. */
 export const START_ODOMETER_KM = 8214;
 
-const CAR = { model: "Voltrieve Spark", trim: "Prime", drive: "RWD", model_year: 2026, registration: "SPARK" };
+const CAR = { model: "Voltrieve Spark", trim: "Plus", drive: "RWD", model_year: 2026, registration: "SPARK" };
 
 const two = (n: number) => String(n).padStart(2, "0");
 

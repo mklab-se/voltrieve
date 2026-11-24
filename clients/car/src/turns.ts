@@ -1,4 +1,5 @@
-// Copied from clients/web; keep the two alike.
+// Copied from clients/web, without photos and the text in the field; keep the rest alike.
+import { customerText } from "./errors";
 import type { Backend, ServerEvent, SourceItem } from "./types";
 
 export type TimelineEntry =
@@ -17,6 +18,7 @@ export interface Turn {
   activity?: string;
   entries: TimelineEntry[];
   status: "streaming" | "done" | "error";
+  /** What the driver reads. What the API said is in the entries. */
   error?: string;
   /** Documents the answer used, and documents to read more. */
   sources?: SourceItem[];
@@ -44,7 +46,7 @@ function updateLast(state: ChatState, fn: (t: Turn) => Turn): ChatState {
 }
 
 function fail(t: Turn, code: string, message: string): Turn {
-  return { ...t, status: "error", error: message, entries: [...t.entries, { kind: "error", code, message }] };
+  return { ...t, status: "error", error: customerText(code), entries: [...t.entries, { kind: "error", code, message }] };
 }
 
 export function chatReducer(state: ChatState, action: ChatAction): ChatState {
@@ -118,7 +120,11 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
             conversationId: ev.data.conversation_id || state.conversationId,
           };
         case "error":
-          return updateLast(state, (t) => fail(t, ev.data.code, ev.data.message));
+          return {
+            ...updateLast(state, (t) => fail(t, ev.data.code, ev.data.message)),
+            // The conversation may be the one that was refused, so the next message starts another.
+            conversationId: ev.data.code === "http_403" ? undefined : state.conversationId,
+          };
       }
     }
   }
