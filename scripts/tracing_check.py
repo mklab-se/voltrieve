@@ -11,7 +11,7 @@
 in the client's line too. It prints the markers and, per backend, `done` or the error code.
 --search counts, per table of the Log Analytics workspace, the rows that hold a marker. Only
 counts leave the query. A hit in a table that logs queries (the search itself) is named apart and
-does not count. Exit code 0 when nothing is found, 1 when anything is, 2 for a bad marker.
+does not count. Exit code 0 when nothing is found, 1 when anything is, 2 for a bad marker, 3 when the search failed.
 Needs az and AZURE_RESOURCE_GROUP. Never put a marker in a correlation id.
 """
 
@@ -32,6 +32,10 @@ QUERY_LOG_TABLES = {"LAQueryLogs", "AzureActivity"}  # they hold the text of our
 QUESTION = "What is the towing capacity of the car? My reference is {marker}."
 
 
+class UnexpectedAnswer(Exception):
+    pass
+
+
 def new_marker() -> str:
     return "vtmark" + secrets.token_hex(6)
 
@@ -43,7 +47,7 @@ def valid_marker(marker: str) -> bool:
 def search_query(marker: str, hours: int) -> str:
     if not valid_marker(marker):
         raise ValueError("a marker is letters and digits only")
-    return f'search "{marker}" | where TimeGenerated > ago({int(hours)}h) | summarize n=count() by $table'
+    return f'search "*{marker}*" | where TimeGenerated > ago({int(hours)}h) | summarize n=count() by $table'
 
 
 def mark() -> int:
@@ -80,11 +84,14 @@ def count_tables(workspace: str, marker: str, hours: int) -> dict[str, int]:
          "--analytics-query", search_query(marker, hours), "-o", "json"],
         capture_output=True, text=True, check=True,
     ).stdout
-    rows = json.loads(out)
-    if isinstance(rows, dict):  # a table response
-        rows = rows.get("tables", [{}])[0].get("rows", [])
-        return {r[0]: int(r[-1]) for r in rows}
-    return {r.get("Table") or r.get("$table"): int(r["n"]) for r in rows}
+    try:
+        data = json.loads(out)
+        if isinstance(data, dict):  # a table response
+            rows = data["tables"][0]["rows"]
+            return {str(r[0]): int(r[-1]) for r in rows}
+        return {str(r.get("Table") or r["$table"]): int(r["n"]) for r in data}
+    except (ValueError, KeyError, IndexError, TypeError, AttributeError) as exc:
+        raise UnexpectedAnswer(type(exc).__name__) from None
 
 
 def search(markers: list[str], hours: int) -> int:
@@ -116,7 +123,11 @@ def main(argv: list[str] | None = None) -> int:
     if not all(valid_marker(m) for m in args.search):
         print("refused: a marker is letters and digits only", file=sys.stderr)
         return 2
-    return search(args.search, args.hours)
+    try:
+        return search(args.search, args.hours)
+    except (subprocess.CalledProcessError, UnexpectedAnswer, KeyError, OSError) as exc:
+        print(f"error: the search did not run ({type(exc).__name__}), not proof of no rows", file=sys.stderr)
+        return 3
 
 
 if __name__ == "__main__":

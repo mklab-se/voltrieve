@@ -615,7 +615,7 @@ def test_a_marker_is_letters_and_digits_only():
 
 def test_the_search_query_holds_counts_only():
     query = tracing_check.search_query("vtmarkabc123", 4)
-    assert "vtmarkabc123" in query
+    assert '"*vtmarkabc123*"' in query
     assert "summarize" in query and "count()" in query and "$table" in query
     for word in ("project", "take", "limit", "top "):
         assert word not in query
@@ -695,3 +695,27 @@ def test_a_hit_only_in_a_query_log_table_is_not_a_leak(monkeypatch, capsys):
     monkeypatch.setenv("AZURE_RESOURCE_GROUP", "rg")
     monkeypatch.setattr(subprocess, "run", fake_az({"vtmarkaaa": {"LAQueryLogs": 1}}))
     assert tracing_check.main(["--search", "vtmarkaaa"]) == 0
+
+
+def test_a_failed_az_is_an_error_not_no_rows(monkeypatch, capsys):
+    monkeypatch.setenv("AZURE_RESOURCE_GROUP", "rg")
+
+    def run(cmd, **kwargs):
+        raise subprocess.CalledProcessError(1, cmd, "", "SECRET az text")
+
+    monkeypatch.setattr(subprocess, "run", run)
+    assert tracing_check.main(["--search", "vtmarkaaa"]) not in (0, 1)
+    captured = capsys.readouterr()
+    assert "SECRET" not in captured.out + captured.err and "no rows" not in captured.out
+
+
+def test_an_unexpected_answer_shape_is_an_error_not_no_rows(monkeypatch, capsys):
+    monkeypatch.setenv("AZURE_RESOURCE_GROUP", "rg")
+
+    def run(cmd, **kwargs):
+        out = '{"unexpected": 1}' if "--analytics-query" in cmd else "guid\n"
+        return subprocess.CompletedProcess(cmd, 0, out, "")
+
+    monkeypatch.setattr(subprocess, "run", run)
+    assert tracing_check.main(["--search", "vtmarkaaa"]) not in (0, 1)
+    assert "no rows" not in capsys.readouterr().out
