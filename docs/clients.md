@@ -105,7 +105,7 @@ Its own app with its own sign-in. It shows the live feed and links to Live Metri
 
 ![The live dashboard: users, messages, cost and first text per backend, and one card for each turn](images/dashboard.webp)
 
-*The live dashboard with mock data: the times and costs are not measurements. The note says "never stored", which was corrected afterwards: the live feed stores nothing, but [Foundry's tracing stores text](decisions.md#open-the-product-owner-decides-what-foundrys-tracing-may-record).*
+*The live dashboard with mock data: the times and costs are not measurements. The note says "never stored", which was corrected afterwards: the live feed stores nothing, but the chat itself is stored in Foundry's conversation.*
 
 ## The CLI
 

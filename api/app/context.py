@@ -2,8 +2,8 @@
 
 It goes to the model as one line before the user's message, and our code puts it nowhere else: not in
 our logs, our spans or the live feed (docs/superpowers/specs/2026-11-23-car-website-attachments-design.md).
-It is part of the stored conversation, and Foundry's own tracing records it on prompt and hosted turns
-(docs/decisions.md, "Open: the product owner decides what Foundry's tracing may record").
+It is part of the stored conversation. Foundry's own tracing, which recorded it on prompt and hosted turns,
+is disconnected (docs/decisions.md, "Closed: Foundry's tracing is disconnected").
 """
 
 import datetime as dt

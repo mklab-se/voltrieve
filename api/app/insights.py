@@ -3,7 +3,7 @@
 The telemetry we write (the chat.turn span) carries ids, names, counts, timings and an estimated cost,
 never text. Here the prompt only exists in the in-memory live feed, masked, and only reaches a
 dashboard that asks for it (docs/superpowers/specs/2026-11-17-operations-dashboard-design.md).
-Foundry's own tracing of prompt and hosted turns is not ours and does hold text (docs/decisions.md).
+Foundry's own tracing, which recorded the text of prompt and hosted turns, is disconnected (docs/decisions.md).
 """
 
 import asyncio

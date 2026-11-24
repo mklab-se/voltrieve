@@ -43,7 +43,7 @@ Security is part of the design, not a layer added later. In practice:
 - Roles and permissions as code, in Bicep, with least privilege.
 - Checks fail closed.
 - Documents, client input and tool results are untrusted data.
-- No prompts, answers, photos or signed links in telemetry or logs. This is not met yet for turns on the prompt agent and the hosted agent, because Foundry's own tracing records their text. The rule stands, and [the decision is open](decisions.md#open-the-product-owner-decides-what-foundrys-tracing-may-record). One job may read stored chats. Only groups shared by at least five people may leave it.
+- No prompts, answers, photos or signed links in telemetry or logs. Met on all three backends since Foundry's tracing was [disconnected](decisions.md#closed-foundrys-tracing-is-disconnected) on 2026-11-24, with [the proof](evidence/tracing-disconnected.txt). One job may read stored chats. Only groups shared by at least five people may leave it.
 
 ### 5. With the receipts
 

@@ -174,7 +174,7 @@ def workbook() -> dict:
              "and what it costs. For what is happening this second, open **Live Metrics** in Application "
              "Insights or the live dashboard, an app of its own. Costs are **estimates** from token counts "
              "and list prices, not the bill. Users are counted by pseudonym, and our own telemetry stores no "
-             "prompts or answers. Foundry's tracing does, see the privacy check."),
+             "prompts or answers. Foundry's tracing is disconnected, see the privacy check."),
         parameters(),
         tiles("At a glance", TURNS + f"""| extend message_first_text = iff(request_kind == "message", first_text, real(null))
 | summarize users = dcount(user), turns = countif(request_kind == "message"),
@@ -257,10 +257,10 @@ def workbook() -> dict:
 | summarize longest_value = max(strlen(value)), example = take_any(iif(strlen(value) <= 40, value, "")) by key
 | order by key asc""", "table", "100"),
         text("**What Foundry's own tracing writes** (cloud role `responsesapi`), for turns on the prompt agent and the "
-             "hosted agent. These rows hold prompts and answers as long as Application Insights is connected to the "
-             "Foundry project, so any row here is one that can hold text. Counts only: the text is not shown. A row "
-             "with a photo would be an error. See *Open: the product owner decides what Foundry's tracing may record* "
-             "in the decisions."),
+             "hosted agent. **This check should be empty**: Application Insights was disconnected from the Foundry "
+             "project on 2026-11-24 at 14:25 UTC. Rows from before that hold prompts and answers, and stay until "
+             "retention removes them (30 days). A newer row means that chat text can reach telemetry again. Counts "
+             "only: the text is not shown. See *Closed: Foundry's tracing is disconnected* in the decisions."),
         query("Rows written by Foundry's tracing", """union isfuzzy=true withsource=stored_in dependencies, genAIContent
 | where cloud_RoleName == "responsesapi"
 | extend content = tostring(pack_all())

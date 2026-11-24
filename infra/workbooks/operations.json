@@ -4,7 +4,7 @@
   {
    "type": 1,
    "content": {
-    "json": "# Voltrieve operations\nWho uses the assistant, how fast it answers, which tools and knowledge bases it uses, and what it costs. For what is happening this second, open **Live Metrics** in Application Insights or the live dashboard, an app of its own. Costs are **estimates** from token counts and list prices, not the bill. Users are counted by pseudonym, and our own telemetry stores no prompts or answers. Foundry's tracing does, see the privacy check."
+    "json": "# Voltrieve operations\nWho uses the assistant, how fast it answers, which tools and knowledge bases it uses, and what it costs. For what is happening this second, open **Live Metrics** in Application Insights or the live dashboard, an app of its own. Costs are **estimates** from token counts and list prices, not the bill. Users are counted by pseudonym, and our own telemetry stores no prompts or answers. Foundry's tracing is disconnected, see the privacy check."
    }
   },
   {
@@ -360,7 +360,7 @@
   {
    "type": 1,
    "content": {
-    "json": "**What Foundry's own tracing writes** (cloud role `responsesapi`), for turns on the prompt agent and the hosted agent. These rows hold prompts and answers as long as Application Insights is connected to the Foundry project, so any row here is one that can hold text. Counts only: the text is not shown. A row with a photo would be an error. See *Open: the product owner decides what Foundry's tracing may record* in the decisions."
+    "json": "**What Foundry's own tracing writes** (cloud role `responsesapi`), for turns on the prompt agent and the hosted agent. **This check should be empty**: Application Insights was disconnected from the Foundry project on 2026-11-24 at 14:25 UTC. Rows from before that hold prompts and answers, and stay until retention removes them (30 days). A newer row means that chat text can reach telemetry again. Counts only: the text is not shown. See *Closed: Foundry's tracing is disconnected* in the decisions."
    }
   },
   {

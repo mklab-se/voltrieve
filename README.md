@@ -24,7 +24,7 @@ Most agent samples stop at "it answers". This one answers the questions you meet
 | --- | --- | --- |
 | **Why host an agent in Foundry at all?** | For a managed identity, versions and a publishing path. Not for the loop, which is 348 lines of Python. | [Comparison](docs/why-foundry.md) |
 | **My client has its own tools. Now what?** | A prompt agent refuses per-request tools with a 400. An own loop or a hosted agent runs them, even one the server has never seen. | [Client tools](docs/why-foundry.md#1-what-happened-with-client-tools) |
-| **Can a client send a photo, and where does it go?** | Straight into the model call, as an unstored turn. The conversation keeps the text only. Foundry's tracing also records the text of prompt and hosted turns, [an open decision](docs/decisions.md#open-the-product-owner-decides-what-foundrys-tracing-may-record). A new kind of attachment is one handler. | [Photos and attachments](docs/attachments.md) |
+| **Can a client send a photo, and where does it go?** | Straight into the model call, as an unstored turn. The conversation keeps the text only. No chat text goes to telemetry since Foundry's tracing was [disconnected](docs/decisions.md#closed-foundrys-tracing-is-disconnected). A new kind of attachment is one handler. | [Photos and attachments](docs/attachments.md) |
 | **How does the agent decide to use RAG?** | No classifier exists. The model decides in its first call, from words you control. | [The journey of a prompt](docs/prompt-journey.md) |
 | **Can it use several knowledge bases without calling them in vain?** | Yes: all three reached the right bases in every run. Two of them run the searches at the same time. | [Two knowledge bases](docs/why-foundry.md#6-two-knowledge-bases-who-chooses-and-who-runs-them-together) |
 | **Which model should I use?** | Newer isn't always better. `gpt-6.1-terra` runs all three backends, with 1 of 48 turns over 10 s to first token on the own loop. `gpt-6-luna` costs about a third of `gpt-5.4-mini`. Search plans its queries with `gpt-5.4-mini`, and `gpt-6-luna` is opt-in (`PLANNING_MODEL_NAME`): the same answers and cheaper planning, but about half a second slower per search. | [Choosing a model](docs/model-comparison.md) |
@@ -187,9 +187,9 @@ Verified live:
 - The cross-document question "cheapest AWD in Sweden" repeated 6 times per backend: 18 of 18 right. At the default reasoning effort it was 11 to 15 of 18, so the sample uses medium effort.
 - A tool the server has never seen, declared only in the request: relayed on loop and hosted, refused on prompt (`docs/evidence/new-client-tool.txt`). The demo declares a car function, `set_seat_heating`.
 - Recovery on all three backends: a paused turn nobody answers, and a conversation resumed after the API scaled to zero (`docs/evidence/repair.txt`).
-- One trace per turn across API, Foundry, hosted agent and dealer (`docs/evidence/application-insights.txt`).
+- One trace per turn across API, Foundry, hosted agent and dealer (`docs/evidence/application-insights.txt`), before Foundry's tracing was disconnected. Afterwards one trace joins the API and the hosted agent.
 - The prompt agent's 400.
-- Where a photo turn leaves its text and its photo, on 2026-11-24: the photo nowhere we looked, the text of prompt and hosted turns in Foundry's tracing (`docs/evidence/photos-privacy.txt`). That breaks a rule, and [the decision is open](docs/decisions.md#open-the-product-owner-decides-what-foundrys-tracing-may-record).
+- Where a photo turn leaves its text and its photo, on 2026-11-24: the photo nowhere we looked, the text of prompt and hosted turns in Foundry's tracing (`docs/evidence/photos-privacy.txt`). [Foundry's tracing was then disconnected](docs/decisions.md#closed-foundrys-tracing-is-disconnected), and the marked question and client's line of a turn on each backend left no rows in telemetry (`docs/evidence/tracing-disconnected.txt`).
 - The authorization denied path, on the loop backend, against real Foundry with a fake token validator.
 
 Offline tests pass: `agent_core` 167, `api` 459, `agents/hosted` 40, `search` 62, `services/dealer` 42, `clients/cli` 62, `clients/web` 172, `clients/dashboard` 25, `clients/car` 426, `tests/photos` 228, `tests/contract` 74 and `infra/scripts/entra` 41, plus the 123 of `data/generator` in CI (they need a browser), the Bicep and script checks. Every suite runs in [CI](.github/workflows/tests.yml).
@@ -200,7 +200,7 @@ Not verified:
 - The car in Safari or Firefox, on a slow or Windows computer, and with a screen reader. Whether a person hears the horn and the motor.
 - A rollback of the Serverless search service or of the Search versions, and what Serverless costs on an invoice.
 - The workbook's check of Foundry's tracing rows.
-- What each choice about Foundry's tracing does in practice.
+- A trace with the dealer since Foundry's tracing was disconnected, the Agent 365 exporter that the hosted agent's platform turns on, and what Foundry keeps for itself.
 - Reading a small sign in a large photo: [a known limit](docs/attachments.md#the-known-limit).
 - A real browser sign-in with `voltrieve login` (its MSAL calls are tested against a fake).
 - A real sign-in as the tester.

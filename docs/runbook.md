@@ -39,7 +39,7 @@ uv run tests/routing/check.py --only brakes-fjord --repeats 1 --no-save
 
 Both scripts compare answers with `data/voltrieve.yaml` and exit 1 on a miss. Recorded results:
 
-- Runbook: every step passes on every backend on the final build. Step 11 is `prompt` only. Step 12 is checked automatically by `scripts/runbook.py`, which waits for telemetry and writes `docs/evidence/application-insights.txt`.
+- Runbook: every step passes on every backend on the final build. Step 11 is `prompt` only. Step 12 is checked by `scripts/runbook.py`, which waits for telemetry and writes `docs/evidence/application-insights.txt`. Its recorded result is from before Foundry's tracing was disconnected, see [Follow a correlation id](#follow-a-correlation-id).
 - Grounding: 30 of 30 passed (`docs/evidence/grounding.txt`).
 - Routing: 45 of 45 runs used exactly the right sources on every backend, with no knowledge base call in vain. Overlapping calls on two source questions: 12 of 12 on `loop` and `hosted`, 0 of 12 on `prompt`. Article numbers: 117 of 117 on `prompt`, 115 of 117 on `loop` and `hosted`, none invented. The script exits 1 on a missing article, so the recorded run exits 1. Run it with `--workers 1`: more turns at once measure the rate limit, not the routing.
 
@@ -69,7 +69,7 @@ Each knowledge base is an MCP tool inside Foundry, so a retrieval shows as one `
 | 9b | `uv run scripts/denied_demo.py --backend prompt` | `server_tool_called`, `authorization_denied`, `server_tool_returned`, `model_called`, polite refusal, then `PASS: authorization_denied emitted` | Not recorded for this backend |
 | 10 | In `voltrieve chat --backend prompt --az-token`, ask: `What is the towing capacity of the Voltrieve Fjord? When you have the answer, beep three times.` | `token_validated`, `backend_selected`, `model_called`, `model_returned`, `client_tool_requested`, `client_tool_calls`. The CLI rings the bell and posts the result. Then `token_validated`, `backend_selected`, `model_called`, deltas, `model_returned`, `done`. There is no `conversation_created`: the conversation already exists. | PASS (`make_noise`, times=3) |
 | 11 | `uv run scripts/runbook.py --backends prompt --steps 11` for the API's refusal, and `uv run --project agents/prompt agents/prompt/demo_rejection.py` for Foundry's 400 | Runbook script: `token_validated`, `backend_selected`, `conversation_created`, `unsupported_client_tool`, `error`. Demo script prints `400 invalid_payload: Error code: 400 - Not allowed when agent is specified.` | PASS, `docs/evidence/prompt-agent-rejection.txt` |
-| 12 | See [Follow a correlation id](#follow-a-correlation-id), with `runbook-prompt-2` or `runbook-prompt-8` | One `chat.turn` span and the calls around it | PASS, `docs/evidence/application-insights.txt` |
+| 12 | See [Follow a correlation id](#follow-a-correlation-id), with `runbook-prompt-2` or `runbook-prompt-8` | One `chat.turn` span and the calls around it | PASS, `docs/evidence/application-insights.txt`, before the tracing was disconnected |
 
 Step 1 alternative for an interactive sign-in: `voltrieve login`, then leave out `--az-token`.
 
@@ -111,7 +111,7 @@ The same core runs in the Foundry container. The trace sequence matches backend 
 | 9b | No in-process demo for this backend. Sign in as the tester in the website or with `voltrieve login`, choose hosted, and ask the same question. | Should match backend B: `server_tool_called`, `authorization_denied`, `server_tool_returned`, polite refusal. Role gating here is covered by offline tests. | Not tested live |
 | 10 | In `voltrieve chat --backend hosted --az-token`, ask: `What is the towing capacity of the Voltrieve Fjord? When you have the answer, beep three times.` | `token_validated`, `backend_selected`, `model_called`, `model_returned`, `client_tool_requested`, `client_tool_calls`. The CLI rings the bell and posts the result. Then `token_validated`, `backend_selected`, `model_called`, deltas, `model_returned`, `done`. There is no `conversation_created`: the conversation already exists. | PASS (`make_noise`, times=3) |
 | 11 | Skip | Backend A only. | SKIP |
-| 12 | See [Follow a correlation id](#follow-a-correlation-id), with `runbook-hosted-2` or `runbook-hosted-8` | One `chat.turn` span and the calls around it | PASS, `docs/evidence/application-insights.txt` |
+| 12 | See [Follow a correlation id](#follow-a-correlation-id), with `runbook-hosted-2` or `runbook-hosted-8` | One `chat.turn` span and the calls around it | PASS, `docs/evidence/application-insights.txt`, before the tracing was disconnected |
 
 ## Step 9 as the tester, for real
 
@@ -157,12 +157,11 @@ The photos of the signs can be checked without Azure too, against the server's p
 
 **Under the hood** is a switch in the car and on the website, off by default. On, it shows the event timeline of the turn, the backend picker and the correlation id, the same things the CLI shows with `--trace`. Off, a visitor sees a customer's page or a car, not a test rig.
 
-**A private turn** is a turn that carries an attachment or something the client told about itself. What such a turn says stays out of our own logs and spans, and out of the live feed. Foundry's tracing is not ours: on the prompt agent and the hosted agent it records the text ([open decision](decisions.md#open-the-product-owner-decides-what-foundrys-tracing-may-record)). So when one fails:
+**A private turn** is a turn that carries an attachment or something the client told about itself. What such a turn says stays out of our own logs and spans, and out of the live feed. Foundry's own tracing, which recorded the text of prompt and hosted turns, is [disconnected](decisions.md#closed-foundrys-tracing-is-disconnected). So when one fails:
 
 - Our code logs the failure as a **trace** (the `traces` table in Application Insights), with the type of each error, the HTTP status and the stack as frames. It is not logged as an **exception** with a message and source lines, because an error text may quote the attachment or the client's line.
 - A query for `exceptions` finds nothing for these turns. Query `traces` with the `operation_Id` of the request, as in [Follow a correlation id](#follow-a-correlation-id), and look for the message that names what failed.
 - The model's tool results of a private turn are not in our debug log either.
-- Foundry's own `responsesapi` rows are written however the turn ends.
 
 The client sees the failure as an `error` event as usual.
 
@@ -192,7 +191,7 @@ npm run dev:mock      # in a second terminal, website with fake auth
 
 The API takes `X-Correlation-Id` from the request, or generates one. It sets it as `correlation_id` on the request span and the `chat.turn` span, and passes it to the dealer, which sets it on its own span. The hosted agent logs it on every turn, with the same pseudonym for the user as the API. The value is therefore in `customDimensions` of `requests` and `dependencies`. It is not on log records in Application Insights: there, join on `operation_Id`. The JSON logs on stdout do carry it.
 
-Every hop of a turn is also a log line (`trace`, with `step`, `component`, `detail` and `elapsed_ms`) and an event on the `chat.turn` span, so the logs show the same sequence the client sees. Tool arguments and result previews are in our own logs only at `LOG_LEVEL=DEBUG`, truncated. Foundry's `responsesapi` rows (prompt and hosted) hold the text of the turn at every level, and the query below shows those rows by name only.
+Every hop of a turn is also a log line (`trace`, with `step`, `component`, `detail` and `elapsed_ms`) and an event on the `chat.turn` span, so the logs show the same sequence the client sees. Tool arguments and result previews are in our own logs only at `LOG_LEVEL=DEBUG`, truncated.
 
 In the Azure portal, open the Application Insights resource and choose Logs:
 
@@ -212,11 +211,15 @@ union requests, dependencies, traces, exceptions
 | order by timestamp asc
 ```
 
-Expect `cloud_RoleName` `voltrieve-api`, with `voltrieve-dealer` for the dealer call, and these rows from the code:
+This is what is left of the end to end trace since Foundry's tracing was [disconnected](decisions.md#closed-foundrys-tracing-is-disconnected):
 
-- on `loop`: `POST /chat`, the `chat.turn` span, calls to the Foundry project and Search, the call to the dealer;
-- on `prompt`: the same, with no Search call, because Foundry makes it;
-- on `hosted`: the call to `.../protocols/invocations`. The model and dealer calls are made in the agent, with the role `voltrieve-hosted`.
+| Backend | `cloud_RoleName` | Rows from the code |
+| --- | --- | --- |
+| `loop` | `voltrieve-api`, and `voltrieve-dealer` for the dealer call | `POST /chat`, the `chat.turn` span, calls to the Foundry project and Search, the call to the dealer |
+| `prompt` | The same | The same, with no Search call, because Foundry makes it |
+| `hosted` | The same, and `voltrieve-hosted` | The call to `.../protocols/invocations`. The model and dealer calls are made in the agent, with the role `voltrieve-hosted` |
+
+Foundry's own rows (`responsesapi` for prompt and hosted, `agentsv2` for hosted) and the traces in the Foundry portal are gone from new turns by design. One trace id was seen to join the API and the hosted agent on 2026-11-24 (`docs/evidence/tracing-disconnected.txt`). A trace with the dealer was not looked at since.
 
 A client tool turn is two HTTP requests, so it spans two `operation_Id` values under one correlation id. The query handles that when the client sends the same id on both, as `scripts/runbook.py` and the CLI do.
 
@@ -228,7 +231,7 @@ dependencies
 | project timestamp, operation_Id, duration, customDimensions
 ```
 
-Step 12 is checked by `scripts/runbook.py`, and it passed on all three backends on 2026-11-04: one trace id spans the API, Foundry, the hosted agent (`voltrieve-hosted`) and the dealer (`docs/evidence/application-insights.txt`). The queries on this page were written from the code and have not been run as they stand, so adjust them if the rows differ.
+Step 12 is checked by `scripts/runbook.py`, and it passed on all three backends on 2026-11-04, while the tracing was connected: one trace id spanned the API, Foundry, the hosted agent (`voltrieve-hosted`) and the dealer (`docs/evidence/application-insights.txt`). The script still asks for Foundry's own rows, so step 12 is expected to fail on prompt and hosted until it is changed. It has not been run since. The queries on this page were written from the code and have not been run as they stand, so adjust them if the rows differ.
 
 ## Run locally against Azure
 
@@ -287,22 +290,45 @@ Three views, from now to history. All of them are built on Application Insights.
 `voltrieve.*` names for the rest (backend, a pseudonym for the user, outcome, timings, tools,
 knowledge bases, tokens, estimated cost, cold start). No prompt, answer, user name or object id.
 
-**What Foundry's tracing stores.** Text. For turns on the prompt agent and the hosted agent, Foundry
-writes the question, the line from the client and the answer to `genAIContent` and `dependencies`, with
-the cloud role `responsesapi`. It does so because Application Insights is connected to the project. What
-to do about it is [an open decision](decisions.md#open-the-product-owner-decides-what-foundrys-tracing-may-record),
-and the evidence is in `docs/evidence/photos-privacy.txt`.
+**What Foundry's tracing stores.** Nothing new: it is [disconnected](decisions.md#closed-foundrys-tracing-is-disconnected). What is left
+in Application Insights are the logs and spans of our own code: the API, the dealer and the hosted agent, which
+gets our own connection string. The traces in the Foundry portal are lost.
+
+**Rows from before.** Until 2026-11-24 14:25 UTC Foundry wrote the question, the line from the client and the
+answer of prompt and hosted turns to `dependencies` and `genAIContent` (`AppDependencies` and `AppGenAIContent` in
+the workspace), with the cloud role `responsesapi`. These rows are not deleted. They stay until retention removes
+them after 30 days, which is the workspace's setting. All text in them is made up.
+
+**Check that no chat text reaches telemetry.** It needs `az` and `AZURE_RESOURCE_GROUP`.
+
+```sh
+uv run scripts/tracing_check.py --mark                  # one marked turn per backend, prints three markers
+uv run scripts/tracing_check.py --search MARKER MARKER MARKER --hours 4
+```
+
+Wait 15 minutes before the search, and search again 30 minutes later. The search looks for the markers in every
+table of the workspace, and only counts leave the query. Expect `no rows` for every marker.
+
+| Exit code of the search | Means |
+|---|---|
+| 0 | No rows |
+| 1 | A marker was found: chat text reaches telemetry |
+| 2 | A bad marker, or bad hours |
+| 3 | The search did not run, which proves nothing |
+
+No rows also means nothing if a backend sends no telemetry at all. That happened to the hosted agent on 2026-11-24,
+so look for its `voltrieve-hosted` rows too. The recorded run is in `docs/evidence/tracing-disconnected.txt`. The
+markers are in the question and in the client's line, and the answer carries no marker of its own.
 
 The workbook has two privacy checks. One lists every attribute name on our `chat.turn` spans and its
 longest value. The other counts Foundry's `responsesapi` rows and how many hold the client's line or a
-photo, without showing any text. The second was added on 2026-11-24 and is not yet run against the
-deployment.
+photo, without showing any text. It should be empty, apart from the rows from before. It was added on 2026-11-24
+and is not yet run against the deployment.
 
 **The live feed stores nothing.** The API keeps the last 50 turns in memory. Prompts are masked (email
 addresses, phone numbers and personal identity numbers) and sent only to a dashboard with
 **Show prompts** switched on. A restart forgets them. The chat itself is stored in Foundry's
-conversation, and the text of prompt and hosted turns also by Foundry's tracing. Leave the switch off when the screen is
-shown to an audience unless the people asking know.
+conversation. Leave the switch off when the screen is shown to an audience unless the people asking know.
 
 **Add it to your own solution.**
 1. Put the same attributes on one span per turn (any OpenTelemetry exporter to Application

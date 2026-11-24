@@ -18,8 +18,8 @@ ignores them: a new API with an old hosted agent answers without the photo, so d
 before the API that sends them. We log neither.
 
 `private` (optional boolean) says that our code may log nothing the turn says, error texts included. It
-is always so with `parts` or `kept`. Foundry's own tracing is not covered: it records the text of hosted
-turns (docs/decisions.md).
+is always so with `parts` or `kept`. Foundry's own tracing, which recorded the text of hosted turns, is
+disconnected (docs/decisions.md).
 
 The Web API's managed identity is the only caller allowed to invoke the agent (spec 6.5), so
 the `user` claims in the body are trusted. The Foundry gateway replaces `x-ms-original-subject`
@@ -30,9 +30,9 @@ ALLOWED_CALLER_OID empty every request is refused, unless ALLOW_ANY_CALLER=true 
 
 Tracing: the agent server host configures Azure Monitor itself, from the connection string we hand
 to its constructor (`applicationinsights_connection_string`, azure.ai.agentserver.core). The string
-is in VOLTRIEVE_TELEMETRY_CONNECTION_STRING (set in deploy.py from the azd value). The platform
-no longer injects APPLICATIONINSIGHTS_CONNECTION_STRING, because the project is not connected to
-Application Insights, and it reserves that name. Without our variable the host starts without
+is in VOLTRIEVE_TELEMETRY_CONNECTION_STRING (set in deploy.py from the azd value). The project is
+not connected to Application Insights, so the platform puts no usable value in
+APPLICATIONINSIGHTS_CONNECTION_STRING, and it reserves that name. Without our variable the host starts without
 telemetry. The string is an ingestion identifier, not a secret, and it is never logged or printed.
 AZURE_EXPERIMENTAL_ENABLE_GENAI_TRACING=true (set in deploy.py) adds the model call spans.
 """

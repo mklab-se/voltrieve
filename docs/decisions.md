@@ -191,7 +191,7 @@ Three ways to read a photo were tried: straight into the model call, through a p
 
 ### Photo turns are unstored, and the text is recorded by us
 
-A model call with an attachment is made with `store=False`, for every kind of attachment, so a new kind never touches a backend. The loop keeps the turn's items in memory and records only the text and the answer at the end. This keeps the photo out of the conversation. It does not keep the text out of Foundry's tracing, see [the open decision](#open-the-product-owner-decides-what-foundrys-tracing-may-record). The alternatives kept the photo: a stored conversation item still showed in the stored response after it was deleted, and a model still answered about a deleted file. The cost is that later turns do not see that turn's search results. `store=False` is not a promise of zero retention, and the documentation says so (links in [attachments.md](attachments.md#what-storefalse-does-not-promise)).
+A model call with an attachment is made with `store=False`, for every kind of attachment, so a new kind never touches a backend. The loop keeps the turn's items in memory and records only the text and the answer at the end. This keeps the photo out of the conversation. It did not keep the text out of Foundry's tracing, which is [disconnected](#closed-foundrys-tracing-is-disconnected) for that reason. The alternatives kept the photo: a stored conversation item still showed in the stored response after it was deleted, and a model still answered about a deleted file. The cost is that later turns do not see that turn's search results. `store=False` is not a promise of zero retention, and the documentation says so (links in [attachments.md](attachments.md#what-storefalse-does-not-promise)).
 
 ### No built-in parking rules
 
@@ -225,21 +225,44 @@ The car is a simulation, so `set_speed` accepts any speed from 0 to 150 whenever
 
 With a new API and an old hosted agent, photo turns answer without the photo and the protection of the logs is missing. So the order is the provision, then `scripts/deploy-agents.sh`, then the API, and a rollback goes the other way round. See [deploy.md](deploy.md#order-for-an-update-with-attachments).
 
-### Open: the product owner decides what Foundry's tracing may record
+### Closed: Foundry's tracing is disconnected
 
-Found on 2026-11-24 (`docs/evidence/photos-privacy.txt`). Rule 4 of the [principles](principles.md#4-secure-by-default) says that no prompts or answers may be in telemetry. For turns on the prompt agent and the hosted agent that is **not met**: Foundry's server-side tracing writes the question, the line from the client and the answer to the Application Insights resource, in `genAIContent` and `dependencies`. The photo is replaced by `<<ImageDisplayed>>`. The own loop leaves no such rows, and our own spans are clean. It has been so since 2026-11-03, and it starts when Application Insights is [connected to the project](https://learn.microsoft.com/azure/foundry/observability/concepts/trace-data). All text so far is made up.
+<a id="open-the-product-owner-decides-what-foundrys-tracing-may-record"></a>
 
-`OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=false` is now set for the API and the hosted agent, as defence in depth. It covers what our own libraries write, and does not control the server-side tracing.
+This was open as *The product owner decides what Foundry's tracing may record*. The product owner chose on 2026-11-24 to **disconnect Application Insights from the Foundry project**, because Voltrieve is not interested in stored chat text.
 
-Nothing else is changed, because the choice trades observability for privacy. The three choices:
+**Why it was asked.** Rule 4 of the [principles](principles.md#4-secure-by-default) says that no prompts or answers may be in telemetry. For turns on the prompt agent and the hosted agent that was not met (`docs/evidence/photos-privacy.txt`): Foundry's server-side tracing wrote the question, the line from the client and the answer to the Application Insights resource, in `genAIContent` and `dependencies`. It did so since 2026-11-03, and it starts when Application Insights is [connected to the project](https://learn.microsoft.com/azure/foundry/observability/concepts/trace-data). The own loop left no such rows, and our own spans were clean. `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=false` is set for the API and the hosted agent as defence in depth. It does not control the server-side tracing.
 
 | Choice | What it gives | What it costs |
 | --- | --- | --- |
-| **Disconnect Application Insights from the project** | The documented way to turn the tracing off. Rule 4 should then be met, which must be checked with a new run | The hosted agent loses the connection string that Foundry injects, so its own logs and spans stop unless we send them another way. The traces in the Foundry portal stop, and so do the `responsesapi` and `agentsv2` rows of the end to end trace. Rows already written stay until retention removes them |
-| **Protect the table** | Only those with the role Privileged Monitoring Data Reader can read [`AppGenAIContent`](https://learn.microsoft.com/azure/foundry/observability/how-to/traces-sensitive-content). The traces stay | The text is still recorded, so rule 4 must be overruled on purpose. It is a preview. Our rows are in `dependencies` too, so the content must first be routed to the dedicated table only, with a preview flag on the subscription. Rows already in `dependencies` stay readable |
+| **Disconnect Application Insights from the project (chosen)** | The documented way to turn the tracing off | The traces in the Foundry portal, and the `responsesapi` and `agentsv2` rows of the end to end trace. The hosted agent loses the connection string that Foundry injects. Rows already written stay until retention removes them |
+| **Protect the table** | Only those with the role Privileged Monitoring Data Reader can read [`AppGenAIContent`](https://learn.microsoft.com/azure/foundry/observability/how-to/traces-sensitive-content). The traces stay | The text is still recorded, so rule 4 must be overruled on purpose. It is a preview. Our rows were in `dependencies` too |
 | **Accept it** | Nothing to build, and full traces | Anyone who can read the Application Insights resource can read the chats. Rule 4 must be overruled on purpose, and people who chat must be told |
 
-Until then the rule stands as it is written, and every page that states it points here. Not verified: what each choice does in practice, since none was tried.
+**What was done.** The connection is gone from Bicep, and a check in `infra/tests/test_bicep.sh` keeps it out. Bicep is incremental and does not delete, so the deployed connection `appinsights` was deleted by hand at 14:25 UTC, and nothing else was. An older deployment of your own needs the same step.
+
+**What was found.** The hosted agent went silent after the disconnect. The platform leaves a value that does not parse in `APPLICATIONINSIGHTS_CONNECTION_STRING`, and the exporter also parses that variable. So the first searches proved little for the hosted agent. It is fixed in `agents/hosted/main.py`, in version 35 of the agent.
+
+**The proof** (`docs/evidence/tracing-disconnected.txt`). One marked turn per backend, with the marker in the question and in the client's line, then a search of every table of the workspace.
+
+| Run | Own loop | Prompt agent | Hosted agent |
+| --- | --- | --- | --- |
+| Before, connected | No rows | `AppDependencies` 3, `AppGenAIContent` 3 | `AppDependencies` 4, `AppGenAIContent` 4 |
+| After, hosted version 35, 16 and 47 minutes later | No rows | No rows | No rows |
+
+The hosted agent's own logs and spans arrive from version 35, and one trace id joins the API and the hosted agent. The smoke test passed 10 of 10. First text on hosted had a p95 of 13.6 s, over the 10 s limit as before (12.6 s over the days before). The own loop and the prompt agent are under it.
+
+**Not verified.** A trace with the dealer since then, whether a text found only in the answer would show (the marker was not put there), the Agent 365 exporter that the hosted agent's platform turns on (it reported that it had nothing to export, nobody at Voltrieve asked for it, and it is not ours to change here), and what Foundry keeps for itself. Rows from before 14:25 UTC stay until [retention removes them](runbook.md#the-operations-dashboard).
+
+### The hosted agent gets our own connection string through the host's argument
+
+Without the connection to the project, the platform gives the hosted agent no usable connection string, and it reserves the usual name of the variable. So `deploy.py` sets `VOLTRIEVE_TELEMETRY_CONNECTION_STRING`, and `main.py` hands it to the agent server host as `applicationinsights_connection_string`. The host still configures Azure Monitor itself. The other ways were to start the Azure Monitor exporter in our own code, which is more code to own, or to log to the console only, which loses the agent's spans. In the process our string also replaces the broken one in `APPLICATIONINSIGHTS_CONNECTION_STRING`, because the exporter parses that too. Without our variable the broken value is removed and the host starts without telemetry. The string is an ingestion identifier, as [above](#application-insights-connection-string).
+
+### A header can only take a conversation out of the counting
+
+Conversations and turns are marked with the client (`car`, `web`, `cli`, `other` or `test`). The client comes from the `azp` claim of the validated token, not from a name that the client sends, so a caller cannot choose to be counted as another client. Our own test tools sign in like anyone else and had to be told apart. They send `X-Voltrieve-Test: 1`, which turns the client into `test`. The header can take a conversation out of the counting and never put one in. The price is that any caller can take its own conversation out. The car model is the one the client states, kept only as a slug from the catalog (`api/app/clients.py`).
+
+Seen live: the newest conversation per backend carried `test`, its backend and the car model `spark`, and 137 turns carried `voltrieve.client`, all `test` (`docs/evidence/tracing-disconnected.txt`). Not verified: a conversation marked with `car`, `web` or `cli`, because every marked turn was our own run.
 
 ## Live findings
 
@@ -254,7 +277,7 @@ Until then the rule stands as it is written, and every page that states it point
 - "Cheapest AWD in Sweden" repeated 6 times per backend: 18 of 18 right at reasoning effort medium (`docs/evidence/cross-document-repeat.txt`). At the default effort it was 13, 11 and 15 of 18 on three builds, with wrong answers treating AWD-only models as the only AWD models. An added instruction did not help and was removed. Effort is set in `voltrieve_agent.model.REASONING_EFFORT`, for the Responses call and for the prompt agents' definitions alike.
 - Rate limits: Foundry reports them mid-stream, so SDK retries never see them. `ResponsesModelClient` retries up to 3 times before output starts. The chat deployment cap is 150 (150k tokens a minute); it is a limit, not a cost. Lower caps caused `model_error` in burst runs.
 - Paused turn abandoned, and conversation resumed after 420 seconds idle so the API scaled to zero: passed on all three backends, with `turn_abandoned` and `conversation_repaired` in the trace. `docs/evidence/repair.txt`.
-- One trace id spans the API, Foundry, the hosted agent and the dealer. Foundry adds its own `responsesapi` spans for prompt and hosted agents, and an `agentsv2` request for hosted. The `responsesapi` spans hold the question and the answer (found on 2026-11-24, `docs/evidence/photos-privacy.txt`). The direct loop gets none of these. `docs/evidence/application-insights.txt`.
+- While Application Insights was connected to the project, one trace id spanned the API, Foundry, the hosted agent and the dealer. Foundry added its own `responsesapi` spans for prompt and hosted agents, and an `agentsv2` request for hosted. The `responsesapi` spans held the question and the answer (found on 2026-11-24, `docs/evidence/photos-privacy.txt`), so it is [disconnected](#closed-foundrys-tracing-is-disconnected). The direct loop got none of these. `docs/evidence/application-insights.txt`.
 - `scripts/denied_demo.py` on `loop` gave `authorization_denied` and a polite refusal (`docs/evidence/authorization-denied.txt`).
 
 ### Second knowledge base
@@ -330,6 +353,7 @@ up in the indexes, so an invented title gets no link. Other choices:
 - Publishing to Teams and Microsoft 365.
 - Cold-start figures. Whole turn times are in `docs/why-foundry.md` section 6, measured from one laptop.
 - Whether `alwaysQuerySource` would make one knowledge base cover both sources.
+- A trace with the dealer since Foundry's tracing was disconnected, and the Agent 365 exporter of the hosted agent's platform.
 - The 10 minute run expiry from older documentation.
 - Whether an MCP tool with a project connection works outside an agent definition.
 - Whether Foundry keeps a photo that was sent in an unstored turn, for abuse monitoring or anything else.

@@ -47,7 +47,7 @@ In words:
 
 A client can also say what it knows about itself: the car (model, trim, drive, model year, registration, odometer), the local time and the speed. The API writes it as one line before the user's message, marked as coming from the client. It is untrusted data and never decides what a user may see. A tool that needs it can take it from the turn, so the model does not have to copy a number.
 
-It is kept out of our own logs and spans, and out of the live feed. It is part of the user message in the conversation, so a registration number is stored in Foundry like the rest of the text. On the prompt agent and the hosted agent, Foundry's own tracing also writes it to Application Insights, with the question and the answer (`docs/evidence/photos-privacy.txt`). Whether that may stay is [an open decision](decisions.md#open-the-product-owner-decides-what-foundrys-tracing-may-record). All registration numbers in this project are made up.
+It is kept out of our own logs and spans, and out of the live feed. It is part of the user message in the conversation, so a registration number is stored in Foundry like the rest of the text. Until 2026-11-24 Foundry's own tracing also wrote it to Application Insights for prompt and hosted turns. That tracing is [disconnected](decisions.md#closed-foundrys-tracing-is-disconnected). All registration numbers in this project are made up.
 
 ## Why the photo goes straight to the model
 
@@ -96,13 +96,13 @@ The change is in `agent_core`, so the own loop and the hosted agent share it, an
 
 ### What `store=False` does not promise
 
-It keeps the photo out of the conversation and out of what Voltrieve logs. It does nothing for the text: Foundry's tracing records the question, the client's line and the answer of prompt and hosted turns, with the photo replaced by `<<ImageDisplayed>>`. It is not a promise of zero retention.
+It keeps the photo out of the conversation and out of what Voltrieve logs. It does nothing for the text, which is recorded in the conversation. It is not a promise of zero retention.
 
 - Microsoft's documentation says that setting `store=false` is not a blanket guarantee of zero retention across every service process: [Use the Azure OpenAI Responses API, data protection considerations](https://learn.microsoft.com/azure/foundry/openai/how-to/responses#encrypted-reasoning).
 - Responses created with `store: false` are not persisted as stored responses, and stored conversations on the basic setup are deleted after 60 days: [Foundry Agent Service runtime components](https://learn.microsoft.com/azure/foundry/agents/concepts/runtime-components#conversations-and-conversation-items).
 - The service may still keep prompts and completions for abuse monitoring. See [Abuse monitoring](https://learn.microsoft.com/azure/foundry/openai/concepts/abuse-monitoring) and [Data, privacy, and security](https://learn.microsoft.com/azure/foundry/responsible-ai/openai/data-privacy).
 
-So the claim is narrow: photos stay out of the conversations, and out of all telemetry we looked at. Text stays out of the logs and spans that our own code writes, and that is all: the Application Insights resource is ours, but Foundry's tracing writes the text of prompt and hosted turns into it. Connecting it to the project is what starts that, see [Decisions](decisions.md#open-the-product-owner-decides-what-foundrys-tracing-may-record). What Foundry keeps for itself is for Microsoft's documentation to say, and a customer with strict needs should read it.
+So the claim is narrow: photos stay out of the conversations, and out of all telemetry we looked at. Text stays out of the logs and spans that our own code writes. Foundry's tracing wrote the text of prompt and hosted turns to our Application Insights resource, so it is [disconnected](decisions.md#closed-foundrys-tracing-is-disconnected). Since then a marked question and client's line left no rows on any backend (`docs/evidence/tracing-disconnected.txt`). What Foundry keeps for itself is for Microsoft's documentation to say, and a customer with strict needs should read it.
 
 Failures of a private turn arrive as traces, not exceptions. See [the runbook](runbook.md#under-the-hood-and-private-turns).
 
@@ -190,7 +190,7 @@ The measure of what to expect: in the photo spike, a tool that returned rules wa
 
 ## What was found about privacy
 
-Checked on 2026-11-24 after 20 photo turns on the deployed base (`docs/evidence/photos-privacy.txt`):
+Checked on 2026-11-24 after 20 photo turns on the deployed base, before Foundry's tracing was disconnected (`docs/evidence/photos-privacy.txt`):
 
 | Where | The photo | The question, the answer and the client's line |
 | --- | --- | --- |
@@ -199,7 +199,7 @@ Checked on 2026-11-24 after 20 photo turns on the deployed base (`docs/evidence/
 | Foundry's tracing (`responsesapi`), own loop | Not there | Not there |
 | Foundry's tracing (`responsesapi`), prompt and hosted agent | Not there, `<<ImageDisplayed>>` instead | **There**, in `genAIContent` and `dependencies` |
 
-That last row breaks a rule of this project, and it is older than the photos: `genAIContent` has rows since 2026-11-03. What to do about it is [an open decision of the product owner](decisions.md#open-the-product-owner-decides-what-foundrys-tracing-may-record).
+That last row broke a rule of this project, and it was older than the photos: `genAIContent` had rows since 2026-11-03. The product owner chose to [disconnect the tracing](decisions.md#closed-foundrys-tracing-is-disconnected). After that, marked turns on all three backends left no rows in any table (`docs/evidence/tracing-disconnected.txt`). Those turns had no photo: the photo row was not measured again.
 
 ## Measured
 

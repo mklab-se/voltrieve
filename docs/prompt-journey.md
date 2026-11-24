@@ -444,7 +444,7 @@ If the 8 iterations run out, the turn ends with a `too_many_iterations` error, a
 
 ### 10. What gets recorded
 
-Every hop is a trace event to the client, a log line and a span event in Application Insights, joined by the correlation id. The dealer call carries that id too. Arguments and tool outputs are in our own logs only at debug level, because they can hold user data. Foundry's tracing is separate: on the prompt agent and the hosted agent it records the text of the turn ([open decision](decisions.md#open-the-product-owner-decides-what-foundrys-tracing-may-record)). The "Under the hood" view of the website shows these events live, when it is on.
+Every hop is a trace event to the client, a log line and a span event in Application Insights, joined by the correlation id. The dealer call carries that id too. Arguments and tool outputs are in our own logs only at debug level, because they can hold user data. Foundry's own tracing recorded the text of prompt and hosted turns, so it is [disconnected](decisions.md#closed-foundrys-tracing-is-disconnected). The "Under the hood" view of the website shows these events live, when it is on.
 
 ## Latency of one turn
 
