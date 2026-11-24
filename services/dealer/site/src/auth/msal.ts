@@ -1,4 +1,5 @@
-// Copied from clients/dashboard/src/auth/msal.ts; keep the two alike.
+// Copied from clients/dashboard/src/auth/msal.ts; keep the two alike, except that here several callers
+// can ask for a token at once, and they share one redirect.
 import {
   InteractionRequiredAuthError,
   PublicClientApplication,
@@ -24,6 +25,7 @@ export function createMsalAuth(config: AppConfig): Auth {
   });
   const request = { scopes: [config.scope] };
   let account: AccountInfo | null = null;
+  let redirecting: Promise<string> | undefined;
 
   return {
     kind: "entra",
@@ -42,13 +44,20 @@ export function createMsalAuth(config: AppConfig): Auth {
     },
     async getToken() {
       if (!account) throw new Error("Not signed in.");
+      if (redirecting) return redirecting;
       try {
         return (await app.acquireTokenSilent({ ...request, account })).accessToken;
       } catch (e) {
         if (e instanceof InteractionRequiredAuthError) {
-          await app.acquireTokenRedirect({ ...request, account });
-          // The page is navigating away; never settle so no error flashes.
-          return new Promise<string>(() => {});
+          redirecting ??= app.acquireTokenRedirect({ ...request, account }).then(
+            // The page is navigating away; never settle so no error flashes.
+            () => new Promise<string>(() => {}),
+            (failed) => {
+              redirecting = undefined;
+              throw failed;
+            },
+          );
+          return redirecting;
         }
         throw e;
       }

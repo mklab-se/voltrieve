@@ -22,6 +22,12 @@ describe("the inventory", () => {
     expect(onChange).toHaveBeenCalledExactlyOnceWith("spark", "Uppsala", 1);
   });
 
+  it("has a name for every column", () => {
+    const p = show(<Inventory state={dealerState()} flashes={{}} onChange={() => {}} />);
+    expect(p.all("thead").flatMap((h) => p.all("th", h.children)).map((th) => p.name(th))).toEqual(["Model", "Stockholm", "Göteborg", "Malmö", "Uppsala"]);
+    expect(p.all("thead").flatMap((h) => p.all("td", h.children))).toEqual([]);
+  });
+
   it("flashes a number that changed", () => {
     const p = show(<Inventory state={dealerState()} flashes={{ "spark Malmö": 2 }} onChange={() => {}} />);
     expect(p.all("span").filter((s) => String(s.props.className).includes("flash")).map((s) => p.text(s.children))).toEqual(["5"]);

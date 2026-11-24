@@ -15,7 +15,9 @@ export function Inventory({ state, flashes, onChange }: Props) {
       <table>
         <thead>
           <tr>
-            <td />
+            <th scope="col">
+              <span className="sr-only">Model</span>
+            </th>
             {state.cities.map((city) => (
               <th key={city} scope="col">
                 {city}
