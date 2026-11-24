@@ -580,3 +580,118 @@ def test_every_tool_that_calls_the_deployed_chat_says_it_is_a_test():
         if '"/chat' in text and "Api(" not in text and "X-Voltrieve-Test" not in text:
             missing.append(str(path.relative_to(root)))
     assert missing == []
+
+
+# --- tracing_check: marks a turn, then looks for the mark in every table of the workspace ---
+
+import subprocess  # noqa: E402
+
+import tracing_check  # noqa: E402
+
+
+class FakeApi:
+    sent: list[dict] = []
+
+    def __init__(self, base_url, token, backend, timeout=180.0):
+        self.backend = backend
+
+    def turn(self, message, **kwargs):
+        FakeApi.sent.append({"backend": self.backend, "message": message, **kwargs})
+        return voltrieve_client.Turn(
+            events=[("delta", {"text": "SECRET ANSWER TEXT"}), ("done", {"conversation_id": "c1"})]
+        )
+
+    def close(self):
+        pass
+
+
+def test_a_marker_is_letters_and_digits_only():
+    marker = tracing_check.new_marker()
+    assert marker.startswith("vtmark") and len(marker) == 18
+    assert tracing_check.valid_marker(marker)
+    for bad in ("", 'x" | project y', "a b", "a-b", "a\nb", "x'y", "ä"):
+        assert not tracing_check.valid_marker(bad)
+
+
+def test_the_search_query_holds_counts_only():
+    query = tracing_check.search_query("vtmarkabc123", 4)
+    assert "vtmarkabc123" in query
+    assert "summarize" in query and "count()" in query and "$table" in query
+    for word in ("project", "take", "limit", "top "):
+        assert word not in query
+
+
+def test_a_bad_marker_is_refused_before_any_subprocess(monkeypatch, capsys):
+    calls = []
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: calls.append(a))
+    assert tracing_check.main(["--search", 'x" | project y']) == 2
+    assert calls == []
+
+
+def test_mark_puts_the_marker_in_the_message_and_the_client_line(monkeypatch, capsys):
+    FakeApi.sent = []
+    monkeypatch.setattr(tracing_check, "Api", FakeApi)
+    monkeypatch.setattr(tracing_check, "api_url", lambda: "http://api")
+    monkeypatch.setattr(tracing_check, "api_token", lambda: "t")
+    assert tracing_check.main(["--mark"]) == 0
+    out = capsys.readouterr().out
+    assert [s["backend"] for s in FakeApi.sent] == ["loop", "prompt", "hosted"]
+    markers = set()
+    for sent in FakeApi.sent:
+        marker = next(w for w in sent["message"].split() if w.startswith("vtmark")).strip(".,?")
+        markers.add(marker)
+        trim = sent["context"]["car"]["trim"]
+        assert marker in trim and len(trim) <= 40
+        assert sent["context"]["car"]["model"] == "Voltrieve Spark"
+        assert marker in out
+        assert "correlation_id" not in sent or marker not in str(sent["correlation_id"])
+    assert len(markers) == 3
+    assert "SECRET ANSWER TEXT" not in out
+    assert out.count("done") == 3
+
+
+def test_mark_prints_the_error_code_not_the_answer(monkeypatch, capsys):
+    class Failing(FakeApi):
+        def turn(self, message, **kwargs):
+            return voltrieve_client.Turn(events=[("delta", {"text": "SECRET"}), ("error", {"code": "boom"})])
+
+    monkeypatch.setattr(tracing_check, "Api", Failing)
+    monkeypatch.setattr(tracing_check, "api_url", lambda: "http://api")
+    monkeypatch.setattr(tracing_check, "api_token", lambda: "t")
+    tracing_check.main(["--mark"])
+    out = capsys.readouterr().out
+    assert "boom" in out and "SECRET" not in out
+
+
+def fake_az(tables_by_marker):
+    def run(cmd, **kwargs):
+        if "--analytics-query" in cmd:
+            query = cmd[cmd.index("--analytics-query") + 1]
+            marker = next(m for m in tables_by_marker if m in query)
+            rows = json.dumps([{"Table": t, "n": n} for t, n in tables_by_marker[marker].items()])
+            return subprocess.CompletedProcess(cmd, 0, rows, "")
+        return subprocess.CompletedProcess(cmd, 0, "workspace-guid\n", "")
+
+    return run
+
+
+def test_search_exit_code_is_zero_when_nothing_is_found(monkeypatch, capsys):
+    monkeypatch.setenv("AZURE_RESOURCE_GROUP", "rg")
+    monkeypatch.setattr(subprocess, "run", fake_az({"vtmarkaaa": {}}))
+    assert tracing_check.main(["--search", "vtmarkaaa"]) == 0
+    assert "no rows" in capsys.readouterr().out
+
+
+def test_search_exit_code_is_one_on_a_hit_and_names_query_log_tables(monkeypatch, capsys):
+    monkeypatch.setenv("AZURE_RESOURCE_GROUP", "rg")
+    monkeypatch.setattr(subprocess, "run", fake_az({"vtmarkaaa": {"AppTraces": 2, "LAQueryLogs": 1}, "vtmarkbbb": {}}))
+    assert tracing_check.main(["--search", "vtmarkaaa", "vtmarkbbb", "--hours", "2"]) == 1
+    out = capsys.readouterr().out
+    assert "AppTraces" in out and "2" in out
+    assert "logs queries" in out and "no rows" in out
+
+
+def test_a_hit_only_in_a_query_log_table_is_not_a_leak(monkeypatch, capsys):
+    monkeypatch.setenv("AZURE_RESOURCE_GROUP", "rg")
+    monkeypatch.setattr(subprocess, "run", fake_az({"vtmarkaaa": {"LAQueryLogs": 1}}))
+    assert tracing_check.main(["--search", "vtmarkaaa"]) == 0

@@ -1,0 +1,123 @@
+# /// script
+# requires-python = ">=3.12"
+# dependencies = ["httpx"]
+# ///
+"""Does any chat text reach telemetry? Mark a turn, then look for the mark in every table.
+
+    uv run scripts/tracing_check.py --mark
+    uv run scripts/tracing_check.py --search MARKER [MARKER ...] [--hours 4]
+
+--mark sends one turn per backend. The marker is in the message and in the car's trim, so it is
+in the client's line too. It prints the markers and, per backend, `done` or the error code.
+--search counts, per table of the Log Analytics workspace, the rows that hold a marker. Only
+counts leave the query. A hit in a table that logs queries (the search itself) is named apart and
+does not count. Exit code 0 when nothing is found, 1 when anything is, 2 for a bad marker.
+Needs az and AZURE_RESOURCE_GROUP. Never put a marker in a correlation id.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import secrets
+import subprocess
+import sys
+
+from voltrieve_client import Api, api_token, api_url, cached_token
+
+BACKENDS = ("loop", "prompt", "hosted")
+QUERY_LOG_TABLES = {"LAQueryLogs", "AzureActivity"}  # they hold the text of our own search
+QUESTION = "What is the towing capacity of the car? My reference is {marker}."
+
+
+def new_marker() -> str:
+    return "vtmark" + secrets.token_hex(6)
+
+
+def valid_marker(marker: str) -> bool:
+    return re.fullmatch(r"[A-Za-z0-9]+", marker) is not None
+
+
+def search_query(marker: str, hours: int) -> str:
+    if not valid_marker(marker):
+        raise ValueError("a marker is letters and digits only")
+    return f'search "{marker}" | where TimeGenerated > ago({int(hours)}h) | summarize n=count() by $table'
+
+
+def mark() -> int:
+    token = cached_token(api_token)
+    for backend in BACKENDS:
+        marker = new_marker()
+        api = Api(api_url(), token, backend)
+        try:
+            turn = api.turn(
+                QUESTION.format(marker=marker),
+                context={"car": {"model": "Voltrieve Spark", "trim": f"trim-{marker}"}},
+            )
+            error = turn.error
+            outcome = f"error {error.get('code', '?')}" if error else ("done" if turn.done else "no done")
+        except Exception as exc:  # noqa: BLE001
+            outcome = f"failed {type(exc).__name__}"
+        finally:
+            api.close()
+        print(f"{backend:<8}{marker}  {outcome}")
+    return 0
+
+
+def workspace_id(group: str) -> str:
+    return subprocess.run(
+        ["az", "monitor", "log-analytics", "workspace", "list", "-g", group,
+         "--query", "[0].customerId", "-o", "tsv"],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+
+
+def count_tables(workspace: str, marker: str, hours: int) -> dict[str, int]:
+    out = subprocess.run(
+        ["az", "monitor", "log-analytics", "query", "-w", workspace,
+         "--analytics-query", search_query(marker, hours), "-o", "json"],
+        capture_output=True, text=True, check=True,
+    ).stdout
+    rows = json.loads(out)
+    if isinstance(rows, dict):  # a table response
+        rows = rows.get("tables", [{}])[0].get("rows", [])
+        return {r[0]: int(r[-1]) for r in rows}
+    return {r.get("Table") or r.get("$table"): int(r["n"]) for r in rows}
+
+
+def search(markers: list[str], hours: int) -> int:
+    workspace = workspace_id(os.environ["AZURE_RESOURCE_GROUP"])
+    found = False
+    for marker in markers:
+        counts = count_tables(workspace, marker, hours)
+        real = {t: n for t, n in counts.items() if t not in QUERY_LOG_TABLES}
+        logged = {t: n for t, n in counts.items() if t in QUERY_LOG_TABLES}
+        if real:
+            found = True
+            print(f"{marker}: " + ", ".join(f"{t} {n}" for t, n in sorted(real.items())))
+        else:
+            print(f"{marker}: no rows")
+        for table, n in sorted(logged.items()):
+            print(f"  {table} {n} (logs queries, our own search, not counted)")
+    return 1 if found else 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--mark", action="store_true")
+    group.add_argument("--search", nargs="+", metavar="MARKER")
+    parser.add_argument("--hours", type=int, default=4)
+    args = parser.parse_args(argv)
+    if args.mark:
+        return mark()
+    if not all(valid_marker(m) for m in args.search):
+        print("refused: a marker is letters and digits only", file=sys.stderr)
+        return 2
+    return search(args.search, args.hours)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
