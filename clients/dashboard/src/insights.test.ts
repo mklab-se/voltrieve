@@ -122,10 +122,15 @@ describe("the share answered", () => {
     expect(answeredShare(results({ answered: 30, partly: 5, not_found: 5 }))).toBe(75);
   });
 
+  it("is nothing with one saved result, since a held back one is hidden and not zero", () => {
+    expect(answeredShare(results({ answered: 30 }))).toBeNull();
+    expect(answeredShare(results({ answered: 30, partly: 10 }))).toBe(75);
+  });
+
   it("is nothing without saved results, or without a row for answered", () => {
     expect(answeredShare([])).toBeNull();
-    expect(answeredShare(results({ partly: 10 }))).toBeNull();
-    expect(answeredShare(results({ answered: 0 }))).toBeNull();
+    expect(answeredShare(results({ partly: 10, refused: 10 }))).toBeNull();
+    expect(answeredShare(results({ answered: 0, partly: 0 }))).toBeNull();
   });
 });
 

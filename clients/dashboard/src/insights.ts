@@ -129,12 +129,12 @@ export function sampleNote(share: number | null): string | null {
 
 // What the page shows.
 
-/** Answered, in percent of the conversations with a saved result. Nothing when that cannot be said:
- *  no row for answered means that it is not saved, not that it is none. */
+/** Answered, in percent of the conversations with a saved result. Nothing when that cannot be said: a
+ *  result without a row is hidden, not zero, so one saved result alone would always be 100 %. */
 export function answeredShare(results: InsightsRow[]): number | null {
   const answered = results.find((r) => r.result === "answered");
   const all = results.reduce((sum, r) => sum + r.conversations, 0);
-  return answered && all > 0 ? Math.round((answered.conversations / all) * 100) : null;
+  return answered && results.length > 1 && all > 0 ? Math.round((answered.conversations / all) * 100) : null;
 }
 
 export interface GroupView {

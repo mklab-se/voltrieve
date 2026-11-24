@@ -123,7 +123,7 @@ function counts(item: { people: number; conversations: number }): string {
 }
 
 function Answered({ share }: { share: number | null }) {
-  return share === null ? null : <span className="answered">Answered: about {share} % of the answers counted</span>;
+  return <span className="answered">Answered: {share === null ? "too few to say" : `about ${share} % of the answers counted`}</span>;
 }
 
 function Bar({ value, max }: { value: number; max: number }) {

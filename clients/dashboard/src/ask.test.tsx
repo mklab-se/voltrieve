@@ -141,9 +141,27 @@ describe("the page", () => {
     expect(text).toMatch(/about 40 people, about 60 conversations/);
   });
 
-  it("has the share answered of the answers counted, only where results are saved", () => {
+  it("has the share answered of the answers counted, only with two saved results", () => {
     expect(text.match(/about 75 % of the answers counted/g)).toHaveLength(1);
     expect(text.match(/% of the answers counted/g)).toHaveLength(1);
+  });
+
+  it("says that there is too little for a share with one saved result, for a topic and for a group", () => {
+    const group = { topic: "fault", group: "Warning lights" };
+    const rows = [
+      row({ cut: "topic", topic: "fault" }),
+      row({ cut: "topic_result", topic: "fault", result: "answered" }),
+      row({ cut: "group", ...group }),
+      row({ cut: "group_result", ...group, result: "answered" }),
+    ];
+    const one = page("real", { status: "ready", data: answer("real", { rows }) }).text;
+    expect(one.match(/Answered: too few to say/g)).toHaveLength(2);
+    expect(one).not.toContain("%");
+
+    const more = [row({ cut: "topic_result", topic: "fault", result: "partly" }), row({ cut: "group_result", ...group, result: "partly" })];
+    const two = page("real", { status: "ready", data: answer("real", { rows: [...rows, ...more] }) }).text;
+    expect(two.match(/Answered: about 50 % of the answers counted/g)).toHaveLength(2);
+    expect(two).not.toContain("too few to say");
   });
 
   it("has clients and car models with friendly labels", () => {
