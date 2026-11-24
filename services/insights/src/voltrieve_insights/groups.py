@@ -13,6 +13,7 @@ from collections.abc import Callable
 import httpx
 
 from voltrieve_insights.labels import Labelled, Model, Refused, send
+from voltrieve_insights.totals import MIN_PEOPLE, OTHER
 from voltrieve_insights.masking import _plain, allowed
 
 UNNAMED = "unnamed group"
@@ -225,11 +226,13 @@ async def group(
     model: Model, pii: PersonalData, items: list[Labelled],
     previous: dict[str, list[str]],
     refused: list[int] | None = None,
+    limit: int = MIN_PEOPLE,
 ) -> list[tuple[Labelled, str | None]]:
     """The group name of each item, in the order given. None means no group. Real and made up
     conversations are never mixed: the caller passes one source, with that source's previous names.
     A chunk the service refuses leaves its items without a group, and the count of such chunks is
-    appended to `refused` when given."""
+    appended to `refused` when given. Only a group of at least `limit` owners (never below 5) can be
+    saved, so only its name is checked: a smaller group is named `other` and its name goes nowhere."""
     if len({i.seeded for i in items}) > 1:
         raise ValueError(MIXED)
     by_topic: dict[str, list[int]] = {}
@@ -243,15 +246,28 @@ async def group(
     results = [named for named, _ in both]
     if refused is not None:
         refused.append(sum(count for _, count in both))
-    names = list(dict.fromkeys(name for named in results for name in named if name != UNNAMED))
+    limit = max(limit, MIN_PEOPLE)
+    owners = [
+        {name: len({items[by_topic[t][m]].owner for m in members}) for name, members in named.items()}
+        for t, named in zip(topics, results, strict=True)
+    ]
+    names = list(
+        dict.fromkeys(
+            name
+            for named, count in zip(results, owners, strict=True)
+            for name in named
+            if name != UNNAMED and count[name] >= limit
+        )
+    )
     clean = await pii.clean(names) if names else []
     if len(clean) != len(names):
         raise PersonalDataError("the personal data check gave no answer that fits")
     final = {name: (name if ok else UNNAMED) for name, ok in zip(names, clean, strict=True)}
     final[UNNAMED] = UNNAMED
     out: list[str | None] = [None] * len(items)
-    for topic, named in zip(topics, results, strict=True):
+    for topic, named, count in zip(topics, results, owners, strict=True):
         for name, members in named.items():
+            shown = final[name] if count[name] >= limit else OTHER
             for member in members:
-                out[by_topic[topic][member]] = final[name]
+                out[by_topic[topic][member]] = shown
     return list(zip(items, out, strict=True))

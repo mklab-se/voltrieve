@@ -152,10 +152,14 @@ class Counted:
 
 
 class Forced:
-    """Stands in for the model and names each group after its intent, so that the detection must answer."""
+    """Stands in for the model and names each group after its intent, so that the detection must answer.
+    Equal intents share a group: only a group of five people has its name checked."""
 
     async def ask(self, system: str, data: str, schema: dict, max_output: int = 0) -> dict:
-        return {"groups": [{"name": i["intent"], "members": [i["n"]]} for i in json.loads(data)["intents"]]}
+        found: dict[str, list[int]] = {}
+        for i in json.loads(data)["intents"]:
+            found.setdefault(i["intent"], []).append(i["n"])
+        return {"groups": [{"name": name, "members": members} for name, members in found.items()]}
 
 
 def _item(owner: int, intent: str, topic: str = TOPIC) -> Labelled:
@@ -326,7 +330,7 @@ async def run(model: Model, pii: PersonalData) -> Outcome:
     checks.append(_steering(first, third) if third is not None else Check("c steering", "FAIL", (f"error: {error}",)))
 
     asked = Counted(pii)
-    forced, error = await _attempt(_run(Forced(), asked, [_item(1, i, t) for i, t in PLANTED.items()], {}))
+    forced, error = await _attempt(_run(Forced(), asked, planted(), {}))
     checks.append(_forced(forced, asked) if forced is not None else Check("d forced names", "FAIL", (f"error: {error}",)))
 
     asked = Counted(pii)

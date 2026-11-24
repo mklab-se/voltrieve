@@ -8,6 +8,7 @@ import pytest
 import respx
 
 from voltrieve_insights import conversations
+from voltrieve_insights import groups as groups_module
 from voltrieve_insights.groups import (
     BATCH,
     MAX_NAME,
@@ -19,7 +20,7 @@ from voltrieve_insights.groups import (
     UNNAMED,
     PersonalData,
     PersonalDataError,
-    group,
+    group as real_group,
 )
 from voltrieve_insights.labels import Labelled, Model, ModelError, Refused
 
@@ -31,6 +32,18 @@ SECRET = "planted-secret-words"
 @pytest.fixture(autouse=True)
 def no_waiting(monkeypatch):
     monkeypatch.setattr(conversations, "RETRY_WAIT", 0)
+
+
+@pytest.fixture(autouse=True)
+def small_limit(request, monkeypatch):
+    """Most tests are about names, not about people: for them one owner is enough. The tests named
+    test_real_ run with the real floor of five."""
+    if not request.node.name.startswith("test_real_"):
+        monkeypatch.setattr(groups_module, "MIN_PEOPLE", 1)
+
+
+async def group(model, pii, items, previous, refused=None, limit=1):
+    return await real_group(model, pii, items, previous, refused, limit)
 
 
 def item(intent, topic="charging", seeded=False, owner="o1"):
@@ -556,3 +569,64 @@ async def test_other_found_in_an_earlier_chunk_is_not_sent_as_previous():
     model = FakeModel(lambda n, b: [one("Other", [0]), one("Real", [1])] if n == 0 else [one("Real", [0])])
     await group(model, FakePii(), items, {})
     assert model.calls[1][1]["previous_names"] == ["Real"]
+
+
+# --- only a name that can be saved is checked ---
+
+
+def crowd(topic, count, text="x"):
+    return [item(f"{text} {i}", topic, owner=f"{topic}-{text}-{i}") for i in range(count)]
+
+
+async def test_real_small_group_is_other_and_its_name_is_never_sent():
+    items = crowd("charging", 4, "small") + crowd("charging", 5, "large")
+    model = FakeModel(lambda n, b: [one("Secret small name", [0, 1, 2, 3]), one("Large name", [4, 5, 6, 7, 8])])
+    pii = FakePii()
+    out = await real_group(model, pii, items, {})
+    assert [name for _, name in out] == ["other"] * 4 + ["Large name"] * 5
+    assert pii.asked == [["Large name"]]
+    assert "Secret small name" not in repr(pii.asked) + repr(out)
+
+
+async def test_real_owners_are_counted_as_different_people():
+    items = [item(f"i{i}", owner="same") for i in range(9)]
+    model = FakeModel(lambda n, b: [one("Many by one", list(range(9)))])
+    pii = FakePii()
+    out = await real_group(model, pii, items, {})
+    assert {name for _, name in out} == {"other"} and pii.asked == []
+
+
+async def test_real_topic_with_only_small_groups_sends_nothing_to_detection():
+    items = crowd("charging", 3, "a") + crowd("fault", 4, "b")
+    model = FakeModel(lambda n, b: [one("One", [0, 1]), one("Two", [2])] if len(b["intents"]) == 3 else [one("Three", [0, 1, 2, 3])])
+    called = []
+
+    class Spy(FakePii):
+        async def clean(self, names):
+            called.append(names)
+            return await super().clean(names)
+
+    out = await real_group(model, Spy(), items, {})
+    assert {name for _, name in out} == {"other"} and called == []
+
+
+async def test_real_texts_sent_equal_large_group_names_and_each_checked_as_before():
+    items = crowd("charging", 5, "a") + crowd("charging", 6, "b") + crowd("charging", 2, "c") + crowd("fault", 5, "d")
+    def answer(n, body):
+        if body["topic"] == "fault":
+            return [one("Bad person", list(range(5)))]
+        return [one("Alpha", list(range(5))), one("Beta", list(range(5, 11))), one("Tiny", [11, 12])]
+    pii = FakePii(bad={"Bad person"})
+    out = await real_group(FakeModel(answer), pii, items, {})
+    assert sorted(n for batch in pii.asked for n in batch) == ["Alpha", "Bad person", "Beta"]
+    assert [name for _, name in out][-5:] == [UNNAMED] * 5
+    assert [name for _, name in out][11:13] == ["other", "other"]
+
+
+async def test_real_limit_is_never_below_five_and_can_be_raised():
+    items = crowd("charging", 4, "a") + crowd("fault", 6, "b")
+    model = FakeModel(lambda n, b: [one("G", list(range(len(b["intents"]))))])
+    out = await real_group(model, FakePii(), items, {}, None, 1)
+    assert [name for _, name in out] == ["other"] * 4 + ["G"] * 6
+    out = await real_group(model, FakePii(), items, {}, None, 7)
+    assert {name for _, name in out} == {"other"}

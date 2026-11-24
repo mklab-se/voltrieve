@@ -249,7 +249,7 @@ async def _run(settings: Settings, now: datetime, window_end: date | None, progr
         refused_groups: list[int] = []  # calls, for each source
         by_source = {source: [item for item in labelled if item.seeded == (source == SEEDED)] for source in sources}
         results = await run_all(
-            [group(model, pii, by_source[source], previous[source], refused=refused_groups) for source in sources]
+            [group(model, pii, by_source[source], previous[source], refused=refused_groups, limit=settings.limit) for source in sources]
         )
         grouped = dict(zip(sources, results, strict=True))
         named = sum(name is not None for items in results for _, name in items)
