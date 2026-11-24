@@ -4,6 +4,8 @@
 param name string
 param location string
 param appInsightsId string
+@description('Resource id of the Log Analytics workspace with the usage insights.')
+param workspaceId string
 param tags object = {}
 
 resource workbook 'Microsoft.Insights/workbooks@2023-06-01' = {
@@ -15,7 +17,7 @@ resource workbook 'Microsoft.Insights/workbooks@2023-06-01' = {
     displayName: 'Voltrieve operations'
     category: 'workbook'
     sourceId: appInsightsId
-    serializedData: replace(loadTextContent('../workbooks/operations.json'), '__APPINSIGHTS_ID__', appInsightsId)
+    serializedData: replace(replace(loadTextContent('../workbooks/operations.json'), '__APPINSIGHTS_ID__', appInsightsId), '__WORKSPACE_ID__', workspaceId)
   }
 }
 

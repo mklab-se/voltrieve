@@ -40,6 +40,13 @@ param dealerExists bool = false
 @description('Principal id of the hosted agent identity (HOSTED_AGENT_PRINCIPAL_ID, set by agents/hosted/deploy.py). Empty until the hosted agent exists.')
 param hostedAgentPrincipalId string = ''
 param hostedAgentName string = 'voltrieve-hosted'
+@description('The nightly usage insights (INSIGHTS_SCHEDULE). off: the job starts by hand only. on: every night at 02:30 UTC.')
+@allowed(['off', 'on'])
+param insightsSchedule string = 'off'
+@description('The first day the notice about the insights was live, as YYYY-MM-DD (INSIGHTS_NOTICE_DATE). Earlier conversations are never read. Empty: no real conversation is read.')
+param insightsNoticeDate string = ''
+@description('The deployed image of the insights job (INSIGHTS_IMAGE, set by scripts/deploy-insights.sh). Empty until it has been deployed.')
+param insightsImage string = ''
 param chatModelName string = 'gpt-6.1-terra'
 param chatModelVersion string = '2026-10-26'
 @description('The model Search plans queries with (PLANNING_MODEL_NAME). gpt-6-luna is opt-in: a GPT-6 model needs every caller of Search to use 2026-11-01-preview or later, so deploy the code before choosing it.')
@@ -98,6 +105,7 @@ module dashboardWorkbook 'modules/dashboard-workbook.bicep' = {
     name: 'voltrieve-${token}'
     location: location
     appInsightsId: monitoring.outputs.appInsightsId
+    workspaceId: monitoring.outputs.logAnalyticsId
     tags: tags
   }
 }
@@ -246,6 +254,31 @@ module insightsRole 'modules/insights-role.bicep' = {
   }
 }
 
+// insightsIdentity includes the AcrPull assignment, so depending on it orders the job after the grant.
+module insights 'modules/insights.bicep' = {
+  scope: rg
+  params: {
+    jobName: 'caj-insights-${environmentName}'
+    ruleName: 'dcr-insights-${token}'
+    location: location
+    tags: tags
+    workspaceName: monitoring.outputs.logAnalyticsName
+    environmentId: containerAppsEnv.outputs.id
+    registryLoginServer: registry.outputs.loginServer
+    image: insightsImage
+    identityId: insightsIdentity.outputs.id
+    identityClientId: insightsIdentity.outputs.clientId
+    identityPrincipalId: insightsIdentity.outputs.principalId
+    apiPrincipalId: apiApp.outputs.principalId
+    foundryProjectEndpoint: foundry.outputs.projectEndpoint
+    foundryOpenAiEndpoint: foundry.outputs.openAiEndpoint
+    languageEndpoint: 'https://${foundry.outputs.name}.cognitiveservices.azure.com'
+    modelDeployment: 'gpt-6-luna' // always deployed, see planningModels
+    schedule: insightsSchedule
+    noticeDate: insightsNoticeDate
+  }
+}
+
 module apiCurrent 'modules/fetch-container-image.bicep' = if (apiExists) {
   scope: rg
   params: {
@@ -309,6 +342,7 @@ module apiApp 'modules/api-app.bicep' = {
     hostedAgentName: hostedAgentName
     corsOrigins: '${web.outputs.url},${car.outputs.url},${dashboard.outputs.url},http://localhost:5173,http://localhost:5174,http://localhost:5175'
     appInsightsConnectionString: monitoring.outputs.appInsightsConnectionString
+    logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsCustomerId
     storageAccountName: storage.outputs.name
     // Only the documents container: the parts catalogs are internal and never linked.
     sourceContainers: storage.outputs.docsContainer
@@ -558,3 +592,5 @@ output CAR_URL string = car.outputs.url
 output DASHBOARD_URL string = dashboard.outputs.url
 output INSIGHTS_IDENTITY_ID string = insightsIdentity.outputs.id
 output INSIGHTS_IDENTITY_CLIENT_ID string = insightsIdentity.outputs.clientId
+output INSIGHTS_JOB_NAME string = insights.outputs.jobName
+output LOG_ANALYTICS_WORKSPACE_ID string = monitoring.outputs.logAnalyticsCustomerId

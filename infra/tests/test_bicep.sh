@@ -73,4 +73,15 @@ grep -q "principalId: insightsIdentity.outputs.principalId" main.bicep || { echo
 for out in INSIGHTS_IDENTITY_ID INSIGHTS_IDENTITY_CLIENT_ID; do
   grep -q "^output $out string" main.bicep || { echo "main.bicep lacks output $out"; exit 1; }
 done
+# the insights job: nothing is scheduled and no real chat is read until someone says so
+grep -q "^param insightsSchedule string = 'off'$" main.bicep || { echo "the insights job is not off by default"; exit 1; }
+grep -q '"insightsSchedule": { "value": "${INSIGHTS_SCHEDULE=off}" }' main.parameters.json || { echo "INSIGHTS_SCHEDULE does not default to off"; exit 1; }
+grep -q "^param insightsNoticeDate string = ''$" main.bicep || { echo "the notice date is not empty by default"; exit 1; }
+grep -q '"insightsNoticeDate": { "value": "${INSIGHTS_NOTICE_DATE=}" }' main.parameters.json || { echo "INSIGHTS_NOTICE_DATE does not default to empty"; exit 1; }
+grep -q '"insightsImage": { "value": "${INSIGHTS_IMAGE=}" }' main.parameters.json || { echo "a provision would replace the deployed insights image"; exit 1; }
+grep -q "^param schedule string = 'off'$" modules/insights.bicep && grep -q "^param noticeDate string = ''$" modules/insights.bicep || { echo "insights.bicep has other defaults"; exit 1; }
+grep -q "name: 'LOG_ANALYTICS_WORKSPACE_ID', value: logAnalyticsWorkspaceId" modules/api-app.bicep || { echo "api-app lacks LOG_ANALYTICS_WORKSPACE_ID"; exit 1; }
+grep -q "'__WORKSPACE_ID__', workspaceId" modules/dashboard-workbook.bicep || { echo "the workbook does not get the workspace"; exit 1; }
+# what is compiled: the roles and their condition, the identity, the table and the rule
+az bicep build --file main.bicep --stdout 2>/dev/null | python3 tests/check_insights.py || { echo "check_insights.py failed"; exit 1; }
 echo "bicep ok"

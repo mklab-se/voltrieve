@@ -3,6 +3,7 @@
 !agent_core/
 !search/
 !agents/hosted/
+!services/insights/
 **/.venv
 **/__pycache__
 **/.pytest_cache

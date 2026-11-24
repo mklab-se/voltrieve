@@ -16,6 +16,9 @@
     "carClientId": { "value": "${CAR_CLIENT_ID=}" },
     "webClientId": { "value": "${WEB_CLIENT_ID=}" },
     "cliClientId": { "value": "${CLI_CLIENT_ID=}" },
-    "hostedAgentPrincipalId": { "value": "${HOSTED_AGENT_PRINCIPAL_ID=}" }
+    "hostedAgentPrincipalId": { "value": "${HOSTED_AGENT_PRINCIPAL_ID=}" },
+    "insightsSchedule": { "value": "${INSIGHTS_SCHEDULE=off}" },
+    "insightsNoticeDate": { "value": "${INSIGHTS_NOTICE_DATE=}" },
+    "insightsImage": { "value": "${INSIGHTS_IMAGE=}" }
   }
 }

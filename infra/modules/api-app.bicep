@@ -23,6 +23,8 @@ param hostedAgentName string
 @description('Comma separated list of allowed browser origins.')
 param corsOrigins string
 param appInsightsConnectionString string
+@description('Id (customerId) of the Log Analytics workspace with the usage insights.')
+param logAnalyticsWorkspaceId string
 @description('Storage account whose documents users may open from source links.')
 param storageAccountName string
 @description('Comma separated containers whose documents may be linked. Others are never signed.')
@@ -87,6 +89,7 @@ resource api 'Microsoft.App/containerApps@2026-07-01' = {
             { name: 'CORS_ORIGINS', value: corsOrigins }
             { name: 'AGENT_BACKEND', value: 'loop' }
             { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsightsConnectionString }
+            { name: 'LOG_ANALYTICS_WORKSPACE_ID', value: logAnalyticsWorkspaceId }
             { name: 'OTEL_SERVICE_NAME', value: 'voltrieve-api' }
             { name: 'AZURE_EXPERIMENTAL_ENABLE_GENAI_TRACING', value: 'true' }
             // Our own spans never carry message text, whatever a library defaults to.

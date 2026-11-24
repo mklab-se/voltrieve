@@ -51,11 +51,13 @@ The name is limited to 22 characters and appears in resource names. Optional val
 | `AZURE_SEARCH_LOCATION` | `francecentral` | Search region |
 | `PLANNING_MODEL_NAME` | `gpt-5.4-mini` | The model that plans Search queries. The only other value is `gpt-6-luna`, which is opt-in and follows [its own order](#order-for-an-update-with-the-new-search-values) |
 | `SEARCH_SERVERLESS` | `off` | A Serverless search service next to the Basic one. `off`: not deployed. `standby`: deployed, nothing uses it. `active`: the API and agents use it. Basic stays in all three, and going back to `off` does not delete a deployed service |
+| `INSIGHTS_SCHEDULE` | `off` | The usage insights job. `off`: it starts by hand only. `on`: every night at 02:30 UTC |
+| `INSIGHTS_NOTICE_DATE` | empty | The first day the notice was live in the car and on the website, as `YYYY-MM-DD`. Real chats started before it are never read. Empty: no real chat is read |
 | `VOLTRIEVE_VERIFIED_DOMAIN` | the tenant's default domain | Domain for the tester account |
 
 The Basic service is in `AZURE_SEARCH_LOCATION`. A Serverless service is in `serverlessSearchLocation`, which defaults to Sweden Central.
 
-The hooks and scripts fill in the rest, such as `TENANT_ID`, `API_CLIENT_ID`, `WEB_URL`, `CAR_URL`, `DASHBOARD_URL`, `CAR_CLIENT_ID`, `DASHBOARD_CLIENT_ID`, `TEST_USER_UPN` and `HOSTED_AGENT_PRINCIPAL_ID`. All of them are identifiers. The Application Insights connection string is an ingestion identifier, not a secret.
+The hooks and scripts fill in the rest, such as `TENANT_ID`, `API_CLIENT_ID`, `INSIGHTS_IMAGE`, `WEB_URL`, `CAR_URL`, `DASHBOARD_URL`, `CAR_CLIENT_ID`, `DASHBOARD_CLIENT_ID`, `TEST_USER_UPN` and `HOSTED_AGENT_PRINCIPAL_ID`. All of them are identifiers. The Application Insights connection string is an ingestion identifier, not a secret.
 
 ## Order
 
@@ -118,7 +120,58 @@ scripts/deploy-agents.sh
 
 Until step 4 has propagated, hosted dealer tools fail. Sessions are bound to the agent version they started on, so conversations in flight stay on the old version until the API restarts or a call fails and the session is dropped.
 
-### 4. Check it
+### 4. `scripts/deploy-insights.sh`
+
+Run this after `azd up`, from the repository root, as the deployer:
+
+```sh
+scripts/deploy-insights.sh
+```
+
+It builds the image of the usage insights job with `az acr build`, stores its name as `INSIGHTS_IMAGE` in the azd environment and gives it to the job. A later `azd provision` reads `INSIGHTS_IMAGE`, so it keeps the image. Before the first deploy the job has a public sample image, which only prints a line. The script starts no run and changes no schedule.
+
+```mermaid
+flowchart LR
+    Build["deploy-insights.sh"] -- "image" --> Job["Job caj-insights-*"]
+    Build -- "INSIGHTS_IMAGE" --> Env["azd environment"]
+    Env -- "azd provision" --> Job
+    Job -- "one upload a run" --> Rule["Data collection rule"]
+    Rule --> Table[("VoltrieveInsights_CL<br/>12 months")]
+    Table -- "this table only" --> Job
+    Table -- "this table only" --> API["API"]
+```
+
+The job's identity reads conversations and calls models in the Foundry account (a custom role), saves to its own data collection rule, and reads the `VoltrieveInsights_CL` table back. The API's identity may read that table. Both read it through Log Analytics Data Reader with a condition on the table name. A new condition can take 15 minutes to work.
+
+Start a run by hand, and see how it ended:
+
+```sh
+az containerapp job start -n "$(azd env get-value INSIGHTS_JOB_NAME)" -g "$(azd env get-value AZURE_RESOURCE_GROUP)"
+az containerapp job execution list -n "$(azd env get-value INSIGHTS_JOB_NAME)" -g "$(azd env get-value AZURE_RESOURCE_GROUP)" -o table
+```
+
+A run prints one line a step, with counts. One that fails prints `failed: <step>: <error type>`, saves nothing and ends with exit code 1.
+
+An older week, for made up conversations only, is a run with `--window-end` and the last day of the week. It reads no real chat and writes no real row. Save the job's template, add `args: ["--window-end", "2026-11-22"]` to the container in it, and start the job with that file:
+
+```sh
+az containerapp job show -n "$(azd env get-value INSIGHTS_JOB_NAME)" -g "$(azd env get-value AZURE_RESOURCE_GROUP)" \
+  --query properties.template -o yaml > insights-week.yaml
+az containerapp job start -n "$(azd env get-value INSIGHTS_JOB_NAME)" -g "$(azd env get-value AZURE_RESOURCE_GROUP)" \
+  --yaml insights-week.yaml
+```
+
+Run older weeks before newer ones: the page shows the latest run. To read real chats, the notice has to be live first. Then set both values and provision:
+
+```sh
+azd env set INSIGHTS_NOTICE_DATE 2026-12-01
+azd env set INSIGHTS_SCHEDULE on
+azd provision
+```
+
+Not verified yet: that the job deploys and runs, that the condition holds the two identities to the table, and that a job can go from `off` to `on` in place. If Azure refuses to change the trigger, delete the job and provision again: it holds no data.
+
+### 5. Check it
 
 ```sh
 uv run scripts/runbook.py
@@ -149,6 +202,7 @@ When an environment already runs an older version, deploy the hosted agent befor
 | --- | --- |
 | API or dealer code, `agent_core` | `azd deploy api`, `azd deploy dealer` |
 | Website, car, dashboard | `azd deploy web`, `azd deploy car`, `azd deploy dashboard`, or `azd package <service> && scripts/deploy-web.sh <service>` where the SWA client cannot run (macOS 27 without Rosetta) |
+| Usage insights job, `agent_core` as used by it | `scripts/deploy-insights.sh` |
 | Agents, including `agent_core` as used by the hosted agent | `scripts/deploy-agents.sh` |
 | Infrastructure | `azd provision` |
 | Documents | `azd provision` (the post-provision hook uploads and indexes) |
@@ -163,7 +217,8 @@ Approximate:
 | Azure AI Search Serverless, `off` (the default) | 0 |
 | Azure AI Search Serverless, `standby` or `active` | Storage under 0.01 USD a month, and 0.255 USD per CU hour while it works, on top of Basic. It sleeps after 10 idle minutes |
 | Container Registry Basic | About 5 USD a month |
-| Log Analytics | Small, by ingestion |
+| Log Analytics | Small, by ingestion. The insights table adds a few MB a year |
+| Usage insights job | None: per run, one a night at most when it is on |
 | Container Apps | None when scaled to zero |
 | Three Static Web Apps, Free tier | None |
 | Models | None: per token |
