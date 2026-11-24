@@ -1,0 +1,88 @@
+Usage insights, acceptance on made up conversations, 2026-11-24 (UTC), against the dev project.
+
+The job runs as caj-insights with its own identity, by hand. The schedule is off and the notice date is empty, so no real
+conversation was read. 1,150 made up conversations were written with made up owners, marked seeded.
+
+1. Runs (all by hand)
+   15:22 first run        failed closed at "previous names", nothing saved. The query used the name `latest`, which the
+                          query engine refuses. Also in the API and five workbook queries. Fixed (f46e384), and every new
+                          query was then run live.
+   15:34 to 15:50         5 good runs (the current window once with 38 conversations, then with more, and 3 older weeks)
+   15:50 wrong model name failed at "label", exit 1, nothing saved (checked after the ingestion delay of about 6 minutes)
+   15:57 to 16:10         4 good runs with more made up people (weeks ending 1, 8, 15 and 22 November)
+   Last run               514 selected, 508 labelled, 6 refused, 117 rows, 529,060 tokens in, 54,330 out, 4 minutes
+
+2. Rule of five
+   Groups saved in the last run: 36 rows, 25 of them named. Examples: "Home charging without a wall box", "Fjord towing
+   capacity", "Atlas range while towing a caravan". Every count is a multiple of five.
+   An independent script over 3,000 random inputs (24,884 saved rows): no row of fewer than five people, and no remainder
+   of one to four people in the splits where the rule of suppression applies.
+   Four seeded people plus one real person: shown by a test, not live.
+
+3. Grouping, as printed by scripts/insights_check.py
+Grouping of made up intents, gpt-6-luna and the detection of personal data, 2026-11-24 15:56 UTC
+
+PASS    a need
+        20 of 20 phrasings are in one group (gate 18), named: Charging at home from a standard outlet
+        named like the need: yes
+        0 of 12 other intents are in it
+        all groups: Charging at home from a standard outlet (20), other (12)
+        saved groups: Charging at home from a standard outlet: 20 people, other: 10 people
+
+REPORT  b names kept
+        32 of 32 kept the name of their group (100 %)
+        all groups: Charging at home from a standard outlet (20), other (12)
+
+PASS    c steering
+        names of the steering: none
+        all groups: Charging at home from a regular outlet (19), other (13)
+        ordinary intents that stayed together or apart as before: 94 %
+
+PASS    d forced names
+        Anna Lindqvist wants to charge: replaced by the detection
+        Storgatan 12 wants a tow: replaced by the detection
+
+PASS    d real names
+        General charging help: kept
+        Vehicle towing assistance: kept
+        with a planted word and kept: none
+
+PASS    e shape
+        answered 5 of 5
+        Charging at home without a wall box: clean
+        Winter range of the Spark: clean
+        Anna Lindqvist wants to charge: refused
+        Price of winter wheels: clean
+        Booking a test drive: clean
+
+The intents are English, as the labels write them. Ten stand for a Swedish phrasing that was not sent.
+
+Cost, with the list prices in scripts/model_costs.py
+  tokens in 4,522 (cached 1,389), out 1,616
+  0.0011 USD for the model
+  12 texts sent to the detection, whose price is not in the file
+
+4. Planted personal details
+   All 108 planted strings against the 51 group names saved in all runs: 0 found (scripts/labels_check.py's counter).
+   The intents of the 50 planted conversations held 0 of them (insights-labels.txt).
+
+5. The job's identity
+   Its roles: AcrPull, the custom reader of conversations, Log Analytics Data Reader with a condition, Monitoring Metrics
+   Publisher on its own rule. In a temporary job with that identity: VoltrieveInsights_CL readable, and 0 rows from
+   AppTraces, AppGenAIContent, ContainerAppConsoleLogs_CL and `search *`, which all hold data.
+
+6. The API
+   GET /admin/insights: 200 for real and seeded, 422 for another source, 401 without a token. Real is empty, as it should be.
+
+7. Cost
+   The last run: 0.053 USD in and 0.027 USD out, 0.080 USD for 508 conversations at list price (design section 10 says
+   0.0002 a conversation for labeling, so 0.10 for 508). The detection: 12 texts in the grouping check, only names of
+   groups that can be saved. Its price was not found in Azure's price list for the text meter. Microsoft's page says about
+   1 USD per 1,000 texts.
+
+Not verified
+   403 for a user without Dashboard.View, live (only tests: the one account at hand has the role).
+   A run on real conversations, the schedule, and the switch from Manual to Schedule.
+   The job at the cap of 2,000 conversations per source: 4 minutes for 514, so about 8 seconds each at eight at a time.
+   Names of groups over several nights of real use (the same run twice kept 100 % of the names).
+   The price of the detection.
