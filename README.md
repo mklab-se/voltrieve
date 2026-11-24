@@ -172,8 +172,9 @@ Idle, about 80 USD a month plus a small amount for Log Analytics: Search Basic i
 
 Deployed and run live on 2026-11-04 and 2026-11-05. Photos, the car, the new website and the newer Search versions were deployed and measured on 2026-11-24.
 
-Run live on 2026-11-24, from scripts and not from a signed in browser:
+Run live on 2026-11-24:
 
+- The car, the website and the dashboard in a browser against the deployed API, with a token from the az CLI in place of the sign-in page (`docs/evidence/clients-live.txt`).
 - A photo on all three backends: 252 parking questions with no wrong verdict, and 36 of 36 part numbers right for a broken lamp ([Photos and attachments](docs/attachments.md#measured)).
 - The car's five tools on all three backends, 18 of 18 (`docs/evidence/car-tools.txt`).
 - The three sites are deployed and show their sign-in page (looked at by hand, no evidence file).
@@ -195,7 +196,7 @@ Offline tests pass: `agent_core` 167, `api` 459, `agents/hosted` 40, `search` 62
 
 Not verified:
 
-- Sign-in to the car, the website and the dashboard, and a conversation from their pages with the deployed API. The pages were seen in a browser with mock servers.
+- Sign-in to the car, the website and the dashboard.
 - The car in Safari or Firefox, on a slow or Windows computer, and with a screen reader. Whether a person hears the horn and the motor.
 - A rollback of the Serverless search service or of the Search versions, and what Serverless costs on an invoice.
 - The workbook's check of Foundry's tracing rows.

@@ -1,0 +1,31 @@
+The three clients in a browser against the deployed API, 2026-11-24, 03:45 to 03:55 UTC, headless Chromium 1440x900.
+How: the clients' own dev servers with the dev sign-in, and a local proxy that forwarded to the deployed API with a token
+from the az CLI. So the pages, the API, the models and Search are real, and the Microsoft sign-in page is not covered.
+One run of each, own loop unless it says otherwise. Search was the Serverless service.
+
+Car
+  "Set the speed to 50"            speedometer 0, 1, 11, 22, 33, 43, 50
+  "Turn the wipers on fast"        wipers sweep, rain, "fast" in the driver display
+  "Honk twice"                     4 oscillators started, audio context running. Nobody listened.
+  "Can I park here for one hour?"  the car sent its own photo of the sign (fee always, 2 hours 8-18) at 04:46 on a Tuesday.
+                                   Answer: yes, one hour, until 05:46, with a fee. Right.
+  "Park the car"                   50, 39, 19, 15, 8, 0. Parked beside the kerb in the next block, and Runa said that it is
+                                   another block with another sign and to ask again.
+  console errors 0
+
+Website (My Voltrieve)
+  nothing of backends or events on the page before the switch
+  a drawn crack in the left lamp, attached from the file picker, "This is broken on my car. Which part do I need?"
+                                   left headlamp, VP-14375. Right. First text 11.8 s, over the 10 s limit: the first search
+                                   after more than half an hour without one.
+  photo removed, "When is my next service due?"   24 months or 30,000 km, 17,600 km left. It cannot give the date: the next
+                                   service on the card is not in the context that is sent.
+  Under the hood on: prompt, hosted and loop each answered the same question with sources and a timeline (8, 12, 12 events)
+  a source link opened the PDF through /sources and blob storage
+  console errors 0
+
+Operations dashboard
+  the live feed connected and showed each turn above with tools, knowledge bases, times and cost, users as pseudonyms
+  console errors 0
+
+Not verified here: sign-in, the notice for a user without Dashboard.View, the portal links, other browsers, sound by ear.

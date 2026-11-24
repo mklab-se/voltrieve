@@ -472,12 +472,12 @@ Issue #12 as it is written. That issue is the specification.
 
 - [x] On all three backends: wipers, horn, speed and park work from a typed message.
       *Live, 18 of 18: `docs/evidence/car-tools.txt`.*
-- [ ] The street, the speedometer and the sound follow the tools.
-      *Seen in a browser with the mock server and tested. Not seen with the deployed API, and nobody has listened.*
+- [x] The street, the speedometer and the sound follow the tools.
+      *Live in a browser: `docs/evidence/clients-live.txt`. The horn started in the browser, and nobody has listened to it.*
 - [x] After "honk" and "wipers on" following a sign question, the turns are stored as usual.
       *Live on all three backends: `docs/evidence/photos-privacy.txt`.*
 - [x] Parking in another block than the one that was asked about is pointed out.
-      *Tested in `clients/car`.*
+      *Tested in `clients/car`, and live: `docs/evidence/clients-live.txt`.*
 - [x] A sign photo gets the right answer for the drawn signs and times, on all three backends, and
       the numbers are in the evidence.
       *Live, 249 of 252 by the script, and the other 3 read by hand and right: `docs/evidence/photos-routing.txt`.*
@@ -501,7 +501,7 @@ Issue #12 as it is written. That issue is the specification.
 - [x] Events and backend picker are off by default in the car and on the website.
       *Tested in both clients, and seen in a browser.*
 - [ ] The website has no gauge and no dashboard, and issue #12's own criteria pass.
-      *The gauge is gone and the dashboard is its own app. Sign in to the dashboard is not verified.*
+      *Live: `docs/evidence/clients-live.txt`. Left of issue #12: a person signs in to the dashboard, with the role and without it, and uses the portal links.*
 - [x] A handler for a made-up text format can be added in a test without changing any file outside
       `api/app/attachments/`.
       *Tested in `api`.*

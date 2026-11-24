@@ -30,11 +30,11 @@ flowchart LR
 
 All four clients are built in this repository: the car, the website, the operations dashboard and the CLI. This page was checked against the code of the car on 2026-11-24. The pictures on it were taken with mock servers, so the answers and the numbers in them are mock data.
 
-Run live on 2026-11-24, from scripts against the deployed API: photo turns with the car's and the website's context on all three backends ([Photos and attachments](attachments.md#measured)), and the car's five tools on all three backends, 18 of 18. The three sites are deployed and show their sign-in page (looked at by hand).
+Run live on 2026-11-24: the car, the website and the dashboard in a browser against the deployed API, with a token from the az CLI in place of the sign-in page ([`clients-live.txt`](https://github.com/mklab-se/voltrieve/blob/main/docs/evidence/clients-live.txt)). From scripts: photo turns with the car's and the website's context on all three backends ([Photos and attachments](attachments.md#measured)), and the car's five tools on all three backends, 18 of 18. The three sites are deployed and show their sign-in page (looked at by hand).
 
 Not verified:
 
-- sign-in to the car, the new website and the dashboard, and a conversation from them with the deployed API,
+- sign-in to the car, the new website and the dashboard,
 - the car in Safari or Firefox, on a slow or Windows computer, or with a screen reader,
 - whether a person hears the horn and the motor.
 
