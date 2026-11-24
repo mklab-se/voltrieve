@@ -191,9 +191,16 @@ class Result:
     reason: str = field(default="", repr=False)
 
 
-def is_rate_limit(text: str) -> bool:
-    lowered = text.lower()
-    return "429" in lowered or "too many requests" in lowered or "rate limit" in lowered or "throttl" in lowered
+def retry_after(exc: Exception, default: float) -> float | None:
+    """Seconds to wait when `exc` is a rate limit (openai.RateLimitError, status 429), else None. The
+    server's retry-after is used when it gives one, at most two minutes."""
+    if type(exc).__name__ != "RateLimitError" and getattr(exc, "status_code", None) != 429:
+        return None
+    header = getattr(getattr(exc, "response", None), "headers", None) or {}
+    try:
+        return min(120.0, float(header.get("retry-after")))
+    except (TypeError, ValueError):
+        return float(default)
 
 
 @lru_cache(maxsize=None)
@@ -221,11 +228,12 @@ class Foundry:
                 response = await self.client.responses.create(model=self.model, store=False, **kwargs)
                 break
             except Exception as exc:
-                wait = next(waits, None)
-                if wait is None or not is_rate_limit(str(exc)):
+                default = next(waits, None)
+                seconds = None if default is None else retry_after(exc, default)
+                if seconds is None:
                     raise
                 spent.waited = True
-                await asyncio.sleep(wait)
+                await asyncio.sleep(seconds)
         usage = response.usage
         spent.input_tokens += usage.input_tokens
         spent.cached_tokens += usage.input_tokens_details.cached_tokens

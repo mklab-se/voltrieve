@@ -9,7 +9,7 @@ import datetime as dt
 import re
 
 YES = {"yes", "yep", "yeah", "sure", "absolutely", "certainly", "ja"}
-NO = {"no", "nope", "nej", "not"}
+NO = {"no", "nope", "nej"}
 # A clear way to say it without starting with the word, judged on the first sentence only.
 NO_PATTERNS = (
     r"\byou (?:can ?not|can't|cannot|may not|must not|are not allowed|aren't allowed|should not|shouldn't)\b",
@@ -20,21 +20,32 @@ YES_PATTERNS = (
 )
 
 
+# A yes with one of these in its first sentence is a condition, not a yes: "Yes, but only for 2 hours".
+HEDGES = re.compile(r"\b(?:but|except|unless|only|if|depends|provided|however|as long as)\b")
+AFTER_YES = re.compile(r"\b(?:but|except|unless|only|if|depends|provided|however|as long as|not)\b")  # after a yes, "not" is a condition too
+# "Not allowed" is a no. Any other "Not ..." ("Not before 19:00", "Not for 3 hours") is a condition.
+PLAIN_NOT = re.compile(r"not (?:allowed|permitted|here|now|possible)\b")
+
+
 def read_verdict(text: str) -> str | None:
-    """"yes" or "no" when the answer starts with one, or says it clearly in its first sentence."""
+    """"yes" or "no" when the answer starts with one, or says it clearly in its first sentence.
+    A hedged answer ("Yes, but only...", "Not before 19:00") is None: unclear, for a person to judge."""
     lowered = re.sub(r"^[\W_]+", "", text.strip().lower())
+    sentence = re.split(r"[.!?\n]", lowered, maxsplit=1)[0]
     if re.match(r"no (?:problem|worries)\b", lowered):
         return "yes"
     first = re.match(r"[a-zåäö]+", lowered)
-    if first and first.group(0) in YES:
-        return "yes"
-    if first and first.group(0) in NO:
+    word = first.group(0) if first else ""
+    if word in YES:
+        return None if AFTER_YES.search(sentence) else "yes"
+    if word in NO:
         return "no"
-    sentence = re.split(r"[.!?\n]", lowered, maxsplit=1)[0]
+    if word == "not":
+        return "no" if PLAIN_NOT.match(lowered) else None
     if any(re.search(p, sentence) for p in NO_PATTERNS):
         return "no"
     if any(re.search(p, sentence) for p in YES_PATTERNS):
-        return "yes"
+        return None if HEDGES.search(sentence) else "yes"
     return None
 
 

@@ -199,25 +199,55 @@ def test_a_wrong_or_unreadable_answer_is_a_miss():
     assert not one("straight", lambda kw: reply("I do not know"))[1].ok
 
 
+class RateLimitError(Exception):
+    """Like openai.RateLimitError: a 429 with headers."""
+
+    def __init__(self, retry_after=None):
+        super().__init__("Error code: 429")
+        self.status_code = 429
+        self.response = SimpleNamespace(headers={"retry-after": retry_after} if retry_after else {})
+
+
 def test_a_rate_limit_waits_goes_on_and_is_marked(no_sleep):
     seen = []
 
     def script(kw):
         seen.append(1)
         if len(seen) < 3:
-            raise RuntimeError("Error code: 429 - rate limit exceeded")
+            raise RateLimitError()
         return reply(verdict("no"))
 
     _, result = one("straight", script)
     assert result.ok and result.waited and len(no_sleep) == 2 and result.spent.calls == 1
 
 
-def test_a_rate_limit_that_does_not_end_is_an_error(no_sleep):
+def test_the_wait_follows_retry_after(no_sleep):
+    seen = []
+
     def script(kw):
-        raise RuntimeError("429 Too Many Requests")
+        seen.append(1)
+        if len(seen) == 1:
+            raise RateLimitError("7")
+        return reply(verdict("no"))
+
+    one("straight", script)
+    assert no_sleep == [7.0]
+
+
+def test_a_text_that_only_says_429_is_not_a_rate_limit(no_sleep):
+    def script(kw):
+        raise RuntimeError("429 in the text of another error")
 
     _, result = one("straight", script)
-    assert not result.ok and "429" in result.error and len(no_sleep) == len(compare.RATE_WAITS)
+    assert not result.ok and not no_sleep
+
+
+def test_a_rate_limit_that_does_not_end_is_an_error(no_sleep):
+    def script(kw):
+        raise RateLimitError()
+
+    _, result = one("straight", script)
+    assert not result.ok and "RateLimitError" in result.error and len(no_sleep) == len(compare.RATE_WAITS)
 
 
 def test_another_error_is_recorded_without_waiting(no_sleep):
