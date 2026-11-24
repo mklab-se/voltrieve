@@ -24,7 +24,7 @@ Most agent samples stop at "it answers". This one answers the questions you meet
 | --- | --- | --- |
 | **Why host an agent in Foundry at all?** | For a managed identity, versions and a publishing path. Not for the loop, which is 252 lines of Python. | [Comparison](docs/why-foundry.md) |
 | **My client has its own tools. Now what?** | A prompt agent refuses per-request tools with a 400. An own loop or a hosted agent runs them, even one the server has never seen. | [Client tools](docs/why-foundry.md#1-what-happened-with-client-tools) |
-| **Can a client send a photo, and where does it go?** | Straight into the model call, as an unstored turn. The conversation keeps the text only. A new kind of attachment is one handler. | [Photos and attachments](docs/attachments.md) |
+| **Can a client send a photo, and where does it go?** | Straight into the model call, as an unstored turn. The conversation keeps the text only. Foundry's tracing also records the text of prompt and hosted turns, [an open decision](docs/decisions.md#open-the-product-owner-decides-what-foundrys-tracing-may-record). A new kind of attachment is one handler. | [Photos and attachments](docs/attachments.md) |
 | **How does the agent decide to use RAG?** | No classifier exists. The model decides in its first call, from words you control. | [The journey of a prompt](docs/prompt-journey.md) |
 | **Can it use several knowledge bases without calling them in vain?** | Yes: all three reached the right bases in every run. Two of them run the searches at the same time. | [Two knowledge bases](docs/why-foundry.md#6-two-knowledge-bases-who-chooses-and-who-runs-them-together) |
 | **Which model should I use?** | Newer isn't always better. `gpt-6.1-terra` runs all three backends, with 1 of 48 turns over 10 s to first token on the own loop. `gpt-6-luna` costs about a third of `gpt-5.4-mini`. It plans the Search queries (`PLANNING_MODEL_NAME`), and `gpt-5.4-mini` is the way back. | [Choosing a model](docs/model-comparison.md) |
@@ -102,7 +102,7 @@ Choose per request with `X-Agent-Backend: prompt|loop|hosted`. Clients can't oth
 
 - **A shared agent loop** ([`agent_core/`](agent_core/)): parallel tool calls, roles on tools, schema checks, pause and resume for client tools.
 - **Client tools end to end**: a turn that pauses, runs on the user's machine and picks up again, with repair when a client disappears.
-- **Photos and attachments** ([`api/app/attachments/`](api/app/attachments/)): a handler for each kind, unstored turns that keep the photo out of the conversation, and an upload that answers `rejected` instead of failing.
+- **Photos and attachments** ([`api/app/attachments/`](api/app/attachments/)): a handler for each kind, unstored turns that keep the photo out of the conversation and our telemetry (the text is another matter, see [the privacy limits](docs/attachments.md#what-storefalse-does-not-promise)), and an upload that answers `rejected` instead of failing.
 - **Curated answers** ([`curated.py`](agent_core/src/voltrieve_agent/curated.py)): approved text, word for word, with no search on every turn.
 - **Status events**: tell users what's happening while they wait, on the stream they already have.
 - **Agentic retrieval as code** ([`search/definitions/`](search/definitions/)): knowledge bases, sources, indexes and skillsets, on the latest API version.

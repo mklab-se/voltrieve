@@ -7,9 +7,9 @@ from app.insights import (
     TurnRecorder,
     estimate_cost_sek,
     mask_prompt,
-    pseudonym,
 )
 from voltrieve_agent.events import AgentEvent
+from voltrieve_agent.private import pseudonym
 
 
 def test_pseudonym_is_stable_short_and_hides_the_id():

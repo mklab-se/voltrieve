@@ -15,10 +15,11 @@ lives in Foundry.
 `parts` (the content parts of an attachment, default []) and `kept` (what an unstored turn kept
 when it paused, default none) are optional, and a body without them is accepted. An old agent
 ignores them: a new API with an old hosted agent answers without the photo, so deploy this agent
-before the API that sends them. Neither is ever logged.
+before the API that sends them. We log neither.
 
-`private` (optional boolean) says that nothing the turn says may be logged, error texts included. It is
-always so with `parts` or `kept`.
+`private` (optional boolean) says that our code may log nothing the turn says, error texts included. It
+is always so with `parts` or `kept`. Foundry's own tracing is not covered: it records the text of hosted
+turns (docs/decisions.md).
 
 The Web API's managed identity is the only caller allowed to invoke the agent (spec 6.5), so
 the `user` claims in the body are trusted. The Foundry gateway replaces `x-ms-original-subject`
@@ -43,7 +44,7 @@ from starlette.responses import JSONResponse, Response, StreamingResponse
 from voltrieve_agent.events import KEEPALIVE, KEEPALIVE_SECONDS, AgentEvent, format_event
 from voltrieve_agent.loop import TurnInput, run_turn
 from voltrieve_agent.model import ModelClient
-from voltrieve_agent.private import log_exception
+from voltrieve_agent.private import log_exception, pseudonym
 from voltrieve_agent.tools import ClientTool, ServerTool, UserContext
 
 logger = logging.getLogger("voltrieve.hosted")
@@ -210,12 +211,12 @@ async def handle(request: Request, runtime: Runtime) -> Response:
     if turn is None:
         return JSONResponse({"error": "invalid request body"}, status_code=400)
     logger.info(
-        "turn %s conversation %s session %s correlation_id %s user_oid %s",
+        "turn %s conversation %s session %s correlation_id %s user %s",
         turn.turn_id,
         turn.conversation_id,
         request.headers.get("x-agent-session-id"),
         turn.correlation_id,
-        turn.user.oid,
+        pseudonym(turn.user.oid),
     )
     return StreamingResponse(
         stream_turn(runtime, turn),

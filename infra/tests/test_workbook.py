@@ -36,6 +36,15 @@ def test_no_query_names_a_column_kind():
         assert not re.search(r"(?<!join )(?<!request_)\bkind\s*(==|=)", item["content"]["query"]), title
 
 
+def test_the_privacy_check_also_counts_what_foundry_traces_and_shows_no_text():
+    query = items()["Rows written by Foundry's tracing"]["content"]["query"]
+    assert '"responsesapi"' in query and "genAIContent" in query and "dependencies" in query
+    assert "From the client" in query and "data:image" in query
+    # Only counts, lengths, names and times may leave the query: the rows themselves hold the text.
+    summary = query.split("| summarize")[1]
+    assert "take_any" not in summary and "make_list" not in summary and "project" not in summary
+
+
 def test_map_counts_users_by_pseudonym():
     query = items()["Where users connect from"]["content"]["query"]
     assert "voltrieve.user" in query and "user_Id" not in query

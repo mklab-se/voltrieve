@@ -16,6 +16,8 @@ part of issue #4.
    - *Secure by default:* photos stay out of conversations, logs and telemetry that we control.
      Foundry itself may still keep data for abuse monitoring. `store=false` does not promise zero
      retention, and the documentation says so.
+     *Note 2026-11-24:* true for photos. For text it is not: Foundry's tracing writes the text of prompt
+     and hosted turns to our Application Insights. [The decision is open](../../decisions.md#open-the-product-owner-decides-what-foundrys-tracing-may-record).
    - *Instructions:* Runa may today answer only from retrieved documents and tool results. Reading
      a road sign needs an exception (section 6.4). It gets an entry in Decisions.
    - *Cost:* no new idle cost. Two more Static Web Apps on the Free tier. Image generation is capped
@@ -63,6 +65,8 @@ itself, and the server analyzes it.
 
 - the demo needs an explanation before it makes sense,
 - a photo or a registration number ends up in logs, telemetry or the live feed,
+  (*Note 2026-11-24:* this has happened for the registration number, on prompt and hosted turns, through Foundry's
+  own tracing. See the note in section 1.)
 - a new kind of attachment would need a change to the API contract or to a backend,
 - the car answers a parking question with confidence from a photo that cannot be read.
 
@@ -166,6 +170,7 @@ POST /chat/tool-results   { ..., results: [{ call_id, output, attachments?: [id]
 - The API writes it as one line before the user's message, marked as coming from the client. It is
   untrusted data and never decides what a user may see.
 - It is kept out of logs, spans and the live feed, which show only the user's own message.
+  *Note 2026-11-24:* out of our own logs and spans. Foundry's tracing records it on prompt and hosted turns.
 - It also travels in structured form on the turn in the API, also over a pause, so that a server tool can
   use it later without asking the model to copy a number (section 7). The first tool that needs it
   carries it on into the loop and the hosted agent's body.
@@ -477,6 +482,8 @@ Issue #12 as it is written. That issue is the specification.
       number. Asked which part something is, Runa may name it.
 - [ ] After a photo turn, the conversation has the text only. A test proves it.
 - [ ] No photo bytes, registration number or context in logs, spans or the live feed. A test proves it.
+      *Note 2026-11-24:* met for what our code writes. Not met for Foundry's tracing
+      (`docs/evidence/photos-privacy.txt`).
 - [ ] A user cannot use another user's attachment.
 - [ ] Turns without attachments: the routing suite is not worse than before, and photo turns are measured
       against the 10 s limit.

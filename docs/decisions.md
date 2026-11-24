@@ -196,7 +196,7 @@ Three ways to read a photo were tried: straight into the model call, through a p
 
 ### Photo turns are unstored, and the text is recorded by us
 
-A model call with an attachment is made with `store=False`, for every kind of attachment, so a new kind never touches a backend. The loop keeps the turn's items in memory and records only the text and the answer at the end. The alternatives kept the photo: a stored conversation item still showed in the stored response after it was deleted, and a model still answered about a deleted file. The cost is that later turns do not see that turn's search results. `store=False` is not a promise of zero retention, and the documentation says so (links in [attachments.md](attachments.md#what-storefalse-does-not-promise)).
+A model call with an attachment is made with `store=False`, for every kind of attachment, so a new kind never touches a backend. The loop keeps the turn's items in memory and records only the text and the answer at the end. This keeps the photo out of the conversation. It does not keep the text out of Foundry's tracing, see [the open decision](#open-the-product-owner-decides-what-foundrys-tracing-may-record). The alternatives kept the photo: a stored conversation item still showed in the stored response after it was deleted, and a model still answered about a deleted file. The cost is that later turns do not see that turn's search results. `store=False` is not a promise of zero retention, and the documentation says so (links in [attachments.md](attachments.md#what-storefalse-does-not-promise)).
 
 ### No built-in parking rules
 
@@ -230,6 +230,22 @@ The car is a simulation, so `set_speed` accepts any speed from 0 to 150 whenever
 
 With a new API and an old hosted agent, photo turns answer without the photo and the protection of the logs is missing. So the order is the provision, then `scripts/deploy-agents.sh`, then the API, and a rollback goes the other way round. See [deploy.md](deploy.md#order-for-an-update-with-attachments).
 
+### Open: the product owner decides what Foundry's tracing may record
+
+Found on 2026-11-24 (`docs/evidence/photos-privacy.txt`). Rule 4 of the [principles](principles.md#4-secure-by-default) says that no prompts or answers may be in telemetry. For turns on the prompt agent and the hosted agent that is **not met**: Foundry's server-side tracing writes the question, the line from the client and the answer to the Application Insights resource, in `genAIContent` and `dependencies`. The photo is replaced by `<<ImageDisplayed>>`. The own loop leaves no such rows, and our own spans are clean. It has been so since 2026-11-03, and it starts when Application Insights is [connected to the project](https://learn.microsoft.com/azure/foundry/observability/concepts/trace-data). All text so far is made up.
+
+`OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=false` is now set for the API and the hosted agent, as defence in depth. It covers what our own libraries write, and does not control the server-side tracing.
+
+Nothing else is changed, because the choice trades observability for privacy. The three choices:
+
+| Choice | What it gives | What it costs |
+| --- | --- | --- |
+| **Disconnect Application Insights from the project** | The documented way to turn the tracing off. Rule 4 should then be met, which must be checked with a new run | The hosted agent loses the connection string that Foundry injects, so its own logs and spans stop unless we send them another way. The traces in the Foundry portal stop, and so do the `responsesapi` and `agentsv2` rows of the end to end trace. Rows already written stay until retention removes them |
+| **Protect the table** | Only those with the role Privileged Monitoring Data Reader can read [`AppGenAIContent`](https://learn.microsoft.com/azure/foundry/observability/how-to/traces-sensitive-content). The traces stay | The text is still recorded, so rule 4 must be overruled on purpose. It is a preview. Our rows are in `dependencies` too, so the content must first be routed to the dedicated table only, with a preview flag on the subscription. Rows already in `dependencies` stay readable |
+| **Accept it** | Nothing to build, and full traces | Anyone who can read the Application Insights resource can read the chats. Rule 4 must be overruled on purpose, and people who chat must be told |
+
+Until then the rule stands as it is written, and every page that states it points here. Not verified: what each choice does in practice, since none was tried.
+
 ## Live findings
 
 - Prompt agent with `agent_reference` plus `tools`: `400 Not allowed when agent is specified.`
@@ -243,7 +259,7 @@ With a new API and an old hosted agent, photo turns answer without the photo and
 - "Cheapest AWD in Sweden" repeated 6 times per backend: 18 of 18 right at reasoning effort medium (`docs/evidence/cross-document-repeat.txt`). At the default effort it was 13, 11 and 15 of 18 on three builds, with wrong answers treating AWD-only models as the only AWD models. An added instruction did not help and was removed. Effort is set in `voltrieve_agent.model.REASONING_EFFORT`, for the Responses call and for the prompt agents' definitions alike.
 - Rate limits: Foundry reports them mid-stream, so SDK retries never see them. `ResponsesModelClient` retries up to 3 times before output starts. The chat deployment cap is 150 (150k tokens a minute); it is a limit, not a cost. Lower caps caused `model_error` in burst runs.
 - Paused turn abandoned, and conversation resumed after 420 seconds idle so the API scaled to zero: passed on all three backends, with `turn_abandoned` and `conversation_repaired` in the trace. `docs/evidence/repair.txt`.
-- One trace id spans the API, Foundry, the hosted agent and the dealer. Foundry adds its own `responsesapi` spans for prompt and hosted agents, and an `agentsv2` request for hosted. The direct loop gets none of these. `docs/evidence/application-insights.txt`.
+- One trace id spans the API, Foundry, the hosted agent and the dealer. Foundry adds its own `responsesapi` spans for prompt and hosted agents, and an `agentsv2` request for hosted. The `responsesapi` spans hold the question and the answer (found on 2026-11-24, `docs/evidence/photos-privacy.txt`). The direct loop gets none of these. `docs/evidence/application-insights.txt`.
 - `scripts/denied_demo.py` on `loop` gave `authorization_denied` and a polite refusal (`docs/evidence/authorization-denied.txt`).
 
 ### Second knowledge base

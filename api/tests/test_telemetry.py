@@ -5,9 +5,9 @@ import pytest
 
 from voltrieve_agent.events import AgentEvent, trace
 from voltrieve_agent.loop import TurnOutcome
+from voltrieve_agent.private import pseudonym
 
 from app import telemetry
-from app.insights import pseudonym
 from app.backends import BackendRegistry
 from app.logging_setup import JsonFormatter
 from app.main import create_app

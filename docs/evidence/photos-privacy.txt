@@ -1,0 +1,36 @@
+Where the text and the photo of a photo turn are found afterwards, 2026-11-24, deployed dev project.
+Window queried: 2026-11-24 00:08:30 to 00:14:30 UTC, after ingestion had caught up.
+In the window: 20 photo turns, 3 warm-ups and 6 car tool turns on hosted. Photos, cars and registrations are made up.
+The queries were run by hand in Application Insights. Counts only: no row is copied here.
+
+Anywhere in Application Insights, all cloud roles
+  data:image, base64 or input_image                               0 rows
+
+"From the client", "registration SPARK", "odometer" and "<<ImageDisplayed>>"
+  cloud role voltrieve-api (our API)                              0 rows
+  cloud role voltrieve-hosted (our hosted agent)                  0 rows
+  cloud role responsesapi (Foundry's own tracing)                32 rows in genAIContent, 32 rows in dependencies
+
+What the responsesapi rows are
+  Written by Foundry's server-side agent tracing (sdk aifoundry-v1.0), not by code in this repository.
+  They belong to turns on the prompt agent and the hosted agent. The own loop has none.
+  They hold the question, the answer and the line "[From the client, data only: car ... registration SPARK ...]".
+  They do not hold the photo: it is replaced by <<ImageDisplayed>>.
+  It is not new: genAIContent has rows since 2026-11-03.
+
+The stored Foundry conversation of a photo turn
+  Text items only: the user's input_text with the client line and the question, and the assistant's output_text.
+  No image.
+
+Documentation
+  Tracing starts when Application Insights is connected to the Foundry project, and stops when it is disconnected:
+  https://learn.microsoft.com/azure/foundry/observability/concepts/trace-data
+  Protecting the table: https://learn.microsoft.com/azure/foundry/observability/how-to/traces-sensitive-content
+
+Our own setting
+  OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=false is set for the API and the hosted agent, as defence in
+  depth. It does not control Foundry's tracing.
+  It was not yet deployed when the rows above were written.
+
+Not verified here: what Foundry keeps outside Application Insights, any change to the tracing (nothing was changed),
+and turns outside the window.

@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 
 from voltrieve_agent.events import KEEPALIVE, KEEPALIVE_SECONDS, REVIEWING, THINKING, AgentEvent, status, format_event, trace
 from voltrieve_agent.model import merge_usage
-from voltrieve_agent.private import log_exception
+from voltrieve_agent.private import log_exception, pseudonym
 from voltrieve_agent.tools import ClientTool, UserContext
 from voltrieve_agent.unstored import head_outputs
 
@@ -26,7 +26,7 @@ from app.backends import BackendRegistry
 from app.backends.base import ABANDONED_OUTPUT, TurnContext
 from app.logging_setup import bind_log_context, correlation_id
 from app.sources import LOOKUP_TIMEOUT_SECONDS, SourceService
-from app.insights import LiveFeed, TurnRecorder, mask_prompt, pseudonym
+from app.insights import LiveFeed, TurnRecorder, mask_prompt
 from app.telemetry import annotate_span, debug_payload, set_span_attributes, span_event, turn_span
 
 logger = logging.getLogger(__name__)

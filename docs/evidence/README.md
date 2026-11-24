@@ -1,6 +1,6 @@
 # Evidence
 
-Files from the live runs of 2026-11-04 against the deployed API. They are written by `scripts/runbook.py` (`<backend>.json`, `runbook-table.txt`) and `tests/grounding/check.py --save` (`grounding.txt`). `authorization-denied.txt` and `prompt-agent-rejection.txt` are the output of `scripts/denied_demo.py` and `agents/prompt/demo_rejection.py`.
+Files from live runs against the deployed API, 2026-11-04 unless the file or this page says otherwise. The first ones are written by `scripts/runbook.py` (`<backend>.json`, `runbook-table.txt`) and `tests/grounding/check.py --save` (`grounding.txt`). `authorization-denied.txt` and `prompt-agent-rejection.txt` are the output of `scripts/denied_demo.py` and `agents/prompt/demo_rejection.py`.
 
 Model output is kept verbatim, with two exceptions that the writers apply to every saved file (`write_evidence` in `scripts/voltrieve_client.py`):
 
@@ -15,4 +15,4 @@ Evidence holds no tokens, usernames or URLs.
 
 `routing.txt` and `routing.json` are the last full run of `tests/routing/check.py`, one question at a time. `routing-after-catalog-fix.txt` is the brake questions after brake fluid moved into the brake catalog. `routing-load.txt` is a run of the four brake questions with `--workers 4`. `parallel-setting.txt` comes from `agents/prompt/demo_parallel_setting.py`. `prompt-extra-steps.txt` holds traces of the prompt agent on job questions.
 
-`prompt-journey.txt` comes from `scripts/prompt_journey.py`. `model-comparison.txt` and the runs in `models/` come from `scripts/model_costs.py` and the comparison scripts. `curated-latency.txt` and its two JSON files come from `scripts/curated_latency.py`. `journeys.json` comes from `scripts/record_journeys.py`, and the page in `docs/assets/` embeds it. `models/final-gpt-6.1-terra.json` is the last run of the deployed setup. `search-activity.txt` is one retrieve call and `prompt-trace.txt` is one run per prompt, both shortened by hand.
+`prompt-journey.txt` comes from `scripts/prompt_journey.py`. `model-comparison.txt` and the runs in `models/` come from `scripts/model_costs.py` and the comparison scripts. `curated-latency.txt` and its two JSON files come from `scripts/curated_latency.py`. `journeys.json` comes from `scripts/record_journeys.py`, and the page in `docs/assets/` embeds it. `models/final-gpt-6.1-terra.json` is the last run of the deployed setup. `photos-privacy.txt` says where the text and the photo of a photo turn were found afterwards, from queries run by hand on 2026-11-24. `photo-spike.txt` is the paused turn spike of 2026-11-23. `search-activity.txt` is one retrieve call and `prompt-trace.txt` is one run per prompt, both shortened by hand.

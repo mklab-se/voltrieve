@@ -69,7 +69,7 @@ export function Dashboard({ apiUrl, auth, liveMetricsUrl, workbookUrl }: Props) 
       <div className="dash-head">
         <h2>Live dashboard</h2>
         <span className={`live-dot ${connected ? "on" : ""}`}>{connected ? "Live" : "Reconnecting"}</span>
-        <label className="switch" title="Prompts are masked and never stored. Off by default for screens in front of an audience.">
+        <label className="switch" title="Prompts are masked, and the live feed stores nothing. Off by default for screens in front of an audience.">
           <input type="checkbox" checked={showPrompts} onChange={(e) => setShowPrompts(e.target.checked)} />
           <span>Show prompts</span>
         </label>
@@ -129,7 +129,7 @@ export function Dashboard({ apiUrl, auth, liveMetricsUrl, workbookUrl }: Props) 
             {s.knowledgeBases.length === 0 && <li className="muted">No searches yet</li>}
           </ul>
           <p className="dash-note">
-            The feed lives in the API's memory only: prompts are masked, never stored and gone after a restart.
+            The feed lives in the API's memory only: prompts are masked, and gone after a restart. The live feed stores nothing.
             Users appear as pseudonyms. Costs are estimates from token counts and list prices.
           </p>
         </aside>

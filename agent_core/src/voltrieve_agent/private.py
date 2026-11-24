@@ -1,10 +1,11 @@
-"""Logging failures of private turns.
+"""What our own logs may show of a user and of a private turn.
 
 A turn is private when it carries an attachment or something the client told about itself. What such a
 turn says, and any error text that may quote it, stays out of the logs. A failure is shown by its type,
 the HTTP status and the stack as frames, without messages, source lines or values.
 """
 
+import hashlib
 import logging
 import sys
 import traceback
@@ -15,6 +16,11 @@ current_private: ContextVar[bool] = ContextVar("current_private", default=False)
 
 MAX_ERRORS = 8
 MAX_FRAMES = 30  # of each error, the ones closest to it
+
+
+def pseudonym(oid: str) -> str:
+    """A short, stable stand-in for an Entra object id, so users can be counted, not named."""
+    return hashlib.sha256(f"voltrieve-user:{oid}".encode()).hexdigest()[:12]
 
 
 def _status(exc: BaseException) -> int | None:

@@ -191,7 +191,7 @@ export function Chat({ state, busy, underTheHood, photo, onDraft, onSend, onOpen
       </form>
       <p className="privacy-note">
         You are talking to {ASSISTANT_NAME}, an AI assistant. During demos, questions may be shown on a live screen, with contact
-        details masked. They are not stored.{attached ? "" : ` ${NOT_STORED}`}
+        details masked. The live screen keeps nothing, but your chat is kept by the service.{attached ? "" : ` ${NOT_STORED}`}
       </p>
     </section>
   );

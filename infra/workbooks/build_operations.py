@@ -88,9 +88,9 @@ def workbook() -> dict:
         text("# Voltrieve operations\n"
              "Who uses the assistant, how fast it answers, which tools and knowledge bases it uses, "
              "and what it costs. For what is happening this second, open **Live Metrics** in Application "
-             "Insights or the live dashboard in the web client. Costs are **estimates** from token counts "
-             "and list prices, not the bill. Users are counted by pseudonym; prompts and answers are never "
-             "stored."),
+             "Insights or the live dashboard, an app of its own. Costs are **estimates** from token counts "
+             "and list prices, not the bill. Users are counted by pseudonym, and our own telemetry stores no "
+             "prompts or answers. Foundry's tracing does, see the privacy check."),
         parameters(),
         tiles("At a glance", TURNS + f"""| extend message_first_text = iff(request_kind == "message", first_text, real(null))
 | summarize users = dcount(user), turns = countif(request_kind == "message"),
@@ -162,8 +162,9 @@ def workbook() -> dict:
         query("Errors by code", TURNS + """| where outcome == "error"
 | summarize turns = count() by error_code, backend
 | order by turns desc""", "table", "50"),
-        text("## Privacy check\nEvery attribute name stored on a turn, with the longest value seen. Only ids, "
-             "names, counts and timings belong here: no prompt, answer or user name. A long value is worth a look."),
+        text("## Privacy check\n**What our code writes.** Every attribute name stored on a turn, with the longest "
+             "value seen. Only ids, names, counts and timings belong here: no prompt, answer or user name. A long "
+             "value is worth a look."),
         query("Attributes stored on chat.turn", """dependencies
 | where name == "chat.turn"
 | mv-expand kv = customDimensions
@@ -171,6 +172,18 @@ def workbook() -> dict:
 | extend value = tostring(kv[key])
 | summarize longest_value = max(strlen(value)), example = take_any(iif(strlen(value) <= 40, value, "")) by key
 | order by key asc""", "table", "100"),
+        text("**What Foundry's own tracing writes** (cloud role `responsesapi`), for turns on the prompt agent and the "
+             "hosted agent. These rows hold prompts and answers as long as Application Insights is connected to the "
+             "Foundry project, so any row here is one that can hold text. Counts only: the text is not shown. A row "
+             "with a photo would be an error. See *Open: the product owner decides what Foundry's tracing may record* "
+             "in the decisions."),
+        query("Rows written by Foundry's tracing", """union isfuzzy=true withsource=stored_in dependencies, genAIContent
+| where cloud_RoleName == "responsesapi"
+| extend content = tostring(pack_all())
+| summarize row_count = count(), with_client_line = countif(content contains "From the client"),
+    with_photo = countif(content contains "data:image" or content contains "base64"),
+    longest_row = max(strlen(content)), latest = max(timestamp) by stored_in
+| order by stored_in asc""", "table", "100", noDataMessage="No rows from Foundry's tracing in this time range."),
     ]
     return {
         "version": "Notebook/1.0",

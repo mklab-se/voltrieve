@@ -47,7 +47,7 @@ In words:
 
 A client can also say what it knows about itself: the car (model, trim, drive, model year, registration, odometer), the local time and the speed. The API writes it as one line before the user's message, marked as coming from the client. It is untrusted data and never decides what a user may see. A tool that needs it can take it from the turn, so the model does not have to copy a number.
 
-It is kept out of logs, spans and the live feed. It is part of the user message in the conversation, so a registration number is stored in Foundry like the rest of the text. All registration numbers in this project are made up.
+It is kept out of our own logs and spans, and out of the live feed. It is part of the user message in the conversation, so a registration number is stored in Foundry like the rest of the text. On the prompt agent and the hosted agent, Foundry's own tracing also writes it to Application Insights, with the question and the answer (`docs/evidence/photos-privacy.txt`). Whether that may stay is [an open decision](decisions.md#open-the-product-owner-decides-what-foundrys-tracing-may-record). All registration numbers in this project are made up.
 
 ## Why the photo goes straight to the model
 
@@ -96,13 +96,13 @@ The change is in `agent_core`, so the own loop and the hosted agent share it, an
 
 ### What `store=False` does not promise
 
-It keeps the photo out of the conversation and out of what Voltrieve logs. It is not a promise of zero retention.
+It keeps the photo out of the conversation and out of what Voltrieve logs. It does nothing for the text: Foundry's tracing records the question, the client's line and the answer of prompt and hosted turns, with the photo replaced by `<<ImageDisplayed>>`. It is not a promise of zero retention.
 
 - Microsoft's documentation says that setting `store=false` is not a blanket guarantee of zero retention across every service process: [Use the Azure OpenAI Responses API, data protection considerations](https://learn.microsoft.com/azure/foundry/openai/how-to/responses#encrypted-reasoning).
 - Responses created with `store: false` are not persisted as stored responses, and stored conversations on the basic setup are deleted after 60 days: [Foundry Agent Service runtime components](https://learn.microsoft.com/azure/foundry/agents/concepts/runtime-components#conversations-and-conversation-items).
 - The service may still keep prompts and completions for abuse monitoring. See [Abuse monitoring](https://learn.microsoft.com/azure/foundry/openai/concepts/abuse-monitoring) and [Data, privacy, and security](https://learn.microsoft.com/azure/foundry/responsible-ai/openai/data-privacy).
 
-So the claim is narrow: photos stay out of the conversations, logs and telemetry that we control. What Foundry keeps for itself is for Microsoft's documentation to say, and a customer with strict needs should read it.
+So the claim is narrow: photos stay out of the conversations, and out of all telemetry we looked at. Text stays out of the logs and spans that our own code writes, and that is all: the Application Insights resource is ours, but Foundry's tracing writes the text of prompt and hosted turns into it. Connecting it to the project is what starts that, see [Decisions](decisions.md#open-the-product-owner-decides-what-foundrys-tracing-may-record). What Foundry keeps for itself is for Microsoft's documentation to say, and a customer with strict needs should read it.
 
 Failures of a private turn arrive as traces, not exceptions. See [the runbook](runbook.md#under-the-hood-and-private-turns).
 
@@ -188,6 +188,19 @@ Then follow the open format and load skills through server tools, so all three b
 
 The measure of what to expect: in the photo spike, a tool that returned rules was chosen correctly in 27 of 27 turns among Runa's real tools, at about 1.5 s extra.
 
+## What was found about privacy
+
+Checked on 2026-11-24 after 20 photo turns on the deployed base (`docs/evidence/photos-privacy.txt`):
+
+| Where | The photo | The question, the answer and the client's line |
+| --- | --- | --- |
+| Stored Foundry conversation | Not there | There, as text |
+| Our own spans and logs in Application Insights (`voltrieve-api`, `voltrieve-hosted`) | Not there | The client's line is not there |
+| Foundry's tracing (`responsesapi`), own loop | Not there | Not there |
+| Foundry's tracing (`responsesapi`), prompt and hosted agent | Not there, `<<ImageDisplayed>>` instead | **There**, in `genAIContent` and `dependencies` |
+
+That last row breaks a rule of this project, and it is older than the photos: `genAIContent` has rows since 2026-11-03. What to do about it is [an open decision of the product owner](decisions.md#open-the-product-owner-decides-what-foundrys-tracing-may-record).
+
 ## Still to be measured
 
 The numbers above come from a spike. These come from the evidence runs that follow, with drawn signs and repository pictures only. Nothing here is a result yet.
@@ -196,7 +209,6 @@ The numbers above come from a spike. These come from the evidence runs that foll
 <!-- MEASURE: photo questions on the three backends, three times each: right, median time to first token, share over 10 s, cost of the first 20 turns -->
 <!-- MEASURE: the broken lamp on the left and right, the undamaged car, a drawn sign asked about as a broken part, a blurred photo, "which part is this?" -->
 <!-- MEASURE: the routing suite before and after, for turns without attachments -->
-<!-- MEASURE: privacy check, the conversation after a photo turn has text only, and no photo bytes, registration number or client line in logs, spans or the live feed -->
 <!-- MEASURE: the car's tools on three backends, "honk" after a sign question stored as usual -->
 
 Not verified, and not planned: real sign photos in the repository, an attachment larger than the API's memory allows, and whether Foundry keeps a photo that was sent unstored.

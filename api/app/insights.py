@@ -1,13 +1,13 @@
 """What the operations dashboard shows about each turn, and the live feed of turns.
 
-Stored telemetry (the chat.turn span) carries ids, names, counts, timings and an estimated cost,
-never text. The prompt itself only exists in the in-memory live feed, masked, and only reaches a
+The telemetry we write (the chat.turn span) carries ids, names, counts, timings and an estimated cost,
+never text. Here the prompt only exists in the in-memory live feed, masked, and only reaches a
 dashboard that asks for it (docs/superpowers/specs/2026-11-17-operations-dashboard-design.md).
+Foundry's own tracing of prompt and hosted turns is not ours and does hold text (docs/decisions.md).
 """
 
 import asyncio
 import datetime as dt
-import hashlib
 import re
 import time
 from collections import OrderedDict
@@ -37,11 +37,6 @@ _ID_NUMBER = re.compile(r"\b(?:19|20)?\d{6}[-+]?\d{4}\b")  # Swedish personal id
 # A phone number starts with + or 0 (070-123 45 67, +46 70 123 45 67): prices, dates and part
 # numbers do not, so they stay readable.
 _PHONE = re.compile(r"(?:\+\d|\b0\d)[\d\s()-]{5,18}\d")
-
-
-def pseudonym(oid: str) -> str:
-    """A short, stable stand-in for an Entra object id, so users can be counted, not named."""
-    return hashlib.sha256(f"voltrieve-user:{oid}".encode()).hexdigest()[:12]
 
 
 def mask_prompt(text: str) -> str:

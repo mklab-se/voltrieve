@@ -28,6 +28,8 @@ GDPR, the EU AI Act and the EU Data Act, plus cost, and the fact that this is a 
   disk. The API keeps the last 50 in memory and streams them to the dashboard page; a restart or
   newer prompts drop them. Email addresses, phone numbers and Swedish personal identity numbers
   are masked before a prompt leaves the API. Answers are never kept.
+  *Note 2026-11-24:* true for what our code writes. Foundry's tracing writes prompts and answers of
+  prompt and hosted turns to Application Insights. [The decision is open](../../decisions.md#open-the-product-owner-decides-what-foundrys-tracing-may-record).
 - **A "show prompts" switch, off by default**, so the dashboard can be on a big screen. When it is
   off, the API does not send the text at all.
 - **People are told.** The chat clients say near the input that prompts may be shown, masked, on
@@ -90,4 +92,5 @@ API replica (the live feed is per process, and the API runs one replica).
 - First text median per backend in the workbook within 10 % of `tests/routing/check.py` on the
   same runs.
 - No prompt, answer or user name in any stored telemetry field (the privacy check query).
+  *Note 2026-11-24:* not met for Foundry's own `responsesapi` rows, which the query did not look at.
 - Runbook section added.

@@ -148,11 +148,12 @@ Without Azure, the car client has a mock server (design section 8.7).
 
 **Under the hood** is a switch in the car and on the website, off by default. On, it shows the event timeline of the turn, the backend picker and the correlation id, the same things the CLI shows with `--trace`. Off, a visitor sees a customer's page or a car, not a test rig.
 
-**A private turn** is a turn that carries an attachment or something the client told about itself. What such a turn says stays out of logs, spans and the live feed. So when one fails:
+**A private turn** is a turn that carries an attachment or something the client told about itself. What such a turn says stays out of our own logs and spans, and out of the live feed. Foundry's tracing is not ours: on the prompt agent and the hosted agent it records the text ([open decision](decisions.md#open-the-product-owner-decides-what-foundrys-tracing-may-record)). So when one fails:
 
-- The failure is logged as a **trace** (the `traces` table in Application Insights), with the type of each error, the HTTP status and the stack as frames. It is not logged as an **exception** with a message and source lines, because an error text may quote the attachment or the client's line.
+- Our code logs the failure as a **trace** (the `traces` table in Application Insights), with the type of each error, the HTTP status and the stack as frames. It is not logged as an **exception** with a message and source lines, because an error text may quote the attachment or the client's line.
 - A query for `exceptions` finds nothing for these turns. Query `traces` with the `operation_Id` of the request, as in [Follow a correlation id](#follow-a-correlation-id), and look for the message that names what failed.
-- The model's tool results of a private turn are not in the debug log either.
+- The model's tool results of a private turn are not in our debug log either.
+- Foundry's own `responsesapi` rows are written however the turn ends.
 
 The client sees the failure as an `error` event as usual.
 
@@ -180,9 +181,9 @@ npm run dev:mock      # in a second terminal, website with fake auth
 
 ## Follow a correlation id
 
-The API takes `X-Correlation-Id` from the request, or generates one. It sets it as `correlation_id` on the request span and the `chat.turn` span, and passes it to the dealer, which sets it on its own span. The hosted agent logs it with the user's oid on every turn. The value is therefore in `customDimensions` of `requests` and `dependencies`. It is not on log records in Application Insights: there, join on `operation_Id`. The JSON logs on stdout do carry it.
+The API takes `X-Correlation-Id` from the request, or generates one. It sets it as `correlation_id` on the request span and the `chat.turn` span, and passes it to the dealer, which sets it on its own span. The hosted agent logs it on every turn, with the same pseudonym for the user as the API. The value is therefore in `customDimensions` of `requests` and `dependencies`. It is not on log records in Application Insights: there, join on `operation_Id`. The JSON logs on stdout do carry it.
 
-Every hop of a turn is also a log line (`trace`, with `step`, `component`, `detail` and `elapsed_ms`) and an event on the `chat.turn` span, so the logs show the same sequence the client sees. Tool arguments and result previews are logged only at `LOG_LEVEL=DEBUG`, truncated.
+Every hop of a turn is also a log line (`trace`, with `step`, `component`, `detail` and `elapsed_ms`) and an event on the `chat.turn` span, so the logs show the same sequence the client sees. Tool arguments and result previews are in our own logs only at `LOG_LEVEL=DEBUG`, truncated. Foundry's `responsesapi` rows (prompt and hosted) hold the text of the turn at every level, and the query below shows those rows by name only.
 
 In the Azure portal, open the Application Insights resource and choose Logs:
 
@@ -270,17 +271,28 @@ Three views, from now to history. All of them are built on Application Insights.
 |---|---|---|
 | Live dashboard | The dashboard app (`just open-dashboard`, or `just dashboard` to run it locally), for the `Dashboard.View` role, given to the deployer | Users active in the last 5 minutes, messages today, first text per backend, each turn as it happens with its tools, knowledge bases, timings and estimated cost, and the prompt when **Show prompts** is on |
 | Live Metrics | Application Insights, or the dashboard's **Live Metrics** link | Requests, response times and failures this second |
-| Workbook | Azure portal, **Voltrieve operations** in the resource group, or the dashboard's **History** link | Users per day, a map of where they connect from, first text median and p95 per backend, share over 10 s, tools, knowledge bases, outcomes, estimated cost per day and month against the 990 SEK budget, errors, cold starts, and a privacy check |
+| Workbook | Azure portal, **Voltrieve operations** in the resource group, or the dashboard's **History** link | Users per day, a map of where they connect from, first text median and p95 per backend, share over 10 s, tools, knowledge bases, outcomes, estimated cost per day and month against the 990 SEK budget, errors, cold starts, and two privacy checks |
 
-**What is stored.** Each turn adds attributes to its `chat.turn` span: OpenTelemetry GenAI names
+**What our own code stores.** Each turn adds attributes to its `chat.turn` span: OpenTelemetry GenAI names
 (`gen_ai.request.model`, `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`) and
 `voltrieve.*` names for the rest (backend, a pseudonym for the user, outcome, timings, tools,
 knowledge bases, tokens, estimated cost, cold start). No prompt, answer, user name or object id.
-The workbook's privacy check lists every attribute name and its longest value.
 
-**Prompts are live only.** The API keeps the last 50 turns in memory. Prompts are masked (email
+**What Foundry's tracing stores.** Text. For turns on the prompt agent and the hosted agent, Foundry
+writes the question, the line from the client and the answer to `genAIContent` and `dependencies`, with
+the cloud role `responsesapi`. It does so because Application Insights is connected to the project. What
+to do about it is [an open decision](decisions.md#open-the-product-owner-decides-what-foundrys-tracing-may-record),
+and the evidence is in `docs/evidence/photos-privacy.txt`.
+
+The workbook has two privacy checks. One lists every attribute name on our `chat.turn` spans and its
+longest value. The other counts Foundry's `responsesapi` rows and how many hold the client's line or a
+photo, without showing any text. The second was added on 2026-11-24 and is not yet run against the
+deployment.
+
+**The live feed stores nothing.** The API keeps the last 50 turns in memory. Prompts are masked (email
 addresses, phone numbers and personal identity numbers) and sent only to a dashboard with
-**Show prompts** switched on. A restart forgets them. Leave the switch off when the screen is
+**Show prompts** switched on. A restart forgets them. The chat itself is stored in Foundry's
+conversation, and the text of prompt and hosted turns also by Foundry's tracing. Leave the switch off when the screen is
 shown to an audience unless the people asking know.
 
 **Add it to your own solution.**
