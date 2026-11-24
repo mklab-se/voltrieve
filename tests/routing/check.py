@@ -28,7 +28,9 @@ a cracked headlamp or an undamaged one, uploaded with the question. Each says wh
 be: yes or no at the start (`verdict`), the right article number and not the one of the other side
 (`article`, `no_article`), words it must have (`mentions`), or that the upload is refused
 (`rejected`). The run also prints tokens, an estimated cost and the time of the upload. A turn that
-meets a rate limit waits and goes on: it is left out of the medians. A photo that the server lost
+fails with model_error, model_failed, agent_unavailable or a busy upload (503) is asked again after
+30 s and 60 s, at most twice, and is left out of the medians; one that still fails is an error, not
+a wrong answer. An answer with no clear yes or no ("Yes, but only...") is printed in full. A photo that the server lost
 (it scaled to zero) is uploaded again, and is not a wrong answer. --limit N runs the first N turns,
 for a first look at the cost. It writes photos-routing.txt and photos-routing.json instead.
 """
@@ -60,7 +62,10 @@ from voltrieve_client import Api, ApiError, Turn, api_token, api_url, cached_tok
 
 QUESTIONS = Path(__file__).with_name("questions.yaml")
 PHOTO_QUESTIONS = ROOT / "tests" / "photos" / "questions.yaml"
-RATE_WAITS = (15, 30, 60, 90)  # seconds to wait after each rate limit, then give up
+# What the API says when the model or the agent fails for a moment (agent_core loop.py, api backends/hosted.py),
+# and when the upload queue is full (503 busy). Such a turn is asked again after each wait, at most twice.
+RETRYABLE = ("model_error", "model_failed", "agent_unavailable", "busy")
+RETRY_WAITS = (30, 60)
 TTFT_LIMIT = 10.0
 INDEX = ROOT / "data" / "generated" / "parts-index.json"
 EVIDENCE = ROOT / "docs" / "evidence"
@@ -116,8 +121,10 @@ class Run:
     expect_rejected: str | None = None  # the code the upload must be refused with
     rejected: str | None = None
     upload_seconds: float | None = None
-    waited: bool = False  # met a rate limit and waited: left out of the medians
+    waited: bool = False  # was retried after a failure: left out of the medians
     waited_seconds: float = 0.0
+    retried_after: list[str] = field(default_factory=list)  # the code of each failure that was retried
+    planning_model: str = ""  # the model Search planned with, from the trace
     reuploaded: bool = False  # the server lost the photo and it was uploaded again
 
     @property
@@ -153,8 +160,9 @@ def cost_usd(run: Run) -> float | None:
     agent = token_cost(PRICES_USD_PER_MILLION, AGENT_MODEL, run.input_tokens, run.cached_tokens, run.output_tokens)
     if agent is None:
         return None
+    planner = run.planning_model if run.planning_model in PRICES_USD_PER_MILLION else PLANNING_MODEL
     planning = token_cost(
-        PRICES_USD_PER_MILLION, PLANNING_MODEL, run.planning_input_tokens, 0, run.planning_output_tokens
+        PRICES_USD_PER_MILLION, planner, run.planning_input_tokens, 0, run.planning_output_tokens
     ) or 0.0
     return agent + planning + run.search_reasoning_tokens * SEARCH_REASONING_USD_PER_MILLION / 1e6
 
@@ -178,6 +186,7 @@ def read_trace(run: Run, turn) -> None:
     retrieved = turn.trace("knowledge_base_retrieved")
     run.planning_input_tokens = sum(k.get("planning_input_tokens", 0) for k in retrieved)
     run.planning_output_tokens = sum(k.get("planning_output_tokens", 0) for k in retrieved)
+    run.planning_model = next((k["planning_model"] for k in reversed(retrieved) if k.get("planning_model")), "")
     run.search_reasoning_tokens = sum(k.get("search_reasoning_tokens", 0) for k in retrieved)
     run.searches = len(retrieved) + len(turn.trace("mcp_tool_called"))
     mcp = [c for c in turn.trace("mcp_tool_called") if c.get("server") in SOURCES]
@@ -243,21 +252,26 @@ def articles_of(target: dict, index: dict) -> set[str]:
     return {p["article"] for p in index["parts"] if p["key"] == target["key"] and target["fits"] in p["fits"]}
 
 
-def is_rate_limit(text: str) -> bool:
-    lowered = text.lower()
-    return "429" in lowered or "too many requests" in lowered or "throttl" in lowered or (
-        "rate" in lowered and "limit" in lowered
-    )
+def retry_code(turn: Turn | None, exc: ApiError | None) -> str | None:
+    """The code of a failure that is worth asking again after, or None."""
+    if exc is not None:
+        if exc.status == 429:
+            return "http_429"
+        return "busy" if exc.status == 503 and "busy" in exc.detail else None
+    code = (turn.error or {}).get("code") if turn is not None else None
+    return code if code in RETRYABLE else None
 
 
 def send(api: Api, run: Run, question: dict, index: dict, patient: bool) -> Turn | None:
-    """One turn, with its photo when the question has one. With `patient`, a rate limit is waited out
-    and the turn asked again; the run says it waited. Returns None when the photo was rejected."""
+    """One turn, with its photo when the question has one. With `patient`, a failure that is worth
+    asking again after is waited out (30 s, then 60 s) and the turn asked again, at most twice; the run
+    says what it was retried after. A failure that stays is an error. Returns None when the photo was
+    rejected."""
     cid = f"routing-{run.backend}-{question['id']}-{run.repeat}"
-    waits = iter(RATE_WAITS)
+    waits = iter(RETRY_WAITS)
     while True:
         began = time.perf_counter()
-        turn = None
+        turn, failed = None, None
         try:
             if "photo" in question:
                 context = question.get("context")
@@ -265,7 +279,9 @@ def send(api: Api, run: Run, question: dict, index: dict, patient: bool) -> Turn
                     message(question, index), photo_bytes(question["photo"]), "photo", correlation_id=cid,
                     context=car_context(context["when"]) if context else None,
                 )
-                run.upload_seconds, run.reuploaded = result.upload_seconds, run.reuploaded or result.reuploaded
+                if run.upload_seconds is None:  # the first upload, not a retry's
+                    run.upload_seconds = result.upload_seconds
+                run.reuploaded = run.reuploaded or result.reuploaded
                 if result.turn is None:
                     run.rejected = result.upload.get("code")
                     if not question.get("rejected"):
@@ -276,19 +292,21 @@ def send(api: Api, run: Run, question: dict, index: dict, patient: bool) -> Turn
             else:
                 turn = api.turn(message(question, index), correlation_id=cid)
                 run.seconds = round(time.perf_counter() - began, 2)
-            failure = json.dumps(turn.error) if turn.error else ""
         except ApiError as exc:
-            if not patient or not is_rate_limit(str(exc)):
+            failed = exc
+            if not patient or retry_code(None, exc) is None:
                 raise
-            failure = str(exc)
-        if not failure or not patient or not is_rate_limit(failure):
+        code = retry_code(turn, failed)
+        if not patient or code is None:
             return turn
         wait = next(waits, None)
         if wait is None:
             if turn is None:
-                raise ApiError(429, failure)
+                raise failed
             return turn
         run.waited, run.waited_seconds = True, run.waited_seconds + wait
+        run.retried_after.append(code)
+        print(f"{run.backend} {run.question} #{run.repeat}: retried after {code}", file=sys.stderr, flush=True)
         time.sleep(wait)
 
 
@@ -339,8 +357,8 @@ def median(values: list[float]) -> float:
 
 
 def photo_report(runs: list[Run], backends: list[str], warm: dict[str, float] | None) -> list[str]:
-    """What the photo turns showed. Turns that waited for a rate limit are left out of the medians."""
-    lines = ["", "Photo turns per backend (turns that waited for a rate limit are left out of the medians)", ""]
+    """What the photo turns showed. Turns that were retried are left out of the medians."""
+    lines = ["", "Photo turns per backend (turns that were retried after a failure are left out of the medians)", ""]
     lines.append(f"{'backend':8}{'turns':>6}{'right':>7}{'verdicts':>10}{'upload s':>10}{'first text s':>14}"
                  f"{'seconds':>9}{'over 10 s':>11}{'tokens in/out':>16}  notes")
     for backend in backends:
@@ -348,10 +366,11 @@ def photo_report(runs: list[Run], backends: list[str], warm: dict[str, float] | 
         if not rows:
             continue
         timed = [r for r in rows if not r.waited and not r.error]
-        asked = [r for r in rows if r.expected_verdict]
+        asked = [r for r in rows if r.expected_verdict and not r.error]
         chats = [r for r in timed if not r.expect_rejected]
         slow = sum(r.first_text_seconds is not None and r.first_text_seconds > TTFT_LIMIT for r in chats)
-        notes = f"{sum(r.waited for r in rows)} waited, {sum(r.reuploaded for r in rows)} re-uploaded"
+        notes = (f"{sum(r.waited for r in rows)} waited, {sum(r.reuploaded for r in rows)} re-uploaded, "
+                 f"{sum(bool(r.error) for r in rows)} errors")
         lines.append(
             f"{backend:8}{len(rows):>6}{percent(sum(r.right for r in rows), len(rows)):>7}"
             f"{sum(r.verdict == r.expected_verdict for r in asked):>5} of {len(asked):<3}"
@@ -377,6 +396,14 @@ def photo_report(runs: list[Run], backends: list[str], warm: dict[str, float] | 
                          f"(USD {1000 * total / len(rows):.2f} per 1,000 turns)")
     lines.append(f"Estimated at the list prices of {AGENT_MODEL} read {PRICES_DATE} ({PRICES_SOURCE}), "
                  "planning and Search reasoning included, cache writes left out. An estimate, not the bill.")
+    for r in runs:
+        if r.retried_after:
+            lines.append(f"{r.backend} {r.question} #{r.repeat}: retried after {', '.join(r.retried_after)}")
+    unclear = [r for r in runs if r.photo and r.expected_verdict and not r.error and r.verdict is None]
+    if unclear:
+        lines += ["", f"Unclear answers ({len(unclear)}): no clear yes or no, judge them by hand", ""]
+        for r in unclear:
+            lines += [f"{r.backend} {r.question} #{r.repeat} (expected {r.expected_verdict}): {r.answer}", ""]
     if warm:
         lines += ["", "Start, one ordinary turn before the photos (not in the medians): "
                   + ", ".join(f"{b} {s} s" for b, s in warm.items())]
@@ -431,7 +458,7 @@ def report(runs: list[Run], backends: list[str], warm: dict[str, float] | None =
 
 
 PHOTO_FIELDS = ("photo", "expected_verdict", "verdict", "forbidden", "free_sources", "expect_rejected", "rejected",
-                "upload_seconds", "waited", "waited_seconds", "reuploaded")
+                "upload_seconds", "waited", "waited_seconds", "reuploaded", "retried_after", "planning_model")
 
 
 def make_jobs(questions: list[dict], backends: list[str], repeats: int, limit: int | None) -> list[tuple]:

@@ -145,30 +145,87 @@ def test_a_lost_photo_is_uploaded_again_and_not_counted_wrong(monkeypatch):
     assert run.right and run.reuploaded and len(api.uploads) == 2
 
 
-def test_a_rate_limit_waits_and_goes_on(monkeypatch, waits):
-    limited = answer("", error={"code": "rate_limited", "message": "Too many requests"})
-    api = FakeApi([limited, limited, answer("No.")])
+@pytest.mark.parametrize("code", ["model_error", "model_failed", "agent_unavailable"])
+def test_a_model_failure_waits_and_is_asked_again(monkeypatch, waits, code):
+    failed = answer("", error={"code": code, "message": "The model call failed."})
+    api = FakeApi([failed, failed, answer("No.")])
     run = run_one(monkeypatch, SIGN, api, patient=True)
-    assert run.right and run.waited and run.waited_seconds == sum(waits) > 0
-    assert len(waits) == 2 and len(api.calls) == 3
+    assert run.right and run.waited and run.retried_after == [code, code]
+    assert waits == [30, 60] and len(api.calls) == 3 and run.waited_seconds == 90
 
 
-def test_an_http_429_waits_too(monkeypatch, waits):
-    api = FakeApi([ApiError(429, "Too Many Requests"), answer("No.")])
+def test_a_busy_upload_is_asked_again(monkeypatch, waits):
+    busy = ApiError(503, '{"detail":{"code":"busy"}}')
+    run = run_one(monkeypatch, SIGN, FakeApi([busy, answer("No.")]), patient=True)
+    assert run.right and run.retried_after == ["busy"] and waits == [30]
+
+
+def test_an_http_429_is_asked_again(monkeypatch, waits):
+    run = run_one(monkeypatch, SIGN, FakeApi([ApiError(429, "Too Many Requests"), answer("No.")]), patient=True)
+    assert run.right and run.retried_after == ["http_429"]
+
+
+def test_a_failure_that_does_not_end_is_an_error_not_a_wrong_answer(monkeypatch, waits):
+    failed = answer("", error={"code": "model_error"})
+    api = FakeApi([failed] * 10)
     run = run_one(monkeypatch, SIGN, api, patient=True)
-    assert run.right and run.waited
+    assert run.error == "model_error" and not run.right and run.verdict is None
+    assert waits == [30, 60] and len(api.calls) == 3  # at most two retries
+    text = check.report([run], ["loop"])
+    assert "1 errors" in text and "0 of 0" in text  # not counted among the verdicts
 
 
-def test_a_rate_limit_that_does_not_end_is_an_error(monkeypatch, waits):
-    limited = answer("", error={"code": "rate_limited"})
-    run = run_one(monkeypatch, SIGN, FakeApi([limited] * 10), patient=True)
-    assert not run.right and run.error == "rate_limited" and len(waits) == len(check.RATE_WAITS)
+def test_other_errors_are_not_retried(monkeypatch, waits):
+    run = run_one(monkeypatch, SIGN, FakeApi([answer("", error={"code": "invalid_request"})]), patient=True)
+    assert run.error == "invalid_request" and not waits and not run.waited
 
 
-def test_without_patience_a_rate_limit_is_an_error_as_before(monkeypatch, waits):
-    limited = answer("", error={"code": "rate_limited"})
-    run = run_one(monkeypatch, SIGN, FakeApi([limited]))
-    assert run.error == "rate_limited" and not run.waited and not waits
+def test_without_patience_a_failure_is_an_error_as_before(monkeypatch, waits):
+    run = run_one(monkeypatch, SIGN, FakeApi([answer("", error={"code": "model_error"})]))
+    assert run.error == "model_error" and not run.waited and not waits
+
+
+def test_the_upload_time_is_the_first_one_not_the_retry(monkeypatch, waits):
+    class Timed(FakeApi):
+        n = 0
+
+        def upload(self, data, label=""):
+            Timed.n += 1
+            return super().upload(data, label)
+
+    api = Timed([answer("", error={"code": "model_error"}), answer("No.")])
+    seconds = iter([0.4, 9.0])
+    monkeypatch.setattr(check.Api, "turn_with_photo", lambda self, *a, **k: _photo(self, next(seconds), k, a), raising=False)
+    run = run_one(monkeypatch, SIGN, api, patient=True)
+    assert run.upload_seconds == 0.4
+
+
+def _photo(api, upload_seconds, kwargs, args):
+    from voltrieve_client import PhotoTurn
+
+    turn = api.turn(args[0], attachments=["a1"], **kwargs)
+    return PhotoTurn({"id": "a1", "status": "ready"}, turn, upload_seconds, turn_seconds=1.0)
+
+
+def test_unclear_answers_are_printed_in_full(monkeypatch):
+    run = run_one(monkeypatch, SIGN, FakeApi([answer("Yes, but only for two hours. After that you must move.")]))
+    assert run.verdict is None and not run.right
+    text = check.report([run], ["loop"])
+    assert "Unclear answers" in text and "Yes, but only for two hours. After that you must move." in text
+
+
+def test_the_planning_model_comes_from_the_trace_and_defaults(monkeypatch):
+    turn = answer("No.")
+    turn.events.insert(0, ("trace", {"step": "knowledge_base_retrieved", "planning_input_tokens": 1_000_000,
+                                     "planning_output_tokens": 0, "planning_model": "gpt-6-luna"}))
+    run = run_one(monkeypatch, SIGN, FakeApi([turn]))
+    assert run.planning_model == "gpt-6-luna"
+    luna = check.cost_usd(run)
+    run.planning_model = ""
+    default = check.cost_usd(run)
+    assert default - luna == pytest.approx(0.75 - 0.10)
+    run.planning_model = "gpt-unknown"
+    assert check.cost_usd(run) == pytest.approx(default)
 
 
 def test_a_plain_question_is_asked_as_before(monkeypatch):
