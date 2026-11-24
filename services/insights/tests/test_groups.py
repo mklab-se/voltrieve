@@ -21,7 +21,7 @@ from voltrieve_insights.groups import (
     PersonalDataError,
     group,
 )
-from voltrieve_insights.labels import Labelled, Model, ModelError
+from voltrieve_insights.labels import Labelled, Model, ModelError, Refused
 
 LANGUAGE = "https://language.test"
 URL_PATH = "/language/:analyze-text"
@@ -494,3 +494,65 @@ async def test_real_model_cut_off_by_token_limit_raises_fixed_error():
                 await group(real_model, FakePii(), [item("a")], {})
     assert str(e.value) == "the model gave no answer that fits"
     assert json.loads(route.calls.last.request.content)["max_completion_tokens"] == MAX_OUTPUT
+
+
+# --- refused chunks and small gaps ---
+
+
+async def test_refused_chunk_gives_none_and_run_goes_on_and_count_is_returned():
+    items = [item("a", "fault"), item("b", "charging")]
+
+    class Refusing:
+        async def ask(self, system, data, schema, max_output=2_000):
+            if json.loads(data)["topic"] == "fault":
+                raise Refused("fixed")
+            return {"groups": [one("G", [0])]}
+
+    count = []
+    out = await group(Refusing(), FakePii(), items, {}, count)
+    assert [name for _, name in out] == [None, "G"]
+    assert count == [1]
+
+
+async def test_refused_second_chunk_keeps_first_and_other_errors_still_fail():
+    items = [item(f"i{i}") for i in range(MAX_SENT + 2)]
+
+    class Second:
+        def __init__(self, error):
+            self.error, self.n = error, 0
+
+        async def ask(self, system, data, schema, max_output=2_000):
+            self.n += 1
+            if self.n == 2:
+                raise self.error("fixed")
+            return {"groups": [one("G", list(range(MAX_SENT)))]}
+
+    count = []
+    out = await group(Second(Refused), FakePii(), items, {}, count)
+    assert [n for _, n in out] == ["G"] * MAX_SENT + [None, None] and count == [1]
+    with pytest.raises(ModelError):
+        await group(Second(ModelError), FakePii(), items, {})
+
+
+async def test_refused_is_optional_and_counts_zero():
+    count = []
+    await group(FakeModel(lambda n, b: [one("G", [0])]), FakePii(), [item("a")], {}, count)
+    assert count == [0]
+
+
+def test_example_in_prompt_is_not_near_a_seeded_conversation():
+    assert "wall box" not in SYSTEM
+
+
+@pytest.mark.parametrize("invisible", ["ㅤ", "⠀", "͏", "️", "ㅤ⠀ ͏"])
+async def test_invisible_names_count_as_empty(invisible):
+    pii = FakePii()
+    out = await group(FakeModel(lambda n, b: [one(invisible, [0])]), pii, [item("a")], {})
+    assert out[0][1] == UNNAMED and pii.asked == []
+
+
+async def test_other_found_in_an_earlier_chunk_is_not_sent_as_previous():
+    items = [item(f"i{i}") for i in range(MAX_SENT + 1)]
+    model = FakeModel(lambda n, b: [one("Other", [0]), one("Real", [1])] if n == 0 else [one("Real", [0])])
+    await group(model, FakePii(), items, {})
+    assert model.calls[1][1]["previous_names"] == ["Real"]
