@@ -12,6 +12,9 @@ dependencies = [
     "azure-monitor-opentelemetry",
     "opentelemetry-api",
     "tzdata",
+    "azure-data-tables==12.7.0",
+    "aiohttp",
+    "azure-identity",
 ]
 
 [dependency-groups]

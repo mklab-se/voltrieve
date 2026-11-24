@@ -2,6 +2,7 @@ import os
 
 os.environ.setdefault("TENANT_ID", "00000000-0000-0000-0000-0000000000aa")
 os.environ.setdefault("DEALER_CLIENT_ID", "00000000-0000-0000-0000-0000000000bb")
+os.environ["STORE"] = "memory"
 
 import time  # noqa: E402
 
@@ -47,6 +48,7 @@ def make_token(rsa_key, tenant_id, client_id):
             "azp": "22222222-2222-2222-2222-222222222222",
             "nbf": now - 10,
             "exp": now + overrides.get("exp_delta_seconds", 300),
+            **overrides.get("claims", {}),
         }
         return jwt.encode(
             claims, rsa_key, algorithm="RS256", headers={"kid": overrides.get("kid", "test")}
@@ -58,6 +60,13 @@ def make_token(rsa_key, tenant_id, client_id):
 @pytest.fixture
 def validator(tenant_id, client_id, jwks) -> TokenValidator:
     return TokenValidator(tenant_id, client_id, "Dealer.Access", jwks_fetcher=lambda: jwks)
+
+
+@pytest.fixture
+def staff_validator(tenant_id, client_id, jwks) -> TokenValidator:
+    return TokenValidator(
+        tenant_id, client_id, "Dealer.Manage", jwks_fetcher=lambda: jwks, required_scope="manage_as_user"
+    )
 
 
 @pytest.fixture

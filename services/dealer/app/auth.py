@@ -7,7 +7,11 @@ from dataclasses import dataclass
 import httpx
 import jwt
 
+from app.model import one_line
+
 logger = logging.getLogger(__name__)
+
+NAME_LENGTH = 200
 
 
 class AuthError(Exception):
@@ -22,10 +26,14 @@ class Claims:
     oid: str
     app_id: str
     roles: list[str]
+    name: str = ""  # of a person, for the log and the page
 
 
 class TokenValidator:
-    """Validates Entra ID v2 bearer tokens for callers holding a required app role."""
+    """Validates Entra ID v2 bearer tokens for callers holding a required app role.
+
+    With a required scope the caller is a signed-in person. Without one it is an application: a token
+    that has a scope claim at all is refused."""
 
     def __init__(
         self,
@@ -34,9 +42,11 @@ class TokenValidator:
         required_role: str,
         jwks_fetcher: Callable[[], dict] | None = None,
         miss_refetch_interval: float = 300.0,
+        required_scope: str | None = None,
     ):
         self._client_id = client_id
         self._required_role = required_role
+        self._required_scope = required_scope
         self._issuer = f"https://login.microsoftonline.com/{tenant_id}/v2.0"
         self._jwks_url = f"https://login.microsoftonline.com/{tenant_id}/discovery/v2.0/keys"
         self._audiences = [client_id, f"api://{client_id}"]
@@ -128,8 +138,22 @@ class TokenValidator:
         roles = payload.get("roles")
         if not isinstance(roles, list) or self._required_role not in roles:
             raise AuthError(403, "Missing required role")
+        if not self._is_right_kind(payload):
+            raise AuthError(403, "Wrong kind of caller")
         oid = payload.get("oid")
         if not isinstance(oid, str) or not oid:
             raise AuthError(401, "Invalid token")
         app_id = payload.get("azp") or payload.get("appid") or ""
-        return Claims(oid=oid, app_id=str(app_id), roles=[str(r) for r in roles])
+        return Claims(oid, str(app_id), [str(r) for r in roles], _name(payload))
+
+    def _is_right_kind(self, payload: dict) -> bool:
+        if self._required_scope is None:
+            return "scp" not in payload
+        scopes = payload.get("scp")
+        return isinstance(scopes, str) and self._required_scope in scopes.split()
+
+
+def _name(payload: dict) -> str:
+    names = [payload.get("name"), payload.get("preferred_username")]
+    lines = [one_line(name) for name in names if isinstance(name, str)]
+    return next((line[:NAME_LENGTH] for line in lines if line), "")
