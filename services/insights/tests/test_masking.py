@@ -177,3 +177,8 @@ def test_a_registration_of_only_punctuation_is_ignored():
 def test_allowed_handles_several_registrations():
     assert allowed("loves the opel", ("SPARK", "OPEL")) is False
     assert allowed("loves the volvo", ("SPARK", "OPEL")) is True
+
+
+@pytest.mark.parametrize("text", ["wants \ud800 help", "\udfff", "a\ud83d"])
+def test_a_text_that_cannot_be_encoded_is_not_allowed(text):
+    assert allowed(text, ()) is False

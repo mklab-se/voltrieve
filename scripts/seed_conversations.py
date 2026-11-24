@@ -59,6 +59,11 @@ def choose(data: dict[str, list[dict]], only: str | None) -> list[dict]:
     return data[only] if only else data["labelled"] + data["planted"]
 
 
+def first(label: str | list[str] | None) -> str | None:
+    """A label may be a list, where more than one answer is right. The first is the one to go by."""
+    return label[0] if isinstance(label, list) else label
+
+
 def _message(index: int, text: str) -> dict:
     role, part = ("user", "input_text") if index % 2 == 0 else ("assistant", "output_text")
     return {"type": "message", "role": role, "content": [{"type": part, "text": text}]}
@@ -80,7 +85,7 @@ def plan(conversations: list[dict], weeks: int, today: dt.date, marker: str | No
     """What to write. Each topic is spread over the weeks, and within a week over different owners."""
     _, last = window(dt.datetime.combine(today, dt.time(12), dt.UTC))
     planned: list[Planned] = []
-    for i, conversation in enumerate(sorted(conversations, key=lambda c: c["topic"])):
+    for i, conversation in enumerate(sorted(conversations, key=lambda c: first(c["topic"]))):
         week, place = i % weeks, i // weeks
         said = _said(conversation)
         if marker and i == 0:

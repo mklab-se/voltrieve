@@ -111,7 +111,7 @@ def sample(items: list[Conversation], cap: int) -> tuple[list[Conversation], flo
 _gates: "weakref.WeakKeyDictionary[httpx.AsyncClient, asyncio.Semaphore]" = weakref.WeakKeyDictionary()
 
 
-def _wait(response: httpx.Response | None, attempt: int) -> float:
+def wait_seconds(response: httpx.Response | None, attempt: int) -> float:
     """Retry-After in whole seconds if given (at most MAX_WAIT), else a doubling wait."""
     given = response.headers.get("retry-after", "") if response is not None else ""
     if given.isascii() and given.isdigit():
@@ -134,7 +134,7 @@ async def _get(http: httpx.AsyncClient, path: str, params: dict) -> dict:
                 status = response.status_code
             if status is None or status == 429 or status >= 500:
                 if attempt < RETRIES:
-                    await asyncio.sleep(_wait(response, attempt))
+                    await asyncio.sleep(wait_seconds(response, attempt))
                     continue
                 break
             if status >= 400:

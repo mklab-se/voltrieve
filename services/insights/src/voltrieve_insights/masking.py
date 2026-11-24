@@ -16,6 +16,13 @@ _SEP = r"[\s_\-\u00ad\u2010-\u2015\u2212\u200b-\u200d\u2060\ufeff]{0,3}"
 _PLATE = re.compile(r"(?<![^\W_])[^\W\d_]{3}" + _SEP + r"\d{2}[^\W_](?![^\W_])")
 # VIN: 17 letters and digits without I, O and Q, with at least one digit. The lookbehind keeps a long run linear.
 _VIN = re.compile(r"(?<![A-Za-z0-9])(?=[A-HJ-NPR-Za-hj-npr-z]*[0-9])[A-HJ-NPR-Za-hj-npr-z0-9]{17}(?![A-Za-z0-9])")
+_SURROGATES = re.compile("[\ud800-\udfff]")
+
+
+def without_surrogates(text: str) -> str:
+    """The text without lone surrogates, which cannot be encoded. They are taken out and not replaced by a
+    sign: a sign in the middle of a plate or a phone number would hide it from the patterns."""
+    return _SURROGATES.sub("", text)
 
 
 def mask(text: str) -> str:
@@ -48,9 +55,11 @@ def _alnum(text: str) -> str:
 
 
 def allowed(text: str, registrations: tuple[str, ...]) -> bool:
-    """Whether an intent the model wrote may be kept: short, no contact detail or plate, no run of
-    four digits, and none of the chat's registrations. A registration is looked for in any case, with
-    spaces and punctuation between its characters. One of only punctuation is ignored."""
+    """Whether an intent the model wrote may be kept: short, text that can be encoded, no contact detail
+    or plate, no run of four digits, and none of the chat's registrations. A registration is looked for
+    in any case, with spaces and punctuation between its characters. One of only punctuation is ignored."""
+    if without_surrogates(text) != text:
+        return False
     seen = _plain(text)
     if len(text) > MAX_INTENT or len(seen) > MAX_INTENT or mask(seen) != seen or _four_digits(seen):
         return False

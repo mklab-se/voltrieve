@@ -15,7 +15,7 @@
 
 Reads services/insights/data/seeded.yaml and nothing from Foundry's conversations. The 100 labelled
 ones give two numbers: the share with topic, car model, kind and result all right, and the share per
-label. The 50 with planted personal details give how many reached an intent, before and after the
+label, where a label may have more than one right answer. The 50 with planted personal details give how many reached an intent, before and after the
 filter. Only made up text is shown. A conversation the model failed on counts as wrong.
 Needs az, a role that may call the model, and FOUNDRY_OPENAI_ENDPOINT.
 """
@@ -28,6 +28,7 @@ import datetime as dt
 import os
 import re
 import sys
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -43,7 +44,16 @@ from voltrieve_insights.labels import DEPLOYMENT, TOKEN_SCOPE, Labelled, Model, 
 from voltrieve_insights.quiet import hush  # noqa: E402
 
 LABELS = ("topic", "car_model", "kind", "result")
-LONG_WORD = 5  # letters a word of a planted detail needs to count on its own
+PART_OF_VIN = 8  # characters of a VIN that count on their own
+NUMBER = 8  # digits from which a detail is a phone or id number
+# Words of the planted details that mean something else in an ordinary intent, so they do not count alone.
+COMMON = {"row", "steps", "wharf", "brae", "nanny", "gull", "vane", "punkt", "snabel", "dot", "at", "example", "com"}
+_LETTERS = {"\u00f8": "o", "\u00e6": "ae", "\u0142": "l", "\u0111": "d"}  # NFKD does not fold these
+
+
+def accepted(item: dict, name: str) -> tuple:
+    """The right answers for a label, the likeliest first. Most labels have one."""
+    return tuple(item[name]) if isinstance(item[name], list) else (item[name],)
 
 
 @dataclass(frozen=True)
@@ -55,7 +65,9 @@ class Found:
 
     @property
     def wrong(self) -> list[str]:
-        return [name for name in LABELS if self.got is None or getattr(self.got, name) != self.item[name]]
+        return [
+            name for name in LABELS if self.got is None or getattr(self.got, name) not in accepted(self.item, name)
+        ]
 
 
 class _Seen:
@@ -88,18 +100,55 @@ async def check(model: Model, items: list[dict]) -> list[Found]:
     return list(await asyncio.gather(*(_one(model, item) for item in items)))
 
 
-def _squash(text: str) -> str:
-    return "".join(c for c in text.casefold() if c.isalnum())
+def _fold(text: str) -> str:
+    """Casefolded, without accents, format characters or letters that only look different."""
+    plain = unicodedata.normalize("NFKD", text.casefold())
+    kept = "".join(c for c in plain if unicodedata.category(c) not in ("Mn", "Cf"))
+    return "".join(_LETTERS.get(c, c) for c in kept)
+
+
+def _word_in(word: str, folded: str) -> bool:
+    """Whether a word is there, also with spaces or signs between its letters, or with an s at the end."""
+    letters = r"[\W_]*".join(re.escape(c) for c in word)
+    return re.search(rf"(?<![^\W_]){letters}[\W_]?s?(?![^\W_])", folded) is not None
+
+
+def _number_in(digits: str, plus: bool, folded: str) -> bool:
+    """A phone number in national or +46 form, or an id number with or without its century."""
+    if plus:
+        digits = digits.removeprefix("46")
+    elif len(digits) == 12 and digits[:2] in ("19", "20"):
+        digits = digits[2:]
+    wanted = digits.lstrip("0")
+    runs = re.findall(r"\d[\d\s().\-/]*", folded)
+    return any(wanted in re.sub(r"\D", "", run) for run in runs)
+
+
+def _parts(folded: str) -> list[str]:
+    """The words of a name, an address or an email address that count on their own."""
+    local, at, _ = folded.partition("@")
+    words = re.findall(r"[^\W\d_]+", local)
+    return [w for w in words if w not in COMMON and len(w) >= (3 if at else 2)]
 
 
 def reached(detail: str, intent: str) -> bool:
-    """Whether a planted detail is in an intent: whole, or one long word of a name or an address."""
-    if _squash(detail) in _squash(intent):
+    """Whether a planted detail is in an intent, whole or in a part that points at it. A part that is an
+    ordinary word does not count."""
+    folded, wanted = _fold(intent), _fold(detail)
+    squashed = "".join(c for c in wanted if c.isalnum())
+    digits = re.sub(r"\D", "", wanted)
+    if squashed.isdigit() and len(digits) >= NUMBER:
+        return _number_in(digits, "+" in detail, folded)
+    if _word_in(squashed, folded):
         return True
-    if "@" in detail:
+    if any(c.isdigit() for c in squashed) and " " not in detail.strip() and "@" not in detail:
+        if len(squashed) == 17:
+            there = "".join(c for c in folded if c.isalnum())
+            return any(squashed[i : i + PART_OF_VIN] in there for i in range(17 - PART_OF_VIN + 1))
         return False
-    words = {w.casefold() for w in re.findall(r"[^\W\d_]+", intent)}
-    return any(len(w) >= LONG_WORD and w.casefold() in words for w in re.findall(r"[^\W\d_]+", detail))
+    if re.fullmatch(r"[a-z]{3} ?\d{2}[a-z\d]", wanted):  # a plate counts whole only
+        return False
+    return any(_word_in(part, folded) for part in _parts(wanted))
 
 
 def _share(part: int, whole: int) -> str:
@@ -110,6 +159,8 @@ def _accuracy(found: list[Found]) -> list[str]:
     lines = ["Labels", f"  all four right: {_share(sum(not f.wrong for f in found), len(found))}"]
     for name in LABELS:
         lines.append(f"  {name}: {_share(sum(name not in f.wrong for f in found), len(found))}")
+    baseline = sum(f.item.get("stated") in accepted(f.item, "car_model") for f in found)
+    lines.append(f"  baseline, car_model of a model that always answers null: {_share(baseline, len(found))}")
     steering = [f for f in found if f.item.get("steers")]
     lines.append(f"  all four right where the person tries to steer: {_share(sum(not f.wrong for f in steering), len(steering))}")
     lines += ["", "Wrong"]
@@ -118,7 +169,7 @@ def _accuracy(found: list[Found]) -> list[str]:
             lines.append(f"  {f.item['id']}  error: {f.error}")
             continue
         lines += [
-            f"  {f.item['id']}  {name}: got {getattr(f.got, name) or 'none'}, want {f.item[name] or 'none'}"
+            f"  {f.item['id']}  {name}: got {getattr(f.got, name) or 'none'}, want {' or '.join(a or 'none' for a in accepted(f.item, name))}"
             for name in f.wrong
         ]
     return lines if lines[-1] != "Wrong" else [*lines, "  none"]

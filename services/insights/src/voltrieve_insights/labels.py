@@ -13,16 +13,19 @@ import httpx
 
 from voltrieve_agent.server_tools import MODEL_SLUGS
 
-from voltrieve_insights.conversations import PARALLEL, RETRIES, Conversation, _wait
-from voltrieve_insights.masking import MAX_INTENT, allowed, mask
+from voltrieve_insights.conversations import PARALLEL, RETRIES, Conversation, wait_seconds
+from voltrieve_insights.masking import MAX_INTENT, allowed, mask, without_surrogates
 
 DEPLOYMENT = "gpt-6-luna"
 TOKEN_SCOPE = "https://cognitiveservices.azure.com/.default"
 PATH = "/openai/v1/chat/completions"
-TIMEOUT = 60.0  # seconds, for one try
+TIMEOUT = 60.0  # seconds, for one try with MAX_OUTPUT
 MAX_OUTPUT = 2_000  # tokens, reasoning included
+TOKENS_PER_SECOND = 50  # slower than we expect, to give a long answer time
 END = 6_000  # characters kept of each end of a long conversation
 CUT = "\n[...]\n"
+SEVERAL = "several"  # what the model answers when more than one car is asked about alike
+_FILTERED = ("content_filter", "ResponsibleAIPolicyViolation")
 
 TOPICS = (
     "charging",
@@ -67,20 +70,20 @@ topic:
 - app_account: the app, My Voltrieve, signing in, the account and personal data
 - other: anything else, such as small talk or a subject that is not Voltrieve
 
-car_model: the one Voltrieve model the person's question is about, as a slug. Use null when no \
-model is named, or when several are asked about alike.
+car_model: the one Voltrieve model the person's question is about, as a slug. Use several when more \
+than one is asked about alike, and null when none is named.
 
 kind:
 - how_to: wants to know, understand or learn something
 - compare: wants to weigh two or more alternatives against each other
-- buy: wants to get something: a price, an offer, financing, an article number or stock of a part to \
-buy, an order or a booking of any sort
+- buy: wants to get or pay for something: what it costs to have, how to finance it, whether it can \
+be had, to order it or to reserve a time
 - problem: something does not work, is broken or went wrong, or the person complains
 - command: tells Runa to do something at once in the car or on the page, such as wipers or speed
 - smalltalk: greets, thanks, jokes or chats and needs nothing
 
 result, judged by what Runa answered:
-- answered: the person got what they asked for, also when the true answer was a plain no
+- answered: the person got what they asked for, whether or not they liked the answer
 - partly: the person got some of it, and another part of what they asked was not given
 - not_found: Runa said that it does not know or cannot find it, and gave nothing else of use
 - handed_off: Runa sent the person on to someone else for it, such as a dealer, a workshop, \
@@ -88,8 +91,8 @@ customer service or roadside assistance
 - refused: Runa declined, since it is unsafe, not allowed or not what Runa is for
 
 intent: one neutral sentence in English, whatever the language of the conversation, of at most \
-{MAX_INTENT} characters. Say what the person wants, such as "Wants to charge at home without a wall \
-box". Never write a name of a person, a company, a street or a place, a number, a registration or a \
+{MAX_INTENT} characters. Say what the person wants, such as "Wants to fit a child seat in the front". \
+Never write a name of a person, a company, a street or a place, a number, a registration or a \
 contact detail. Model names of cars are fine."""
 
 SCHEMA = {
@@ -98,7 +101,7 @@ SCHEMA = {
     "required": ["topic", "car_model", "kind", "result", "intent"],
     "properties": {
         "topic": {"type": "string", "enum": list(TOPICS)},
-        "car_model": {"type": ["string", "null"], "enum": [*MODEL_SLUGS, None]},
+        "car_model": {"type": ["string", "null"], "enum": [*MODEL_SLUGS, SEVERAL, None]},
         "kind": {"type": "string", "enum": list(KINDS)},
         "result": {"type": "string", "enum": list(RESULTS)},
         "intent": {"type": "string", "maxLength": MAX_INTENT},
@@ -108,6 +111,10 @@ SCHEMA = {
 
 class ModelError(Exception):
     """The model gave nothing that can be used. The message is fixed words and at most a status."""
+
+
+class Refused(ModelError):
+    """The service refused this one conversation. Others may still be answered."""
 
 
 @dataclass(frozen=True)
@@ -147,15 +154,43 @@ def _fits(value: object, schema: dict) -> bool:
     return True
 
 
-def _content(body: object) -> object:
-    """The answer as JSON, or None when there is none, it was refused or it was cut off."""
+def _filtered(body: object) -> bool:
+    """Whether the body of a 400 says that a content filter stopped the request."""
+    error = body.get("error") if isinstance(body, dict) else None
+    inner = error.get("innererror") if isinstance(error, dict) else None
+    codes = [part.get("code") for part in (error, inner) if isinstance(part, dict)]
+    return any(isinstance(code, str) and code in _FILTERED for code in codes)
+
+
+def _choice(body: object) -> dict | None:
     try:
         choice = body["choices"][0]
-        message = choice["message"]
-        if message.get("refusal") or choice.get("finish_reason") != "stop":
-            return None
-        return json.loads(message["content"])
-    except (KeyError, IndexError, TypeError, AttributeError, ValueError, RecursionError):
+    except (KeyError, IndexError, TypeError):
+        return None
+    return choice if isinstance(choice, dict) else None
+
+
+def _refused(choice: dict) -> bool:
+    message = choice.get("message")
+    return choice.get("finish_reason") == "content_filter" or (
+        isinstance(message, dict) and bool(message.get("refusal"))
+    )
+
+
+def _content(choice: dict) -> object:
+    """The answer as JSON, or None when there is none or it was cut off."""
+    if choice.get("finish_reason") != "stop":
+        return None
+    try:
+        return json.loads(choice["message"]["content"])
+    except (KeyError, TypeError, ValueError, RecursionError):
+        return None
+
+
+def _json(response: httpx.Response) -> object:
+    try:
+        return response.json()
+    except (ValueError, RecursionError):
         return None
 
 
@@ -165,21 +200,36 @@ def _count(usage: object, *path: str) -> int:
     return usage if isinstance(usage, int) and not isinstance(usage, bool) else 0
 
 
+def _encoded(body: dict) -> bytes | None:
+    try:
+        return json.dumps(body, ensure_ascii=False, allow_nan=False).encode()
+    except (TypeError, ValueError, RecursionError):  # ValueError covers UnicodeError
+        return None
+
+
 async def send(
     http: httpx.AsyncClient, url: str, body: dict, headers: dict, timeout: float
 ) -> httpx.Response | None:
-    """POST with retries of 429, 5xx, timeouts and transport errors. The last response, or None when the
-    last try never got one. Nothing is raised, so the caller raises its own fixed error outside an except."""
+    """POST with retries of 429, 5xx, timeouts and transport errors. It never raises, since the errors
+    here hold the body or the address. It returns the last response, or None when the last try got none
+    or the body, the headers or the address cannot be sent. The caller turns that into its own error with
+    fixed words, outside any except block."""
+    content = _encoded(body)
+    if content is None:
+        return None
+    headers = {"Content-Type": "application/json", **headers}
     response = None
     for attempt in range(RETRIES + 1):
         response = None
         try:
-            response = await http.post(url, json=body, headers=headers, timeout=timeout)
+            response = await http.post(url, content=content, headers=headers, timeout=timeout)
         except httpx.HTTPError:
             pass
+        except (ValueError, httpx.InvalidURL):  # trying again gives the same
+            return None
         retry = response is None or response.status_code == 429 or response.status_code >= 500
         if retry and attempt < RETRIES:
-            await asyncio.sleep(_wait(response, attempt))
+            await asyncio.sleep(wait_seconds(response, attempt))
             continue
         break
     return response
@@ -200,20 +250,27 @@ class Model:
         self.cached_tokens = 0
         self.output_tokens = 0
 
-    async def ask(self, system: str, data: str, schema: dict) -> dict:
+    async def ask(self, system: str, data: str, schema: dict, max_output: int = MAX_OUTPUT) -> dict:
+        """An answer that fits the schema, or ModelError. max_output is in tokens, reasoning included."""
         body = {
             "model": self._deployment,
-            "messages": [{"role": "system", "content": system}, {"role": "user", "content": data}],
+            "messages": [
+                {"role": "system", "content": without_surrogates(system)},
+                {"role": "user", "content": without_surrogates(data)},
+            ],
             "response_format": {
                 "type": "json_schema",
                 "json_schema": {"name": "answer", "strict": True, "schema": schema},
             },
             "reasoning_effort": "low",
-            "max_completion_tokens": MAX_OUTPUT,
+            "max_completion_tokens": max_output,
         }
-        answer = await self._post(body)
+        answer = await self._post(body, max(TIMEOUT, max_output / TOKENS_PER_SECOND))
         self._add(answer.get("usage") if isinstance(answer, dict) else None)
-        found = _content(answer)
+        choice = _choice(answer)
+        if choice is not None and _refused(choice):
+            raise Refused("the service refused to answer")
+        found = _content(choice) if choice is not None else None
         if not isinstance(found, dict) or not _fits(found, schema):
             raise ModelError("the model gave no answer that fits")
         return found
@@ -230,27 +287,27 @@ class Model:
             return None
         return {"Authorization": f"Bearer {token}"}
 
-    async def _post(self, body: dict) -> object:
+    async def _post(self, body: dict, timeout: float) -> object:
         """Every failure is raised outside an except block, so no cause or context holds a URL or a body."""
         async with self._gate:
             headers = await self._headers()
             if headers is None:
                 raise ModelError("no token for the model")
-            response = await send(self._http, self._url, body, headers, TIMEOUT)
+            response = await send(self._http, self._url, body, headers, timeout)
             if response is None:
                 raise ModelError("the model request failed before an answer")
+            found = _json(response)
+            if response.status_code == 400 and _filtered(found):
+                raise Refused("the service refused the request")
             if response.status_code != 200:
                 raise ModelError(f"the model request failed with status {response.status_code}")
-            try:
-                return response.json()
-            except (ValueError, RecursionError):
-                return None
+            return found
 
 
 def _data(messages: list[tuple[str, str]]) -> str:
     """The masked conversation, one JSON object a line, so that no text can pass for another speaker.
     A long one keeps its ends. It is masked first: a detail that is cut in two would not be found."""
-    text = "\n".join(json.dumps({role: mask(said)}, ensure_ascii=False) for role, said in messages)
+    text = "\n".join(json.dumps({role: mask(without_surrogates(said))}, ensure_ascii=False) for role, said in messages)
     if len(text) <= 2 * END:
         return text
     return text[:END] + CUT + text[-END:]
@@ -262,13 +319,17 @@ async def label(
     """The labels of one conversation. A conversation without user text is the caller's to drop."""
     found = await model.ask(SYSTEM, _data(messages), SCHEMA)
     intent = " ".join(found["intent"].split())
-    stated = c.car_model if c.car_model in MODEL_SLUGS else None
+    car_model = found["car_model"]
+    if car_model is None:
+        car_model = c.car_model if c.car_model in MODEL_SLUGS else None
+    elif car_model == SEVERAL:
+        car_model = None
     return Labelled(
         owner=c.owner,
         client=c.client,
         seeded=c.seeded,
         topic=found["topic"],
-        car_model=found["car_model"] or stated,
+        car_model=car_model,
         kind=found["kind"],
         result=found["result"],
         intent=intent if intent and allowed(intent, registrations) else None,

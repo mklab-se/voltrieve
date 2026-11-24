@@ -6,8 +6,9 @@ import httpx
 import pytest
 import respx
 
+from voltrieve_insights import labels
 from voltrieve_insights.conversations import Conversation
-from voltrieve_insights.labels import KINDS, RESULTS, SCHEMA, SYSTEM, TOPICS, Labelled, Model, ModelError, label
+from voltrieve_insights.labels import KINDS, RESULTS, SCHEMA, SYSTEM, TOPICS, Labelled, Model, ModelError, Refused, label
 
 ENDPOINT = "https://models.test"
 PATH = "/openai/v1/chat/completions"
@@ -110,7 +111,7 @@ async def test_the_schema_is_strict_with_the_enums(mock, model):
     assert properties["topic"]["enum"] == list(TOPICS)
     assert properties["kind"]["enum"] == list(KINDS)
     assert properties["result"]["enum"] == list(RESULTS)
-    assert properties["car_model"]["enum"] == ["spark", "lumen", "ragn", "fjord", "atlas", None]
+    assert properties["car_model"]["enum"] == ["spark", "lumen", "ragn", "fjord", "atlas", "several", None]
     assert properties["intent"]["maxLength"] == 100
 
 
@@ -229,6 +230,16 @@ async def test_the_stated_model_is_used_when_the_model_gives_none(mock, model):
 async def test_the_named_model_wins_over_the_stated_one(mock, model):
     mock.post(PATH).mock(return_value=fits(car_model="atlas"))
     assert (await label(model, conversation("spark"), USER, ())).car_model == "atlas"
+
+
+@pytest.mark.parametrize("stated", ["spark", None])
+async def test_several_models_give_none_whatever_is_stated(mock, model, stated):
+    mock.post(PATH).mock(return_value=fits(car_model="several"))
+    assert (await label(model, conversation(stated), USER, ())).car_model is None
+
+
+def test_the_system_message_explains_several_and_null():
+    assert "several" in SYSTEM and "null" in SYSTEM
 
 
 async def test_a_stated_model_outside_the_catalog_is_none(mock, model):
@@ -369,3 +380,190 @@ async def test_ask_checks_lists_and_integers_too(mock, model):
         mock.post(PATH).mock(return_value=answer(wrong))
         with pytest.raises(ModelError):
             await model.ask("s", "d", schema)
+
+
+@pytest.mark.parametrize("text", ["\ud800", "hello \udfff there", "\ud83d alone " + SECRET, "ok \ude00\ud83d"])
+async def test_a_lone_surrogate_in_a_chat_is_not_sent_and_stops_nothing(mock, model, text):
+    route = mock.post(PATH).mock(return_value=fits())
+    got = await label(model, conversation(), [("user", text), ("assistant", text)], ())
+    assert got.topic == "charging"
+    route.calls.last.request.content.decode("utf-8")
+    assert not any("\ud800" <= c <= "\udfff" for c in sent(route)["messages"][1]["content"])
+
+
+@pytest.mark.parametrize("text", ["ABC\ud800123", "070-174\udc00 06 05", "a@exa\ud800mple.com"])
+async def test_a_surrogate_cannot_hide_a_detail(mock, model, text):
+    route = mock.post(PATH).mock(return_value=fits())
+    await label(model, conversation(), [("user", text)], ())
+    content = sent(route)["messages"][1]["content"]
+    assert any(found in content for found in ("[plate]", "[phone]", "[email]"))
+
+
+async def test_ask_replaces_surrogates_for_every_caller(mock, model):
+    route = mock.post(PATH).mock(return_value=fits())
+    await model.ask("s\ud800", "d\udfff", SCHEMA)
+    assert [m["content"] for m in sent(route)["messages"]] == ["s", "d"]
+
+
+async def test_an_intent_that_cannot_be_encoded_is_dropped(mock, model):
+    body = json.dumps({**GOOD, "intent": "Wants \ud800 to charge"})
+    mock.post(PATH).mock(return_value=answer(body))
+    got = await label(model, conversation(), USER, ())
+    assert got.intent is None and got.topic == "charging"
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        ValueError(SECRET),
+        UnicodeEncodeError("utf-8", SECRET, 0, 1, SECRET),
+        httpx.InvalidURL(SECRET),
+        httpx.UnsupportedProtocol(SECRET),
+        httpx.DecodingError(SECRET),
+    ],
+)
+async def test_a_request_that_cannot_be_made_raises_and_names_nothing(mock, model, failure):
+    mock.post(PATH).side_effect = failure
+    with pytest.raises(ModelError) as err:
+        await label(model, conversation(), [("user", SECRET)], ())
+    assert_clean(err.value)
+
+
+@pytest.mark.parametrize("endpoint", ["https://models.test:port", "nowhere", "https://[models.test", "https://\x00models.test"])
+async def test_a_wrong_address_raises_and_names_nothing(endpoint):
+    async with httpx.AsyncClient() as http:
+        model = Model(http, endpoint, lambda: "made-up-token")
+        with pytest.raises(ModelError) as err:
+            await label(model, conversation(), USER, ())
+    assert_clean(err.value)
+
+
+@pytest.mark.parametrize("token", ["t\u00f6ken-made-up-token", "\ud800"])
+async def test_a_token_that_cannot_be_sent_raises_and_names_nothing(mock, token):
+    mock.post(PATH).mock(return_value=fits())
+    async with httpx.AsyncClient() as http:
+        with pytest.raises(ModelError) as err:
+            await label(Model(http, ENDPOINT, lambda: token), conversation(), USER, ())
+    assert_clean(err.value)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"error": {"code": "content_filter", "message": SECRET}},
+        {"error": {"code": "x", "innererror": {"code": "ResponsibleAIPolicyViolation", "extra": SECRET}}},
+    ],
+)
+async def test_a_filtered_request_is_refused(mock, model, body):
+    route = mock.post(PATH).respond(400, json=body)
+    with pytest.raises(Refused) as err:
+        await label(model, conversation(), USER, ())
+    assert route.call_count == 1
+    assert_clean(err.value)
+
+
+async def test_a_filtered_answer_is_refused_and_its_tokens_count(mock, model):
+    for message in ({"content": SECRET}, {"content": None}, {}, None):
+        mock.post(PATH).respond(
+            200,
+            json={"choices": [{"finish_reason": "content_filter", "message": message}], "usage": {"prompt_tokens": 7}},
+        )
+        with pytest.raises(Refused) as err:
+            await label(model, conversation(), USER, ())
+        assert_clean(err.value)
+    assert model.input_tokens == 28
+
+
+async def test_a_refusal_in_the_message_is_refused(mock, model):
+    mock.post(PATH).mock(return_value=answer(None, refusal=SECRET))
+    with pytest.raises(Refused) as err:
+        await label(model, conversation(), USER, ())
+    assert_clean(err.value)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"error": {"code": "invalid_request_error", "message": "content_filter"}},
+        {"error": "content_filter"},
+        {"error": {"code": ["content_filter"], "innererror": 3}},
+        ["content_filter"],
+        None,
+    ],
+)
+async def test_another_400_is_an_ordinary_error(mock, model, body):
+    mock.post(PATH).respond(400, json=body)
+    with pytest.raises(ModelError) as err:
+        await label(model, conversation(), USER, ())
+    assert not isinstance(err.value, Refused)
+    assert_clean(err.value)
+
+
+async def test_a_400_that_is_not_json_is_an_ordinary_error(mock, model):
+    mock.post(PATH).respond(400, text=SECRET)
+    with pytest.raises(ModelError, match="400") as err:
+        await label(model, conversation(), USER, ())
+    assert not isinstance(err.value, Refused)
+    assert_clean(err.value)
+
+
+@pytest.mark.parametrize("wanted", [None, 16_000])
+async def test_the_output_limit_follows_the_caller_and_the_timeout_fits_it(mock, model, wanted):
+    route = mock.post(PATH).mock(return_value=fits())
+    if wanted is None:
+        await model.ask("s", "d", SCHEMA)
+    else:
+        await model.ask("s", "d", SCHEMA, max_output=wanted)
+    assert sent(route)["max_completion_tokens"] == (wanted or labels.MAX_OUTPUT)
+    read = route.calls.last.request.extensions["timeout"]["read"]
+    assert read == labels.TIMEOUT if wanted is None else read > 2 * labels.TIMEOUT
+
+
+class Explodes(httpx.AsyncBaseTransport):
+    def __init__(self, error):
+        self.error = error
+
+    async def handle_async_request(self, request):
+        raise self.error
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        ValueError(SECRET),
+        UnicodeEncodeError("utf-8", SECRET, 0, 1, SECRET),
+        httpx.InvalidURL(SECRET),
+        httpx.ReadError(SECRET),
+    ],
+)
+async def test_send_gives_none_for_an_error(error):
+    async with httpx.AsyncClient(transport=Explodes(error)) as http:
+        assert await labels.send(http, ENDPOINT, {"a": 1}, {}, 1.0) is None
+
+
+loop = {}
+loop["itself"] = loop
+
+
+@pytest.mark.parametrize("body", [{"a": "\ud800"}, {"a": {1, 2}}, loop, {"a": float("nan")}])
+async def test_send_gives_none_for_a_body_that_cannot_be_encoded(mock, body):
+    route = mock.post("/x").respond(200)
+    async with httpx.AsyncClient() as http:
+        assert await labels.send(http, ENDPOINT + "/x", body, {}, 1.0) is None
+    assert route.call_count == 0
+
+
+@pytest.mark.parametrize("headers", [{"Authorization": "\ud800"}, {"Authorization": "t\u00f6"}])
+async def test_send_gives_none_for_a_header_that_cannot_be_encoded(mock, headers):
+    mock.post("/x").respond(200)
+    async with httpx.AsyncClient() as http:
+        assert await labels.send(http, ENDPOINT + "/x", {}, headers, 1.0) is None
+
+
+async def test_send_sends_json(mock):
+    route = mock.post("/x").respond(200)
+    async with httpx.AsyncClient() as http:
+        await labels.send(http, ENDPOINT + "/x", {"a": "\u00e5"}, {"Authorization": "b"}, 1.0)
+    request = route.calls.last.request
+    assert request.headers["content-type"] == "application/json" and request.headers["authorization"] == "b"
+    assert json.loads(request.content) == {"a": "\u00e5"}

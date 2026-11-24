@@ -14,7 +14,7 @@ import respx
 
 from voltrieve_agent.server_tools import MODEL_SLUGS
 from voltrieve_insights.conversations import select
-from voltrieve_insights.labels import KINDS, RESULTS, TOPICS, ModelError
+from voltrieve_insights.labels import KINDS, RESULTS, SYSTEM, TOPICS, ModelError, Refused
 from voltrieve_insights.masking import mask
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -37,21 +37,40 @@ def test_there_are_100_labelled_and_50_planted():
 
 def test_every_label_is_in_its_list():
     for c in EVERY:
-        assert c["topic"] in TOPICS and c["kind"] in KINDS and c["result"] in RESULTS
+        assert set(labels_check.accepted(c, "topic")) <= set(TOPICS)
+        assert set(labels_check.accepted(c, "kind")) <= set(KINDS)
+        assert set(labels_check.accepted(c, "result")) <= set(RESULTS)
         assert c["car_model"] in (*MODEL_SLUGS, None)
         assert c.get("stated") in (*MODEL_SLUGS, None)
         assert c["client"] in ("car", "web")
 
 
-def test_no_stated_car_where_the_right_label_is_none():
-    assert [c["id"] for c in EVERY if c["car_model"] is None and "stated" in c] == []
+def test_few_labels_have_more_than_one_right_answer():
+    lists = [[name for name in labels_check.LABELS if isinstance(c[name], list)] for c in EVERY]
+    assert max(len(found) for found in lists) <= 1 and sum(len(found) for found in lists) <= 8
+    for c in EVERY:
+        for name in labels_check.LABELS:
+            if isinstance(c[name], list):
+                assert len(c[name]) >= 2 and len(set(c[name])) == len(c[name])
+
+
+def test_a_stated_car_and_no_right_one_means_several_are_asked_about():
+    for c in EVERY:
+        if c["car_model"] is None and "stated" in c:
+            text = " ".join(c["said"][::2]).lower()
+            assert sum(slug in text for slug in MODEL_SLUGS) >= 2, c["id"]
+    assert sum(c["car_model"] is None and "stated" in c for c in DATA["labelled"]) >= 2
+
+
+def test_the_prompt_holds_no_conversation():
+    text = seed.DATA.read_text().lower()
+    assert "wall box" in text and "wall box" not in SYSTEM.lower()
 
 
 def test_every_topic_kind_and_result_is_there():
     labelled = DATA["labelled"]
-    assert {c["topic"] for c in labelled} == set(TOPICS)
-    assert {c["kind"] for c in labelled} == set(KINDS)
-    assert {c["result"] for c in labelled} == set(RESULTS)
+    for name, every in (("topic", TOPICS), ("kind", KINDS), ("result", RESULTS)):
+        assert {labels_check.accepted(c, name)[0] for c in labelled} == set(every)
     assert {c["car_model"] for c in labelled} == {*MODEL_SLUGS, None}
 
 
@@ -76,6 +95,47 @@ def test_every_planted_detail_is_in_its_text():
         for detail in c["planted"]:
             assert any(detail in said for said in c["said"]), c["id"]
     assert not any("planted" in c for c in DATA["labelled"])
+
+
+# Capitalized words of the planted text that are no part of a person's name: first words, cars, products.
+NOT_NAMES = set(
+    "Hej Bilen Under My The Min Mitt Kan Book Boka Please Test Does Is Har Jag Which Your How "
+    "Spark Lumen Ragn Fjord Atlas Prime Plus Pure Care Voltrieve Laddning Schema Gräns Dela Ladda Breakdown "
+    "QVI VIN Svara Namn Får Choose".split()
+)
+_WORD = r"[A-ZÅÄÖ][^\W\d_]+(?:-[A-ZÅÄÖ][^\W\d_]+)*"
+_PAIR = re.compile(rf"(?<![^\W_])(?=({_WORD}) ({_WORD}))")
+
+
+def unlisted(c):
+    """Pairs of capitalized words that look like a first and a last name and are in no listed detail."""
+    pairs = {pair for said in c["said"] for pair in _PAIR.findall(said) if not set(pair) & NOT_NAMES}
+    return {" ".join(pair) for pair in pairs if not any(" ".join(pair) in detail for detail in c["planted"])}
+
+
+def test_no_name_in_the_planted_text_is_left_out_of_the_list():
+    assert {c["id"]: unlisted(c) for c in DATA["planted"] if unlisted(c)} == {}
+
+
+def test_a_name_that_is_left_out_would_be_seen():
+    assert unlisted({"said": ["Kan Saga Ekorrberg komma?"], "planted": ["Mattis Ekorrberg"]}) == {"Saga Ekorrberg"}
+
+
+def test_the_hard_ways_to_write_a_detail_are_planted():
+    details = [d for c in DATA["planted"] for d in c["planted"]]
+    assert any(re.fullmatch(r"\w( \w){3,}", d) for d in details)  # a personal plate with spaces
+    assert any("snabel-a" in d or " at " in d for d in details)  # an email address in words
+    split = [c for c in DATA["planted"] if sum(bool(re.fullmatch(r"[\d -]+", d)) for d in c["planted"]) == 2]
+    assert len(split) == 1  # a phone number over two messages
+    parts = [d for d in split[0]["planted"] if re.fullmatch(r"[\d -]+", d)]
+    assert all("[phone]" not in mask(said) for said in split[0]["said"])
+    assert not any(all(part in said for part in parts) for said in split[0]["said"])
+
+
+def test_no_real_organization_or_known_word():
+    text = seed.DATA.read_text().lower()
+    for word in ("ncap", "klingon", "odensvi", "saltwick", "brackenfell", "applegarth"):
+        assert word not in text
 
 
 def test_the_planted_details_are_of_every_sort():
@@ -127,7 +187,7 @@ def test_popular_topics_have_many_owners_each_week(weeks):
     plan = seed.plan(EVERY, weeks, TODAY)
     by_topic = {}
     # The plan is in the order of topic, and text tells them apart.
-    topic_of = {c["said"][0]: c["topic"] for c in EVERY}
+    topic_of = {c["said"][0]: seed.first(c["topic"]) for c in EVERY}
     for meta, items in plan:
         topic = next(t for s, t in topic_of.items() if items[0]["content"][0]["text"].endswith(s))
         week = (date(2026, 11, 22) - date.fromisoformat(meta["started"])).days // 7
@@ -235,7 +295,9 @@ class Fake:
             raise ModelError("the model gave no answer that fits")
         result = "refused" if c["id"] in self.wrong else c["result"]
         intent = f"Wants help for {c['planted'][0]}" if c["id"] in self.leaks else "Wants to know something"
-        return {k: c[k] for k in ("topic", "car_model", "kind")} | {"result": result, "intent": intent}
+        topic, kind, result = (seed.first(v) for v in (c["topic"], c["kind"], result))
+        car_model = c["car_model"] or ("several" if "stated" in c else None)
+        return {"topic": topic, "car_model": car_model, "kind": kind, "result": result, "intent": intent}
 
 
 def test_the_check_counts_all_four_and_each_label():
@@ -265,18 +327,118 @@ def test_the_check_counts_planted_details_before_and_after_the_filter():
 @pytest.mark.parametrize(
     ("detail", "intent", "there"),
     [
+        # names: folded letters, NFD, short names, possessive s, in parts
+        ("Hjördis Vågmo", "Hjordis Vagmo wants range", True),
+        ("Hjördis Vågmo", "Hjo\u0308rdis asks about range", True),
+        ("Hjördis Vågmo", "Va\u030agmo's car", True),
+        ("Hjördis Vågmo", "Wants help with Vågmos car", True),
+        ("Hjördis Vågmo", "Wants a longer range", False),
         ("Torvalda Kvistlund", "Wants Kvistlund to call", True),
+        ("Torvalda Kvistlund", "torvalda’s question", True),
         ("Torvalda Kvistlund", "Wants to charge at home", False),
-        ("QVI 123", "Asks about qvi123", True),
+        ("Barnaby Thornquist-Lee", "Lee wants to know a code", True),
+        ("Barnaby Thornquist-Lee", "Wants a fault code to be deleted", False),
+        ("Siv-Ragna Kornby", "Siv asks for a time", True),
+        ("Siv-Ragna Kornby", "Wants a test drive of a Ragn", False),
+        ("Tyra Blåsippdal", "Tyra wants all deleted", True),
+        ("Tyra Blåsippdal", "Wants tyre pressure", False),
+        ("Saga Ekorrberg", "Saga may change the schedule", True),
+        ("Arvidsson-Lönnkrona", "Arvidsson wants a tow bar", True),
+        ("Arvidsson-Lönnkrona", "Wants Lonnkrona's tow bar", True),
+        # addresses and places: common words do not count alone
+        ("9 Bellmaker Steps", "Wants the steps to order blades", False),
+        ("9 Bellmaker Steps", "Lives at Bellmaker", True),
+        ("9 Bellmaker Steps", "Lives at 9 bellmaker steps", True),
         ("17 Copperleaf Row", "Lives at Copperleaf", True),
         ("17 Copperleaf Row", "Wants a row of seats", False),
-        ("a.b@example.com", "Mail a.b@example.com", True),
+        ("3 Heronsgate Wharf", "Wants delivery to a wharf", False),
+        ("Ödhem", "Lives in Odhem", True),
+        ("Ödhem", "Wants good hemp seats", False),
+        ("Nanny Tjärnlycka", "Wants a nanny seat", False),
+        ("Nanny Tjärnlycka", "Tjarnlycka asks for hours", True),
+        # plates
+        ("QVI 123", "Asks about qvi123", True),
+        ("QVI 123", "Asks about QVI-123's service", True),
+        ("QVI 123", "Asks about 123 things", False),
         ("LILLAN", "Asks about Lillan", True),
+        ("LILLAN", "Asks about L I L L A N", True),
+        ("LILLAN", "Lillan’s wipers", True),
+        ("LILLAN", "Asks about Lillandia", False),
+        ("T U F F I S", "Tuffis has belts", True),
+        ("T U F F I S", "T-U-F-F-I-S", True),
+        ("T U F F I S", "Wants stuff I sell", False),
+        # phone numbers in both forms
         ("070-174 06 05", "Call 070 174 06 05", True),
+        ("070-174 06 05", "Call +46701740605", True),
+        ("070-174 06 05", "Call +46 (0)70-174 06 05", True),
+        ("070-174 06 05", "Call 0046 70 174 06 05", True),
+        ("+46 70 174 06 31", "Call 070-1740631", True),
+        ("+46 70 174 06 31", "Call 070-1740632", False),
+        ("070-174 06 05", "Wants 174 km of range", False),
+        ("08-465", "Starts with 08-465", True),
+        # id numbers
+        ("19901332-4321", "Born 901332-4321", True),
+        ("901332-1234", "Person 199013321234", True),
+        ("901332-1234", "Person 901332-9999", False),
+        # VINs, whole and in part
+        ("VTRZZZ00000000017", "VIN vtrzzz 00000000017", True),
+        ("VTRZZZ00000000017", "VIN ending 00000017", True),
+        ("VTRZZZ00000000017", "VIN starting VTRZZZ00", True),
+        ("VTRZZZ00000000017", "VIN starting VTRZZZ0", False),
+        # email addresses, also in words
+        ("a.b@example.com", "Mail a.b@example.com", True),
+        ("odwin.farrowmere@example.com", "Farrowmere wants to charge", True),
+        ("odwin.farrowmere@example.com", "Wants an example", False),
+        ("ottilia punkt bjorksvans snabel-a example punkt com", "Mail ottilia at example", True),
+        ("ottilia punkt bjorksvans snabel-a example punkt com", "Björksvans wants to tow", True),
+        ("ottilia punkt bjorksvans snabel-a example punkt com", "Wants an example on com", False),
     ],
 )
-def test_a_detail_is_found_whole_or_by_a_long_word(detail, intent, there):
+def test_a_detail_is_found_in_any_form_and_no_common_word_is(detail, intent, there):
     assert labels_check.reached(detail, intent) is there
+
+
+def test_no_planted_detail_is_found_in_an_ordinary_intent():
+    ordinary = (
+        "Wants to know how to charge at home from a normal socket",
+        "Asks for a test drive of the Spark or Lumen on Saturday",
+        "Wants the price of the Ragn, Fjord or Atlas with winter wheels",
+        "Wants a warning light explained and the car towed",
+        "Asks to turn on the wipers and how long parking is allowed",
+        "Wants all stored personal data deleted and help to sign in to the app",
+    )
+    details = {d for c in DATA["planted"] for d in c["planted"]}
+    assert [(d, i) for d in details for i in ordinary if labels_check.reached(d, i)] == []
+
+
+def test_the_baseline_is_a_model_that_never_names_a_car():
+    items = DATA["labelled"]
+    want = sum(c.get("stated") == c["car_model"] for c in items)
+    fake = Fake(items)
+    text = labels_check.report(asyncio.run(labels_check.check(fake, items)), [], fake)
+    assert f"car_model of a model that always answers null: {want} of 100" in text
+    assert want < 90
+
+
+def test_one_of_the_accepted_answers_is_right():
+    item = {**DATA["labelled"][0], "kind": ["how_to", "problem"]}
+    for kind, wrong in (("how_to", []), ("problem", []), ("buy", ["kind"])):
+        fake = Fake([{**item, "kind": kind}])
+        found = asyncio.run(labels_check.check(fake, [item]))
+        assert found[0].wrong == wrong
+    text = labels_check.report(found, [], fake)
+    assert "kind: got buy, want how_to or problem" in text
+
+
+def test_a_refused_conversation_is_counted_as_wrong():
+    class Refuses(Fake):
+        async def ask(self, system, data, schema):
+            raise Refused("the service refused the request")
+
+    items = DATA["labelled"][:2]
+    fake = Refuses(items)
+    text = labels_check.report(asyncio.run(labels_check.check(fake, items)), [], fake)
+    assert "all four right: 0 of 2" in text and "a001  error: the service refused the request" in text
 
 
 def test_the_report_is_saved_without_em_dashes(tmp_path, monkeypatch, capsys):
