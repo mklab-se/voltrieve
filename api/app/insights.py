@@ -8,13 +8,13 @@ Foundry's own tracing of prompt and hosted turns is not ours and does hold text 
 
 import asyncio
 import datetime as dt
-import re
 import time
 from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from voltrieve_agent.events import AgentEvent
+from voltrieve_agent.private import mask_contacts
 
 # USD per million tokens: input, cached input, output (list prices, Global Standard, Sweden
 # Central, read 2026-11-05; scripts/model_costs.py uses the same table).
@@ -32,19 +32,11 @@ SEARCH_REASONING_PER_MILLION = 0.022
 USD_TO_SEK = 10.5  # a fixed rate: the estimate is for trends, not the bill
 
 PROMPT_LIMIT = 240
-_EMAIL = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
-_ID_NUMBER = re.compile(r"\b(?:19|20)?\d{6}[-+]?\d{4}\b")  # Swedish personal identity number
-# A phone number starts with + or 0 (070-123 45 67, +46 70 123 45 67): prices, dates and part
-# numbers do not, so they stay readable.
-_PHONE = re.compile(r"(?:\+\d|\b0\d)[\d\s()-]{5,18}\d")
 
 
 def mask_prompt(text: str) -> str:
     """The prompt as the live feed may show it: contact details and id numbers replaced."""
-    masked = _EMAIL.sub("[email]", text)
-    masked = _PHONE.sub(lambda m: "[phone]" if sum(c.isdigit() for c in m[0]) >= 8 else m[0], masked)
-    masked = _ID_NUMBER.sub("[id number]", masked)
-    masked = " ".join(masked.split())
+    masked = " ".join(mask_contacts(text).split())
     return masked if len(masked) <= PROMPT_LIMIT else masked[:PROMPT_LIMIT] + "…"
 
 

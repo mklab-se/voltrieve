@@ -275,3 +275,28 @@ def test_a_turn_with_an_attachment_is_private_whatever_the_host_says(user):
     assert not TurnInput(user, "c", "t", "hi").private
     for extra in PRIVATE.values():
         assert TurnInput(user, "c", "t", "hi", **{"private": False, **extra}).private
+
+
+def test_mask_contacts_replaces_email_phone_and_id_number():
+    from voltrieve_agent.private import mask_contacts
+
+    text = "mail anna+ev@example.se, call +46 70 123 45 67 or 070-123 45 67, id 19800101-1234 and 8001011234"
+    assert mask_contacts(text) == "mail [email], call [phone] or [phone], id [id number] and [id number]"
+    assert mask_contacts("Atlas AWD 2026 costs 1 500 kr, VT-1042-11") == "Atlas AWD 2026 costs 1 500 kr, VT-1042-11"
+
+
+def test_mask_contacts_keeps_whitespace_and_length():
+    from voltrieve_agent.private import mask_contacts
+
+    assert mask_contacts("a  b\n" + "x" * 300) == "a  b\n" + "x" * 300
+
+
+def test_mask_contacts_is_fast_on_long_text():
+    import time
+
+    from voltrieve_agent.private import mask_contacts
+
+    for chunk in ("a", "a.", "a@", "a@b", "0 ", "0" * 5 + " ", "+4 ", "1"):
+        started = time.perf_counter()
+        mask_contacts(chunk * (100_000 // len(chunk)))
+        assert time.perf_counter() - started < 1, chunk

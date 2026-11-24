@@ -7,6 +7,7 @@ the HTTP status and the stack as frames, without messages, source lines or value
 
 import hashlib
 import logging
+import re
 import sys
 import traceback
 from contextvars import ContextVar
@@ -14,8 +15,21 @@ from contextvars import ContextVar
 # Set by the loop while it runs a private turn.
 current_private: ContextVar[bool] = ContextVar("current_private", default=False)
 
+_EMAIL = re.compile(r"(?<![\w.+-])[\w.+-]+@[\w-]+\.[\w.-]+")  # the lookbehind keeps a long run linear
+_ID_NUMBER = re.compile(r"\b(?:19|20)?\d{6}[-+]?\d{4}\b")  # Swedish personal identity number
+# A phone number starts with + or 0 (070-123 45 67, +46 70 123 45 67): prices, dates and part
+# numbers do not, so they stay readable.
+_PHONE = re.compile(r"(?:\+\d|\b0\d)[\d\s()-]{5,18}\d")
+
 MAX_ERRORS = 8
 MAX_FRAMES = 30  # of each error, the ones closest to it
+
+
+def mask_contacts(text: str) -> str:
+    """The text with email addresses, phone numbers and Swedish id numbers replaced."""
+    masked = _EMAIL.sub("[email]", text)
+    masked = _PHONE.sub(lambda m: "[phone]" if sum(c.isdigit() for c in m[0]) >= 8 else m[0], masked)
+    return _ID_NUMBER.sub("[id number]", masked)
 
 
 def pseudonym(oid: str) -> str:
