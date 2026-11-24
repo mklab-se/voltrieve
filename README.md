@@ -167,7 +167,7 @@ Tear down with `azd down --purge`. App registrations and the tester are not remo
 
 ## Costs
 
-Idle, about 80 USD a month plus a small amount for Log Analytics (the usage insights add a few MB a year, and their job costs nothing while it does not run): Search Basic is about 75 USD and Container Registry Basic about 5 USD. Container Apps scale to zero, the three Static Web Apps (website, car and dashboard) are on the Free tier, models bill per token, and the hosted agent bills per active session. A Serverless search service can stand next to Basic. It is off by default. In the dev environment it is on, at about 0.11 USD by the diagnostic metric for a night of test runs, not by an invoice ([Deployment](docs/deploy.md#idle-cost)).
+Idle, about 80 USD a month plus a small amount for Log Analytics (the usage insights add a few MB a year, and their job costs nothing while it does not run): Search Basic is about 75 USD and Container Registry Basic about 5 USD. Container Apps scale to zero, the three Static Web Apps (website, car and dashboard) are on the Free tier, models bill per token, and the hosted agent bills per active session. A Serverless search service can stand next to Basic. It is off by default. In the dev environment it is on, and Basic was deleted on 2026-11-24, so that environment should idle at about 5 USD a month (not seen on a bill yet). Serverless used about 0.11 USD by the diagnostic metric for a night of test runs, not by an invoice ([Deployment](docs/deploy.md#idle-cost)).
 
 ## Status
 

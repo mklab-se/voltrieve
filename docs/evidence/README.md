@@ -24,4 +24,5 @@ The usage insights, also from 2026-11-24:
 - `insights-role.txt`: what the job's identity may and may not do, as HTTP statuses.
 - `insights-labels.txt`: the labels of 100 made up conversations and 108 planted details, from `scripts/labels_check.py`, and a search for what a model call leaves behind.
 - `insights-acceptance.txt`: the runs of the job on made up conversations, the rule of five, the grouping (`scripts/insights_check.py`), the identity, the API and the cost.
+- `search-basic-removed.txt`: the checks before and after the Basic search service was deleted.
 - `tracing-disconnected.txt`: the marked turns before and after Foundry's tracing was disconnected, from `scripts/tracing_check.py`.

@@ -1,0 +1,21 @@
+The Basic search service was deleted in the dev environment, 2026-11-24 (UTC), on the product owner's yes.
+
+Before: both services held the same two indexes (71 and 88 chunks) and the same two knowledge bases.
+SEARCH_BASIC=off. The preview created and deleted nothing. Provisioned, then the agents deployed again (hosted agent
+version 36). The API and both MCP connections pointed at the Serverless service.
+
+Does anything reach Basic?
+  20:01  control: the search smoke questions asked to Basic on purpose, 11 of 11
+  20:05  the metric SearchQueriesPerSecond shows them, at 20:03
+  20:06  real checks: search smoke 11 of 11, full smoke 10 of 10, six routing questions on all three backends
+  20:17  queries to Basic since 20:06: none
+
+The routing sample was six questions once, not the whole suite of 135 turns. 16 of 18 turns used the expected sources.
+"wipers-fjord" also searched the documents base on the prompt agent and on the hosted agent, with the right article.
+"brakes-atlas" on the prompt agent used the right sources, but not at the same time.
+
+Deleted behind the guard: the tier was basic, and the name was not the service in use. Then its identity's three leftover
+role assignments (two on Foundry, one on storage), by id.
+After: one search service, Serverless. Search smoke 11 of 11, full smoke 10 of 10. The next preview creates nothing.
+
+Not verified: the way back, and the routing suite since the delete.

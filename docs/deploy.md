@@ -304,7 +304,7 @@ The tester password is printed again only if the account was deleted and is recr
 
 ## Removing the Basic service
 
-Once Serverless is `active`, nothing uses the Basic service, but it costs the same, about 22 SEK a day. Do not do steps 2 to 4 before a demo: until it is deleted, the Basic service is the fast fallback.
+Once Serverless is `active`, nothing uses the Basic service, but it costs the same, about 22 SEK a day. Until it is deleted, the Basic service is the fast fallback. The dev environment went through all four steps on 2026-11-24 (`docs/evidence/search-basic-removed.txt`). The way back has not been tried.
 
 Setting a value never deletes it: azd deploys incrementally, so a service that leaves the template stays in Azure and stays on the bill. The delete is a command of its own, run by the product owner.
 

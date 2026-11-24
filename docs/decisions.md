@@ -37,9 +37,9 @@ On 2026-11-24 the product owner asked for the newest search APIs. The data plane
 
 The numbers are in [`search-versions.txt`](https://github.com/mklab-se/voltrieve/blob/main/docs/evidence/search-versions.txt). The design has what breaks, the order and the way back: [design](https://github.com/mklab-se/voltrieve/blob/main/docs/superpowers/specs/2026-11-24-search-foundry-iq-design.md). The commands are in [Deployment](deploy.md#order-for-an-update-with-the-new-search-values).
 
-### The Basic search service can go
+### The Basic search service is gone
 
-On 2026-11-24 the Basic service had cost 517 SEK of the month to date, about 22 SEK a day. A full month of that is about one third of the 2000 SEK budget. It has been unused since Serverless is `active`. Serverless had cost 1.25 SEK so far. So the product owner asked to have Basic removed.
+On 2026-11-24 the Basic service had cost 517 SEK of the month to date, about 22 SEK a day. A full month of that is about one third of the 2000 SEK budget. It has been unused since Serverless is `active`. Serverless had cost 1.25 SEK so far. So the product owner asked to have Basic removed, and it was deleted in the dev environment on 2026-11-24 (`docs/evidence/search-basic-removed.txt`).
 
 - **A value, not a deletion.** `SEARCH_BASIC` is `on` or `off`. `off` leaves the service, its roles and every reference out of the template. A provision never deletes it: the owner does, by name, after a check ([the steps](deploy.md#removing-the-basic-service)).
 - **The guard is double.** `off` needs `SEARCH_SERVERLESS` at `active`. The preprovision hook refuses anything else, and so does the template itself, before it creates anything.
