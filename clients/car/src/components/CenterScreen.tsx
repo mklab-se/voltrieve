@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState, type CSSProperties, type FormEvent, type RefObject } from "react";
+import { memo, useEffect, useRef, useState, type CSSProperties, type FormEvent, type RefObject } from "react";
 import type { Gauges } from "../gauges";
 import type { Pedals } from "../pedals";
-import type { ChatState } from "../turns";
+import type { ChatState, Turn } from "../turns";
 import type { SourceItem } from "../types";
 import { Answer } from "./Answer";
 import { Clock } from "./Clock";
@@ -35,7 +35,27 @@ interface Props {
   onOpenSource: (source: SourceItem) => void;
 }
 
-function Messages({ state, lifted, busy, onSend, onOpenSource }: Pick<Props, "state" | "lifted" | "busy" | "onSend" | "onOpenSource">) {
+const Exchange = memo(function Exchange({ turn, onOpenSource }: { turn: Turn; onOpenSource: Props["onOpenSource"] }) {
+  return (
+    <div>
+      <p className="cs-said">{turn.userText}</p>
+      {turn.answer && <Answer text={turn.answer} sources={turn.sources} onOpenSource={onOpenSource} />}
+      {turn.error && <p className="cs-error">{turn.error}</p>}
+      {!turn.answer && !turn.error && turn.status === "streaming" && (
+        <p className="thinking">
+          <i />
+          <i />
+          <i />
+        </p>
+      )}
+    </div>
+  );
+});
+
+type MessagesProps = Pick<Props, "state" | "lifted" | "busy" | "onSend" | "onOpenSource">;
+
+/** The gauges change many times a second. The conversation does not. */
+const Messages = memo(function Messages({ state, lifted, busy, onSend, onOpenSource }: MessagesProps) {
   const list = useRef<HTMLDivElement>(null);
   const last = state.turns.at(-1);
   useEffect(() => {
@@ -59,24 +79,13 @@ function Messages({ state, lifted, busy, onSend, onOpenSource }: Pick<Props, "st
     );
   }
   return (
-    <div className="cs-messages" ref={list} data-lifted={lifted} tabIndex={0} role="log" aria-live="off" aria-label="Conversation">
+    <div className="cs-messages" data-scroll="" ref={list} data-lifted={lifted} tabIndex={0} role="log" aria-live="off" aria-label="Conversation">
       {state.turns.map((t) => (
-        <div key={t.id}>
-          <p className="cs-said">{t.userText}</p>
-          {t.answer && <Answer text={t.answer} sources={t.sources} onOpenSource={onOpenSource} />}
-          {t.error && <p className="cs-error">{t.error}</p>}
-          {!t.answer && !t.error && t.status === "streaming" && (
-            <p className="thinking">
-              <i />
-              <i />
-              <i />
-            </p>
-          )}
-        </div>
+        <Exchange key={t.id} turn={t} onOpenSource={onOpenSource} />
       ))}
     </div>
   );
-}
+});
 
 function SignCard({ sign, gauges, busy, onPark }: Pick<Props, "sign" | "gauges" | "busy" | "onPark">) {
   return (
@@ -102,7 +111,7 @@ function SignCard({ sign, gauges, busy, onPark }: Pick<Props, "sign" | "gauges" 
 }
 
 export function CenterScreen(props: Props) {
-  const { style, busy, pedals, field, now, onSetClock, motorOn, onMotor, onSend } = props;
+  const { style, state, busy, lifted, pedals, field, now, onSetClock, motorOn, onMotor, onSend, onOpenSource } = props;
   const [text, setText] = useState("");
 
   function submit(e: FormEvent) {
@@ -125,7 +134,7 @@ export function CenterScreen(props: Props) {
       </header>
       <div className="cs-main">
         <section className="cs-chat" aria-label={`Chat with ${ASSISTANT_NAME}`}>
-          <Messages {...props} />
+          <Messages state={state} lifted={lifted} busy={busy} onSend={onSend} onOpenSource={onOpenSource} />
           <form className="cs-composer" onSubmit={submit}>
             <RunaAvatar />
             <input

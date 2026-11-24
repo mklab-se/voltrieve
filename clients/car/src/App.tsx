@@ -1,6 +1,7 @@
 // App and Authed are copied from clients/web; keep the two alike.
 import { lazy, Suspense, useEffect, useState } from "react";
 import { bootAuth, type Auth, type AuthSession } from "./auth";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ConfigMissing, Loading, SignIn } from "./components/Notices";
 import { readConfig, type AppConfig } from "./config";
 
@@ -10,7 +11,11 @@ const Workspace = lazy(async () => ({ default: (await import("./Workspace")).Wor
 export function App() {
   const result = readConfig(import.meta.env as Record<string, string | undefined>, import.meta.env.DEV);
   if (!result.ok) return <ConfigMissing missing={result.missing} />;
-  return <Authed config={result.config} />;
+  return (
+    <ErrorBoundary>
+      <Authed config={result.config} />
+    </ErrorBoundary>
+  );
 }
 
 function Authed({ config }: { config: AppConfig }) {

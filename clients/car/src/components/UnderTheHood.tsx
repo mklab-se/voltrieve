@@ -38,7 +38,7 @@ interface Props {
 /** Everything that shows how an answer was made. Not part of the car until it is asked for. */
 export function UnderTheHood({ state, backend, onBackend, busy }: Props) {
   return (
-    <aside className="hood" aria-label="Under the hood">
+    <aside className="hood" data-scroll="" aria-label="Under the hood">
       <div className="hood-bar">
         <span>Backend</span>
         <div className="seg" role="radiogroup" aria-label="Agent backend">

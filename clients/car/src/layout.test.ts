@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CENTER_SCREEN, DRIVER_DISPLAY, fitPicture, MIRROR, WINDSCREEN } from "./layout";
+import { CENTER_SCREEN, DRIVER_DISPLAY, fitPicture, HUD_BOTTOM, hudHeight, MIRROR, WINDSCREEN } from "./layout";
 
 describe("the cockpit picture", () => {
   it.each([
@@ -45,5 +45,16 @@ describe("the cockpit picture", () => {
     expect(MIRROR.left).toBeGreaterThan(WINDSCREEN.left);
     expect(MIRROR.top).toBeGreaterThan(WINDSCREEN.top);
     expect(MIRROR.top + MIRROR.height).toBeLessThan(WINDSCREEN.top + WINDSCREEN.height);
+  });
+
+  it.each([
+    [1440, 900],
+    [2560, 1080],
+    [3440, 1440],
+  ])("has room for the whole HUD at %i by %i", (width, height) => {
+    const box = fitPicture(width, height);
+    const top = box.top + (HUD_BOTTOM / 100) * box.height - hudHeight(box);
+    expect(top).toBeGreaterThanOrEqual(8);
+    expect(hudHeight(box)).toBeGreaterThan(height * 0.25);
   });
 });

@@ -25,6 +25,12 @@ describe("Answer", () => {
     expect(out).not.toContain("<script");
   });
 
+  it("loads no pictures, which could tell someone else about the question", () => {
+    const out = html("Look: ![the sign](https://elsewhere.example/a.png?q=1)");
+    expect(out).not.toContain("<img");
+    expect(out).not.toContain("elsewhere.example");
+  });
+
   it("refuses script links", () => {
     expect(html("[click](javascript:alert(1))")).not.toContain("javascript:");
   });

@@ -367,7 +367,7 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
 }
 .hud[data-open="true"] { visibility: visible; transition-delay: 0s; }
 .hud-glass {
-  flex: 1; display: grid; grid-template-rows: auto minmax(0, 1fr); max-height: calc(var(--u) * 24.6); padding: calc(var(--u) * 0.95) calc(var(--u) * 1.5) calc(var(--u) * 1.2);
+  flex: 1; display: grid; grid-template-rows: auto minmax(0, 1fr); max-height: var(--hud-max); padding: calc(var(--u) * 0.95) calc(var(--u) * 1.5) calc(var(--u) * 1.2);
   border-radius: calc(var(--u) * 1.3); color: #fff; background: rgb(9 13 16 / 0.74); backdrop-filter: blur(calc(var(--u) * 1.3)) saturate(1.25);
   border: 1px solid rgb(255 255 255 / 0.13); box-shadow: 0 calc(var(--u) * 1.4) calc(var(--u) * 4) rgb(0 0 0 / 0.45), inset 0 1px 0 rgb(255 255 255 / 0.1);
   transform-origin: 50% 100%; transform: translateY(calc(var(--u) * 13.5)) rotateX(-34deg) scale(0.36, 0.5); opacity: 0;

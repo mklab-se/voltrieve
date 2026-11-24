@@ -1,5 +1,6 @@
 import { SignPhotos, type Renewed, type Upload } from "./attachments";
 import type { Horn } from "./horn";
+import { lastSignBlock } from "./gauges";
 import { newCar, setSpeed, startParking, step, type Car } from "./sim/car";
 import { blockOf, passedSign } from "./sim/street";
 import type { CarControls, WiperMode } from "./tools";
@@ -8,8 +9,12 @@ import type { CarControls, WiperMode } from "./tools";
 const NO_FRAMES_MS = 3000;
 /** The turn waits no longer than this for the car to stand. */
 const PARK_MS = 60_000;
-const PHOTO_MS = 8000;
+/** A photo that takes longer than this is given up, so that the later ones come. */
+const PHOTO_MS = 6000;
+/** The turn waits no longer than this for the photos to be taken. */
+const PHOTOS_MS = 8000;
 const STEP_S = 0.1;
+const OLD_CHAT = { message: "A new chat has begun." };
 
 interface Parking {
   promise: Promise<void>;
@@ -28,6 +33,8 @@ export class Drive implements CarControls {
   private taking: Promise<void> = Promise.resolve();
   private watch?: ReturnType<typeof setInterval>;
   private lastFrameMs = Date.now();
+  /** Which chat it is: what an old one still waits for says nothing about the new one. */
+  private chat = 0;
 
   constructor(
     private readonly horn: Horn,
@@ -90,11 +97,27 @@ export class Drive implements CarControls {
 
   async signPhoto(): Promise<{ id?: string; message: string }> {
     // The car may just have passed the sign. The photo before it is of another one, so it is no answer.
-    if (!(await inTime(this.taking, PHOTO_MS))) return { message: "The photo of the sign is not ready yet. Try again." };
+    const { chat } = this;
+    const taken = await inTime(this.taking.then(() => true), PHOTOS_MS, false);
+    if (chat !== this.chat) return OLD_CHAT;
+    if (!taken) return { message: "The photo of the sign is not ready yet. Try again." };
+    const here = lastSignBlock(this.car.distanceM);
+    if (here !== undefined && !this.photos.last()) return { message: "The photo of the last sign could not be taken." };
     const result = await this.photos.idForLast(this.upload);
+    if (chat !== this.chat) return OLD_CHAT;
     if (result.status !== "ready") return { message: result.message };
     this.askedBlock = result.block;
-    return { id: result.id, message: "The photo is attached." };
+    const shows = `The photo is attached. It shows the sign of block ${result.block + 1}.`;
+    const now = lastSignBlock(this.car.distanceM);
+    if (now === undefined || now === result.block) return { id: result.id, message: shows };
+    return { id: result.id, message: `${shows} The car is in block ${now + 1} now, where another sign applies.` };
+  }
+
+  /** A new chat: it has asked about no block, and waits for nothing. */
+  startOver(): void {
+    this.chat += 1;
+    this.askedBlock = undefined;
+    this.forgetParking();
   }
 
   /** New ids for photos that the API has lost. */
@@ -133,22 +156,24 @@ export class Drive implements CarControls {
 
   private async tryPhoto(block: number): Promise<Blob | undefined> {
     try {
-      return await this.takePhoto(block);
+      return await inTime(this.takePhoto(block), PHOTO_MS, undefined);
     } catch {
       return undefined;
     }
   }
 }
 
-/** False when it is not done in this time. */
-async function inTime(work: Promise<void>, ms: number): Promise<boolean> {
+/** The result, or the other one when it is not there in this time. */
+async function inTime<T, L>(work: Promise<T>, ms: number, otherwise: L): Promise<T | L> {
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const late = new Promise<boolean>((resolve) => {
-    timer = setTimeout(resolve, ms, false);
+  const late = new Promise<L>((resolve) => {
+    timer = setTimeout(resolve, ms, otherwise);
   });
-  const done = await Promise.race([work.then(() => true), late]);
-  clearTimeout(timer);
-  return done;
+  try {
+    return await Promise.race([work, late]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function newParking(): Parking {

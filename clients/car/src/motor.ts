@@ -9,12 +9,15 @@ export function motorTone(speedKmh: number): { hz: number; volume: number } {
 export interface Motor {
   setOn(on: boolean): void;
   setSpeed(speedKmh: number): void;
+  /** A tab that is hidden is silent: its car gets no frames, so the sound would not follow it. */
+  setHidden(hidden: boolean): void;
 }
 
 export function createMotor(makeAudio: () => AudioContext = () => new AudioContext()): Motor {
   let audio: AudioContext | undefined;
   let parts: { tones: OscillatorNode[]; volume: GainNode; filter: BiquadFilterNode } | undefined;
   let on = false;
+  let hidden = false;
   let speed = 0;
 
   function start(context: AudioContext) {
@@ -42,7 +45,7 @@ export function createMotor(makeAudio: () => AudioContext = () => new AudioConte
     const now = audio.currentTime;
     parts.tones.forEach((tone, i) => tone.frequency.setTargetAtTime(hz * [1, 2.01, 3.98][i]!, now, 0.12));
     parts.filter.frequency.setTargetAtTime(300 + hz * 3, now, 0.12);
-    parts.volume.gain.setTargetAtTime(on ? volume : 0, now, 0.15);
+    parts.volume.gain.setTargetAtTime(on && !hidden ? volume : 0, now, 0.15);
   }
 
   return {
@@ -57,6 +60,10 @@ export function createMotor(makeAudio: () => AudioContext = () => new AudioConte
         }
       }
       if (on) void audio?.resume();
+      update();
+    },
+    setHidden(value) {
+      hidden = value;
       update();
     },
     setSpeed(value) {

@@ -110,7 +110,7 @@ describe("the photo of the sign", () => {
     const d = new Drive(async () => true, () => Promise.reject(new Error("no canvas")), uploads());
     d.setSpeed(50);
     tick(d, 5);
-    expect(await d.signPhoto()).toEqual({ message: "No parking sign has been passed yet." });
+    expect(await d.signPhoto()).toEqual({ message: "The photo of the last sign could not be taken." });
   });
 });
 
@@ -167,6 +167,19 @@ describe("without frames", () => {
     await expect(parking).rejects.toThrow("Nobody waits for the parking any more.");
     tick(d, 60);
     expect(d.car.mode).toBe("parked");
+    await vi.advanceTimersByTimeAsync(0); // the photo of the sign on the way has come
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("lets a photo that never comes not stop the later ones", async () => {
+    const answers: (() => Promise<Blob>)[] = [() => new Promise(() => {}), () => photo(1)];
+    const d = new Drive(async () => true, () => answers.shift()!(), uploads());
+    d.setSpeed(100);
+    tick(d, 25);
+    expect(answers).toEqual([]); // both signs are passed
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(d.photos.last()).toMatchObject({ block: 1 });
+    expect((await d.signPhoto()).id).toBe("att1");
     expect(vi.getTimerCount()).toBe(0);
   });
 
@@ -176,7 +189,57 @@ describe("without frames", () => {
     tick(d, 5);
     const photo = d.signPhoto();
     await vi.advanceTimersByTimeAsync(10_000);
-    expect(await photo).toEqual({ message: "The photo of the sign is not ready yet. Try again." });
+    expect(await photo).toEqual({ message: "The photo of the last sign could not be taken." });
+  });
+});
+
+describe("the words about the photo", () => {
+  it("say which block it is from", async () => {
+    const d = drive();
+    d.setSpeed(50);
+    tick(d, 5);
+    expect((await d.signPhoto()).message).toBe("The photo is attached. It shows the sign of block 1.");
+  });
+
+  it("say so when the car has come to another sign, whose photo failed", async () => {
+    const answers: (() => Promise<Blob>)[] = [() => photo(0), () => Promise.reject(new Error("no canvas"))];
+    const d = new Drive(async () => true, () => answers.shift()!(), uploads());
+    d.setSpeed(100);
+    tick(d, 20);
+    expect((await d.signPhoto()).message).toBe(
+      "The photo is attached. It shows the sign of block 1. The car is in block 2 now, where another sign applies.",
+    );
+  });
+});
+
+describe("a new chat", () => {
+  it("has asked about no block", async () => {
+    const d = drive();
+    d.setSpeed(50);
+    tick(d, 5);
+    await d.signPhoto();
+    d.startOver();
+    expect(d.askedBlock).toBeUndefined();
+  });
+
+  it("is not told about a photo that the old one asked for", async () => {
+    let ready = (_: UploadResult) => {};
+    const d = drive(() => new Promise((resolve) => (ready = resolve)));
+    d.setSpeed(50);
+    tick(d, 5);
+    const late = d.signPhoto();
+    await settled();
+    d.startOver();
+    ready({ status: "ready", id: "att1" });
+    expect((await late).id).toBeUndefined();
+    expect(d.askedBlock).toBeUndefined();
+  });
+
+  it("lets go of a parking", async () => {
+    const d = drive();
+    const parking = d.park();
+    d.startOver();
+    await expect(parking).rejects.toThrow("Nobody waits for the parking any more.");
   });
 });
 
@@ -191,7 +254,7 @@ describe("a camera that fails", () => {
     );
     d.setSpeed(50);
     expect(() => tick(d, 5)).not.toThrow();
-    expect(await d.signPhoto()).toEqual({ message: "No parking sign has been passed yet." });
+    expect(await d.signPhoto()).toEqual({ message: "The photo of the last sign could not be taken." });
   });
 
   // An unhandled rejection makes vitest fail.

@@ -82,6 +82,8 @@ describe("the switch", () => {
     expect(menu(false)).toMatch(/role="switch"[^>]*aria-checked="false"[^>]*>Under the hood/);
     expect(menu(true)).toMatch(/role="switch"[^>]*aria-checked="true"/);
     expect(read(menu(false))).not.toMatch(HIDDEN);
+    expect(menu(false)).toContain("The live screen keeps nothing, but your chat is kept by the service.");
+    expect(menu(false)).not.toContain("not stored");
   });
 });
 

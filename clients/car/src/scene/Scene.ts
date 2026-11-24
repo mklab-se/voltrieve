@@ -28,6 +28,7 @@ import {
   WebGLRenderTarget,
   type BufferGeometry,
   type Material,
+  type Texture,
 } from "three";
 import { MIRROR, PICTURE, WINDSCREEN } from "../layout";
 import type { Car } from "../sim/car";
@@ -40,12 +41,17 @@ import { FACADE_LEFT, FACADE_RIGHT, FACADES, KERB_LEFT, KERB_RIGHT, planSegment,
 import { blurPx, motionBlur, PHOTO_PX, signCamera, toJpeg, type Board } from "./signCamera";
 import { HORIZON, Rain, Sky } from "./sky";
 import { makeTextures, PAVEMENT_LENGTH_M, PAVEMENT_WIDTHS_M, ROAD_LENGTH_M, ROAD_WIDTH_M, type Textures } from "./textures";
+import { LEVELS, Quality } from "./quality";
 import { PARKED, stepWipers, type Wipers } from "./wipers";
 
 export { blurPx } from "./signCamera";
 
-export type Renderer = Pick<WebGLRenderer, "render" | "setSize" | "setPixelRatio" | "setRenderTarget" | "dispose"> & {
+export type Renderer = Pick<
+  WebGLRenderer,
+  "render" | "setSize" | "setPixelRatio" | "setRenderTarget" | "readRenderTargetPixelsAsync" | "dispose"
+> & {
   shadowMap: { needsUpdate: boolean };
+  getContext(): { isContextLost(): boolean };
 };
 
 const SEGMENTS_BEHIND = 2;
@@ -86,9 +92,9 @@ const WHITE = new Color("#ffffff");
 
 const MAX_PIXELS = 3_400_000;
 /** The share of the full resolution, from the best picture to the fastest. */
-const QUALITY = [1, 0.8, 0.62, 0.5];
-const SLOW_FRAME_S = 1 / 45;
-const JUDGE_FRAMES = 90;
+const SHARES = [1, 0.8, 0.62, 0.5];
+/** Below this level there is no mirror. */
+const MIRROR_LEVEL = LEVELS - 2;
 
 /** Many copies of one thing. Each segment of the street has its own places for them. */
 class Copies {
@@ -159,7 +165,11 @@ const clamp = (n: number, low: number, high: number) => Math.min(Math.max(n, low
 export interface Parts {
   renderer?: Renderer;
   textures?: Textures;
+  /** The light of the sky for everything that reflects it. */
+  skyLight?: (renderer: Renderer) => Texture | undefined;
 }
+
+const NO_PHOTO = "The photo could not be taken.";
 
 export class StreetScene {
   readonly scene = new Scene();
@@ -196,8 +206,8 @@ export class StreetScene {
   private yaw = 0;
   private pitch = 0;
   private sway = 0;
-  private level = 0;
-  private judged = { frames: 0, slow: 0 };
+  private readonly quality = new Quality();
+  private readonly skyLight: NonNullable<Parts["skyLight"]>;
   private size = { width: 0, height: 0, dpr: 0, level: -1 };
 
   constructor(
@@ -207,6 +217,7 @@ export class StreetScene {
     this.still = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
     this.textures = parts.textures ?? makeTextures();
     this.renderer = parts.renderer ?? makeRenderer(canvas);
+    this.skyLight = parts.skyLight ?? lightOfSky;
 
     this.scene.fog = this.fog;
     this.sun.castShadow = true;
@@ -239,14 +250,27 @@ export class StreetScene {
     this.mirrorCamera.position.set(0.1, 0.12, 0);
     this.rig.add(this.mirrorCamera);
 
-    if (this.renderer instanceof WebGLRenderer) this.lightFromSky(this.renderer);
+    this.scene.environmentIntensity = 0.5;
+    this.light();
+    canvas.addEventListener("webglcontextrestored", this.restored);
+  }
+
+  /** The graphics card was lost and came back: three.js has the rest, but not what was drawn only once. */
+  private readonly restored = () => {
+    this.light();
+    this.shadowAt = undefined;
+  };
+
+  private light(): void {
+    this.scene.environment?.dispose();
+    this.scene.environment = this.skyLight(this.renderer) ?? null;
   }
 
   /** Draw one frame. */
   render(car: Car, wipers: WiperMode): void {
     const now = performance.now();
     const dt = this.before === undefined ? 0 : Math.min((now - this.before) / 1000, 0.1);
-    if (this.before !== undefined) this.judge((now - this.before) / 1000);
+    if (this.before !== undefined) this.quality.frame((now - this.before) / 1000);
     this.before = now;
     if (!this.resize()) return;
     this.timeS += dt;
@@ -256,7 +280,7 @@ export class StreetScene {
     this.follow(car, dt);
     this.rain.step(dt, car.speedKmh / 3.6, this.wet);
 
-    const showMirror = this.level < 2;
+    const showMirror = this.quality.level < MIRROR_LEVEL;
     if (showMirror) {
       this.hood.visible = this.rain.visible = false;
       this.renderer.setRenderTarget(this.mirror);
@@ -279,30 +303,42 @@ export class StreetScene {
 
   /** A close-up of the sign of a block, as the car sees it on its way past. */
   async photo(car: Car, block: number): Promise<Blob> {
-    if (!(this.renderer instanceof WebGLRenderer)) throw new Error("The photo could not be taken.");
-    const renderer = this.renderer;
+    const { renderer } = this;
+    const lost = () => renderer.getContext().isContextLost();
+    if (lost()) throw new Error(NO_PHOTO);
     this.move(car.distanceM);
     const sign = this.signs.find((s) => s.block === block) ?? this.setSign(this.signs[0]!, block);
     const raw = new WebGLRenderTarget(PHOTO_PX, PHOTO_PX, { type: HalfFloatType, samples: 4 });
     const developed = new WebGLRenderTarget(PHOTO_PX, PHOTO_PX, { depthBuffer: false });
     try {
-      const camera = signCamera(this.boardOf(sign));
-      this.scene.add(camera);
-      this.hood.visible = this.rain.visible = false;
-      renderer.setRenderTarget(raw);
-      renderer.render(this.scene, camera);
-      this.hood.visible = true;
-      this.scene.remove(camera);
-      this.glass.plain(raw.texture);
-      renderer.setRenderTarget(developed);
-      renderer.render(this.glass.scene, this.glass.camera);
-      renderer.setRenderTarget(null);
+      this.expose(raw, developed, signCamera(this.boardOf(sign)));
       const pixels = new Uint8Array(4 * PHOTO_PX * PHOTO_PX);
-      await renderer.readRenderTargetPixelsAsync(developed, 0, 0, PHOTO_PX, PHOTO_PX, pixels);
+      const read: unknown = await renderer.readRenderTargetPixelsAsync(developed, 0, 0, PHOTO_PX, PHOTO_PX, pixels);
+      // Without the graphics card there is nothing to read, and the photo would be black.
+      if (!read || lost()) throw new Error(NO_PHOTO);
       return await toJpeg(motionBlur(upright(pixels), blurPx(car.speedKmh)));
     } finally {
       raw.dispose();
       developed.dispose();
+    }
+  }
+
+  /** Draw the street for the camera of the signs, and leave everything as it was. */
+  private expose(raw: WebGLRenderTarget, developed: WebGLRenderTarget, camera: PerspectiveCamera): void {
+    const { renderer, scene, hood, rain } = this;
+    const before = [hood.visible, rain.visible] as const;
+    scene.add(camera);
+    hood.visible = rain.visible = false;
+    try {
+      renderer.setRenderTarget(raw);
+      renderer.render(scene, camera);
+      this.glass.plain(raw.texture);
+      renderer.setRenderTarget(developed);
+      renderer.render(this.glass.scene, this.glass.camera);
+    } finally {
+      [hood.visible, rain.visible] = before;
+      scene.remove(camera);
+      renderer.setRenderTarget(null);
     }
   }
 
@@ -312,6 +348,8 @@ export class StreetScene {
   }
 
   dispose(): void {
+    this.canvas.removeEventListener("webglcontextrestored", this.restored);
+    this.scene.environment?.dispose();
     const seen = new Set<{ dispose(): void }>();
     this.scene.traverse((o) => {
       if (!(o instanceof Mesh)) return;
@@ -336,9 +374,10 @@ export class StreetScene {
     if (width === 0 || height === 0) return false;
     const dpr = globalThis.devicePixelRatio || 1;
     const { size } = this;
-    if (size.width === width && size.height === height && size.dpr === dpr && size.level === this.level) return true;
-    this.size = { width, height, dpr, level: this.level };
-    const ratio = Math.min(dpr, 2, Math.sqrt(MAX_PIXELS / (width * height))) * QUALITY[this.level]!;
+    const { level } = this.quality;
+    if (size.width === width && size.height === height && size.dpr === dpr && size.level === level) return true;
+    this.size = { width, height, dpr, level };
+    const ratio = Math.min(dpr, 2, Math.sqrt(MAX_PIXELS / (width * height))) * SHARES[level]!;
     this.renderer.setPixelRatio(ratio);
     this.renderer.setSize(width, height, false);
     this.target.setSize(Math.round(width * ratio), Math.round(height * ratio));
@@ -360,16 +399,6 @@ export class StreetScene {
       px(WINDSCREEN.height, PICTURE.height),
     );
     return true;
-  }
-
-  /** When most frames are slow, the picture gets smaller, and then the mirror goes. A single hitch does not count. */
-  private judge(seconds: number): void {
-    const { judged } = this;
-    judged.frames += 1;
-    if (seconds > SLOW_FRAME_S && seconds < 0.5) judged.slow += 1;
-    if (judged.frames < JUDGE_FRAMES) return;
-    if (judged.slow > 0.6 * JUDGE_FRAMES && this.level < QUALITY.length - 1) this.level += 1;
-    this.judged = { frames: 0, slow: 0 };
   }
 
   private weather(): void {
@@ -717,24 +746,30 @@ export class StreetScene {
       ...sign.size,
     };
   }
+}
 
-  private lightFromSky(renderer: WebGLRenderer): void {
-    const generator = new PMREMGenerator(renderer);
-    const world = new Scene();
-    const sky = new Sky(SUN);
-    const ground = new Mesh(new PlaneGeometry(400, 400).rotateX(-Math.PI / 2), new MeshBasicMaterial({ color: "#a39a90" }));
-    ground.position.y = -3;
-    const walls = new Mesh(new BoxGeometry(17, 13, 400), new MeshBasicMaterial({ color: "#a8825c", side: DoubleSide }));
-    walls.geometry.deleteAttribute("uv");
-    walls.position.y = 3.5;
-    // Only the long walls: the sky is open above and at the ends.
-    walls.geometry.clearGroups();
-    walls.geometry.setDrawRange(0, 12);
-    world.add(sky, ground, walls);
-    this.scene.environment = generator.fromScene(world, 0.02).texture;
-    this.scene.environmentIntensity = 0.5;
-    generator.dispose();
+/** The sky over two rows of houses, for everything that reflects it. */
+function lightOfSky(renderer: Renderer): Texture | undefined {
+  if (!(renderer instanceof WebGLRenderer)) return undefined;
+  const generator = new PMREMGenerator(renderer);
+  const world = new Scene();
+  const sky = new Sky(SUN);
+  const ground = new Mesh(new PlaneGeometry(400, 400).rotateX(-Math.PI / 2), new MeshBasicMaterial({ color: "#a39a90" }));
+  ground.position.y = -3;
+  const walls = new Mesh(new BoxGeometry(17, 13, 400), new MeshBasicMaterial({ color: "#a8825c", side: DoubleSide }));
+  walls.geometry.deleteAttribute("uv");
+  walls.position.y = 3.5;
+  // Only the long walls: the sky is open above and at the ends.
+  walls.geometry.clearGroups();
+  walls.geometry.setDrawRange(0, 12);
+  world.add(sky, ground, walls);
+  const light = generator.fromScene(world, 0.02).texture;
+  generator.dispose();
+  for (const mesh of [sky, ground, walls]) {
+    mesh.geometry.dispose();
+    mesh.material.dispose();
   }
+  return light;
 }
 
 function sizeOf(def: SignDef, material: MeshStandardMaterial): { width: number; height: number } {

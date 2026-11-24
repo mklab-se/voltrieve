@@ -7,6 +7,16 @@ interface Props {
   onSet: (time: Date | undefined) => void;
 }
 
+const EARLIEST = "2000-01-01T00:00";
+const LATEST = "2099-12-31T23:59";
+
+/** The time in the field, or undefined while it is not a whole one: a year is 0002 when its first digit is typed. */
+export function readClock(value: string): Date | undefined {
+  const time = new Date(value);
+  const year = time.getFullYear();
+  return year >= 2000 && year <= 2099 ? time : undefined;
+}
+
 const two = (n: number) => String(n).padStart(2, "0");
 const timeText = (d: Date) => `${two(d.getHours())}:${two(d.getMinutes())}`;
 const dayText = (d: Date) => d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
@@ -52,10 +62,12 @@ export function Clock({ now, onSet }: Props) {
             <input
               type="datetime-local"
               autoFocus
+              min={EARLIEST}
+              max={LATEST}
               defaultValue={fieldText(time)}
               onChange={(e) => {
-                const set = new Date(e.target.value);
-                if (!Number.isNaN(set.getTime())) onSet(set);
+                const set = readClock(e.target.value);
+                if (set) onSet(set);
               }}
               onKeyDown={(e) => e.key === "Enter" && setOpen(false)}
             />

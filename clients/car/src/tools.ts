@@ -86,7 +86,7 @@ async function run(name: string, args: Record<string, unknown>, car: CarControls
     }
     case "get_sign_photo": {
       const { id, message } = await car.signPhoto();
-      return id ? { output: "The photo is attached.", attachments: [id] } : { output: message };
+      return id ? { output: message, attachments: [id] } : { output: message };
     }
     default:
       return { output: `Error: this car has no tool named '${name}'.` };

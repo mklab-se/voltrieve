@@ -77,4 +77,22 @@ describe("the pedals", () => {
     pedals.releaseAll(6000);
     expect(car.target).toBe(50);
   });
+
+  it("react to a click that comes alone, as assistive technology sends it", () => {
+    const { car, pedals } = rig(40);
+    pedals.click("accelerate", 0);
+    expect(car.target).toBe(45);
+  });
+
+  it("do not count the click that follows a press twice", () => {
+    const { car, pedals } = rig(40);
+    pedals.press("accelerate", 0);
+    pedals.click("accelerate", 10); // the Enter key clicks while it is down
+    expect(car.target).toBe(150);
+    pedals.release("accelerate", 80);
+    pedals.click("accelerate", 85); // the pointer and the space key click when they are let go
+    expect(car.target).toBe(45);
+    pedals.click("accelerate", 800);
+    expect(car.target).toBe(50);
+  });
 });
