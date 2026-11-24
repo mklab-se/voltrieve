@@ -26,7 +26,7 @@ from app.main import create_app  # noqa: E402
 from app.settings import Settings  # noqa: E402
 from app.turns import TurnStore  # noqa: E402
 from voltrieve_agent.model import Completed, FunctionCall, OutputItem, TextDelta  # noqa: E402
-from voltrieve_agent.server_tools import KB_SEARCH_TOOLS, build_server_tools  # noqa: E402
+from voltrieve_agent.server_tools import CAR_REFUSAL, KB_SEARCH_TOOLS, build_server_tools  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -93,8 +93,8 @@ class FakeOpenAI:
     conversations = FakeConversations()
 
 
-def build_backend(name: str, model: ScriptedModel):
-    server_tools = build_server_tools(None, None)  # handlers never run: no scenario reaches them
+def build_backend(name: str, model: ScriptedModel, dealer=None):
+    server_tools = build_server_tools(dealer, None)
     if name == "loop":
         return LoopBackend(model, FakeOpenAI(), server_tools)
     if name == "prompt":
@@ -131,13 +131,13 @@ def _hosted(model, server_tools):
     return HostedBackend(FakeOpenAI(), http, token, "https://foundry.invalid/api/projects/p", "voltrieve-hosted")
 
 
-def api_for(name: str, model: ScriptedModel, roles: tuple[str, ...]):
+def api_for(name: str, model: ScriptedModel, roles: tuple[str, ...], azp: str = "", dealer=None):
     class Validator:
         async def validate(self, authorization):
-            return Claims("oid-contract", "contract@example.invalid", list(roles))
+            return Claims("oid-contract", "contract@example.invalid", list(roles), azp, "Anna A")
 
-    backend = build_backend(name, model)
-    settings = Settings(agent_backend=name, log_level="WARNING")
+    backend = build_backend(name, model, dealer)
+    settings = Settings(agent_backend=name, log_level="WARNING", web_client_id="web-app", car_client_id="car-app")
     return create_app(settings, Validator(), BackendRegistry(settings, {name: lambda s: backend}), TurnStore())
 
 
@@ -458,3 +458,64 @@ def test_the_documented_planning_model_is_the_default_in_bicep():
     assert row and bicep
     assert row[1] == bicep[1]
     assert parameters["planningModelName"]["value"] == f"${{PLANNING_MODEL_NAME={bicep[1]}}}"
+
+
+ADDRESS = "Storgatan 1, 753 20 Uppsala"
+ORDER = FunctionCall("call_1", "prepare_car_order", json.dumps({"model": "fjord", "address": ADDRESS}))
+ORDER_ROLES = ("Chat.User", "Order.Place")
+
+
+class FakeDealer:
+    def __init__(self):
+        self.offers = []
+
+    async def offer(self, model, address, **who):
+        self.offers.append((model, address, who))
+        return f"offer-1 to {address}"
+
+
+def api_client(app):
+    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t")
+
+
+@pytest.mark.parametrize("name", BACKENDS)
+@pytest.mark.parametrize("azp", ["car-app", "", "web-app"])
+async def test_only_the_website_orders_and_the_tool_gets_the_name_and_the_client(name, azp):
+    dealer, model = FakeDealer(), ScriptedModel([ORDER, Completed({})], [TextDelta("ok"), Completed({})])
+    async with api_client(api_for(name, model, ORDER_ROLES, azp, dealer)) as client:
+        events = await post(client, "/chat", {"message": "Order a Fjord"})
+    turn = events[-1][1]["turn_id"]
+    who = {"customer": "oid-contract", "name": "Anna A", "turn": turn, "client": "web"}
+    assert dealer.offers == ([("fjord", ADDRESS, who)] if azp == "web-app" else [])
+    assert ("client_not_allowed" in steps(events)) is (azp != "web-app")
+    [result] = model.calls[1]["input"]
+    assert result["output"] == (f"offer-1 to {ADDRESS}" if azp == "web-app" else CAR_REFUSAL)
+    assert ADDRESS not in json.dumps(events)
+
+
+@pytest.mark.parametrize("name", BACKENDS)
+async def test_a_failure_after_a_pause_with_a_private_output_logs_no_text(name, caplog, monkeypatch):
+    class Quoting(ScriptedModel):
+        async def stream(self, *, input, **kwargs):
+            if isinstance(input, list):
+                raise RuntimeError(f"bad request: {input}")
+            async for item in super().stream(input=input, **kwargs):
+                yield item
+
+    model = Quoting([ORDER, FunctionCall("call_2", "make_noise", "{}"), Completed({})])
+    app = api_for(name, model, ORDER_ROLES, "web-app", FakeDealer())
+    # The app sets up its own logging, so this comes after it.
+    monkeypatch.setattr(logging.getLogger(), "handlers", [caplog.handler])
+    with caplog.at_level(logging.DEBUG):
+        async with api_client(app) as client:
+            first = await post(client, "/chat", {"message": "Order a Fjord", "client_tools": [MAKE_NOISE]})
+            paused = first[-1][1]
+            second = await post(client, "/chat/tool-results", {
+                "conversation_id": paused["conversation_id"], "turn_id": paused["turn_id"],
+                "results": [{"call_id": "call_2", "output": "rang"}],
+            })
+    assert second[-1][0] == "error" and "Model stream failed: RuntimeError" in caplog.text
+    assert "bad request" not in caplog.text and ADDRESS not in caplog.text
+    assert ADDRESS not in json.dumps([first, second])
+    if name == "hosted":
+        assert [(b["private"], o["private"]) for b, o in model.wire] == [(False, True), (True, True)]

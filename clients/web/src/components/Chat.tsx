@@ -16,6 +16,7 @@ const STARTERS = [
   "When is my next service and what is done?",
   "Which winter wheels fit my car?",
   "What does my warranty cover?",
+  "I would like to order a new Fjord",
 ];
 
 interface Props {
@@ -193,7 +194,8 @@ export function Chat({ state, busy, underTheHood, photo, onDraft, onSend, onOpen
       <p className="privacy-note">
         You are talking to {ASSISTANT_NAME}, an AI assistant. During demos, questions may be shown on a live screen, with contact
         details masked. The live screen keeps nothing, but your chat is kept by the service. A nightly job counts what
-        people ask about. It saves only topics shared by several people, never your chat.{attached ? "" : ` ${NOT_STORED}`}
+        people ask about. It saves only topics shared by several people, never your chat. If you order a car, your name and
+        address are saved with the order in the dealer system.{attached ? "" : ` ${NOT_STORED}`}
       </p>
     </section>
   );

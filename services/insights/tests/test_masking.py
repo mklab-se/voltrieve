@@ -25,6 +25,10 @@ from voltrieve_insights.masking import allowed, mask
         ("id 198001011234", "id [id number]"),
         ("id 800101-1234", "id [id number]"),
         ("id 8001011234", "id [id number]"),
+        ("Storgatan 1, 753 20 Uppsala", "[address] Uppsala"),
+        ("to Västra Hamngatan 12B", "to [address]"),
+        ("Ringvägen 100 lgh 1102", "[address]"),
+        ("in 753 20 Uppsala", "in [postal code] Uppsala"),
     ],
 )
 def test_mask_replaces(text, expected):
@@ -33,7 +37,7 @@ def test_mask_replaces(text, expected):
 
 @pytest.mark.parametrize(
     "text",
-    ["Atlas AWD 2026", "VT-1042-11", "wants to charge at home", "part 4711-A", "ABCDEFGHJKLMNPRST", "ABCD 1234"],
+    ["Atlas AWD 2026", "VT-1042-11", "VP-10007", "Fjord 2", "529 000 SEK", "wants to charge at home", "part 4711-A", "ABCDEFGHJKLMNPRST", "ABCD 1234"],
 )
 def test_mask_keeps_readable(text):
     assert mask(text) == text
@@ -103,6 +107,8 @@ def test_mask_is_fast_on_long_text():
         "call 070-123 45 67",
         "id 19800101-1234",
         "id 8001011234",
+        "live at Torget 5",
+        "in 753 20 Uppsala",
         "the year 2026",
         "code 2 0 2 6",
         "code 2 0 2\n6",

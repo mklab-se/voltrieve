@@ -427,7 +427,7 @@ describe("the chat", () => {
     const html = render(initialChatState);
     expect(html).toContain('aria-label="Attach a photo"');
     expect(html).toContain('accept="image/jpeg,image/png,image/webp"');
-    expect(html).toContain("with contact details masked. The live screen keeps nothing, but your chat is kept by the service. A nightly job counts what people ask about. It saves only topics shared by several people, never your chat. ");
+    expect(html).toContain("with contact details masked. The live screen keeps nothing, but your chat is kept by the service. A nightly job counts what people ask about. It saves only topics shared by several people, never your chat. If you order a car, your name and address are saved with the order in the dealer system. ");
     expect(html).toContain("Photos are not stored in the conversation.");
     expect(html).not.toContain("photo-preview");
   });

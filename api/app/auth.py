@@ -2,15 +2,18 @@ import asyncio
 import logging
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import httpx
 import jwt
+
+from app.text import one_line
 
 logger = logging.getLogger(__name__)
 
 REQUIRED_SCOPE = "access_as_user"
 REQUIRED_ROLE = "Chat.User"
+MAX_NAME = 100
 
 
 class AuthError(Exception):
@@ -26,6 +29,15 @@ class Claims:
     username: str
     roles: list[str]
     azp: str = ""  # the app registration the token was issued to
+    name: str = field(default="", repr=False)  # of the person, one line, or the username
+
+
+def _name(claim: object, username: str) -> str:
+    for text in (claim, username):
+        cleaned = one_line(text)[:MAX_NAME].strip() if isinstance(text, str) else ""
+        if cleaned:
+            return cleaned
+    return ""
 
 
 class TokenValidator:
@@ -134,9 +146,11 @@ class TokenValidator:
         roles = payload.get("roles")
         if not isinstance(roles, list) or REQUIRED_ROLE not in roles:
             raise AuthError(403, "Missing required role")
+        username = str(payload.get("preferred_username") or "")
         return Claims(
             oid=oid,
-            username=str(payload.get("preferred_username") or ""),
+            username=username,
             roles=[str(r) for r in roles],
             azp=str(payload.get("azp") or ""),
+            name=_name(payload.get("name"), username),
         )

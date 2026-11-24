@@ -17,7 +17,7 @@ from app.attachments.upload import INTERRUPTED, refuse
 from app.auth import AuthError, Claims
 from app.backends import BACKEND_NAMES
 from app.backends.base import BackendUnavailable
-from app.clients import client_name, is_test
+from app.clients import client_name, continuing_client, is_test, ordering_client
 from app.context import context_line
 from app.logging_setup import correlation_id
 from app.schemas import (
@@ -176,6 +176,10 @@ def _client(request: Request, claims: Claims, test_header: str | None) -> str:
     return client_name(request.app.state.settings, claims.azp, is_test(test_header))
 
 
+def _ordering_client(request: Request, claims: Claims, client_header: str | None) -> str:
+    return ordering_client(request.app.state.settings, claims.azp, client_header)
+
+
 def _stream(request: Request, job: Job) -> StreamingResponse:
     cid = correlation_id.get()
     return StreamingResponse(
@@ -294,6 +298,7 @@ def build_router() -> APIRouter:
         body: ChatRequest = Depends(json_body(ChatRequest)),
         x_agent_backend: str | None = Header(default=None),
         x_voltrieve_test: str | None = Header(default=None),
+        x_voltrieve_client: str | None = Header(default=None),
     ):
         state = request.app.state
         _check_client_tools(body, state.server_tool_names)
@@ -325,6 +330,7 @@ def build_router() -> APIRouter:
                 context=body.context.model_dump(exclude_none=True) if body.context else {},
                 context_line=context_line(body.context),
                 client=_client(request, claims, x_voltrieve_test),
+                ordering_client=_ordering_client(request, claims, x_voltrieve_client),
             ),
         )
 
@@ -335,6 +341,7 @@ def build_router() -> APIRouter:
         body: ToolResultsRequest = Depends(json_body(ToolResultsRequest)),
         x_agent_backend: str | None = Header(default=None),
         x_voltrieve_test: str | None = Header(default=None),
+        x_voltrieve_client: str | None = Header(default=None),
     ):
         store = request.app.state.store
         paused = store.get(body.turn_id)
@@ -388,6 +395,10 @@ def build_router() -> APIRouter:
                 attachments=[a.summary() for a in attachments],
                 context=paused.context,
                 client=_client(request, claims, x_voltrieve_test),
+                ordering_client=continuing_client(
+                    paused.ordering_client, _ordering_client(request, claims, x_voltrieve_client)
+                ),
+                private_tool=paused.private_tool,
             ),
         )
 

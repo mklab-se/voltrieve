@@ -9,9 +9,12 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable
 from pathlib import Path
 
 import yaml
+
+from voltrieve_client import ApiError, Staff, dealer_staff
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA_FILE = ROOT / "data" / "voltrieve.yaml"
@@ -35,7 +38,24 @@ def load_data() -> dict:
 
 
 def load_dealer() -> dict:
+    """What the service starts with. Orders and staff change the stock."""
     return json.loads(DEALER_FILE.read_text())
+
+
+def live_dealer(connect: Callable[[], Staff] = dealer_staff) -> dict:
+    """The dealer's data with the stock that the service has now, or without `live` when it gives none."""
+    data = load_dealer()
+    try:
+        staff = connect()
+        try:
+            stock = staff.state().get("stock")
+        finally:
+            staff.close()
+    except (ApiError, SystemExit):
+        return data
+    rows = stock if isinstance(stock, dict) else {}
+    complete = all(set(cities) <= set(rows.get(model) or ()) for model, cities in data["stock"].items())
+    return {**data, "stock": stock, "live": True} if complete else data
 
 
 def load_catalog():
@@ -121,8 +141,11 @@ def _mentions(text: str, model: dict) -> bool:
     return _short(model) in text.lower()
 
 
-def check(expect: dict, answer: str, data: dict | None = None, dealer: dict | None = None) -> tuple[bool, str]:
-    """Return (passed, what was expected)."""
+def check(
+    expect: dict, answer: str, data: dict | None = None, dealer: dict | None = None
+) -> tuple[bool | None, str]:
+    """Return (passed, what was expected). Passed is None when it could not be checked: the stock
+    without the service that has it."""
     data = data or load_data()
     kind = expect["type"]
     if kind == "value":
@@ -168,6 +191,8 @@ def check(expect: dict, answer: str, data: dict | None = None, dealer: dict | No
     if kind == "stock":
         dealer = dealer or load_dealer()
         count = dealer["stock"][expect["model"]][expect["city"]]
+        if not dealer.get("live"):
+            return None, f"not checked, the service gave no stock (it starts with {count})"
         words = {0: "no", 1: "one", 2: "two", 3: "three", 4: "four", 5: "five"}
         lowered = _normal(answer)
         ok = has_number(answer, count) or re.search(rf"\b{words.get(count, '#')}\b", lowered) is not None

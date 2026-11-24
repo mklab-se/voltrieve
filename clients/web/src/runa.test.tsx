@@ -32,6 +32,7 @@ describe("Runa in the chat", () => {
       "When is my next service and what is done?",
       "Which winter wheels fit my car?",
       "What does my warranty cover?",
+      "I would like to order a new Fjord",
     ]);
   });
 
@@ -54,5 +55,9 @@ describe("Runa in the chat", () => {
 
   it("says that Runa is an AI", () => {
     expect(render(initialChatState)).toContain("You are talking to Runa, an AI assistant.");
+  });
+
+  it("says what is saved with an order", () => {
+    expect(render(initialChatState)).toContain("never your chat. If you order a car, your name and address are saved with the order in the dealer system.");
   });
 });

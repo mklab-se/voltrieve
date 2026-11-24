@@ -82,6 +82,7 @@ async def test_streams_events_then_outcome():
         "usage": {"total_tokens": 5},
         "kept": None,
         "unrecorded": False,
+        "private": False,
     }
     assert model.calls[0]["conversation"] == "conv_1"
 
@@ -350,3 +351,61 @@ def test_without_our_string_a_broken_one_is_removed(monkeypatch):
     monkeypatch.delenv("VOLTRIEVE_TELEMETRY_CONNECTION_STRING", raising=False)
     host_arguments(monkeypatch)
     assert "APPLICATIONINSIGHTS_CONNECTION_STRING" not in os.environ
+
+
+@pytest.mark.parametrize(
+    ("extra", "expected"),
+    [
+        ({"name": "Anna A", "client": "web"}, ("Anna A", "web")),
+        ({}, ("", "")),
+        ({"name": None, "client": None}, ("", "")),
+        ({"name": ["Anna"], "client": ["web"]}, ("", "")),
+    ],
+)
+def test_the_name_and_the_client_are_optional(extra, expected):
+    user = main.parse_turn({**BODY, "user": {**BODY["user"], **extra}}).user
+    assert (user.name, user.client) == expected and user.oid == "oid-anna"
+
+
+async def test_the_outcome_says_that_a_private_tool_was_used():
+    async def handler(args, user):
+        return "ok"
+
+    tool = ServerTool("order", "d", {"type": "object"}, handler, private=True)
+    model = ScriptedModel([FunctionCall("c1", "order", "{}"), Completed({})], [TextDelta("ok"), Completed({})])
+    events = parse_sse((await invoke(Runtime(model, [tool], allow_any_caller=True))).text)
+    assert events[-1][1]["private"] is True
+
+
+@pytest.mark.parametrize("private", [True, False])
+async def test_an_error_that_escapes_after_a_private_tool_logs_no_text(caplog, private):
+    async def handler(args, user):
+        return "SECRET 1"
+
+    class Stream:
+        def __init__(self, items, error=None):
+            self.items, self.error = iter(items), error
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            try:
+                return next(self.items)
+            except StopIteration:
+                raise StopAsyncIteration
+
+        async def aclose(self):
+            if self.error:
+                raise self.error
+
+    class Model:
+        streams = [Stream([FunctionCall("c1", "order", "{}")]), Stream([], RuntimeError("SECRET 1"))]
+
+        def stream(self, **kwargs):
+            return self.streams.pop(0)
+
+    tool = ServerTool("order", "d", {"type": "object"}, handler, private=private)
+    events = parse_sse((await invoke(Runtime(Model(), [tool], allow_any_caller=True))).text)
+    assert events[-1][1]["status"] == "failed" and "Turn failed" in caplog.text
+    assert ("SECRET 1" in caplog.text) is not private

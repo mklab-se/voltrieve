@@ -3,12 +3,12 @@
 The Web API posts one JSON body per model-and-tools round:
 
     {conversation_id, turn_id, input, client_tools, pending_outputs,
-     user: {oid, username, roles}, correlation_id, parts, kept, private}
+     user: {oid, username, roles, name, client}, correlation_id, parts, kept, private}
 
 and this process answers with server-sent events. It runs `agent_core.run_turn` unchanged and
 relays every AgentEvent one to one (event name = type, data = one line of JSON). When the turn
 ends it sends one more event, `outcome` {status, pending_outputs, client_call_ids, usage, kept,
-unrecorded}, which the Web API consumes instead of forwarding. The agent holds no state between
+unrecorded, private}, which the Web API consumes instead of forwarding. The agent holds no state between
 requests: a continuation resends client_tools and pending_outputs, and the conversation itself
 lives in Foundry.
 
@@ -16,6 +16,10 @@ lives in Foundry.
 when it paused, default none) are optional, and a body without them is accepted. An old agent
 ignores them: a new API with an old hosted agent answers without the photo, so deploy this agent
 before the API that sends them. We log neither.
+
+`name` and `client` of the user are optional, so that an older API can call this agent. Without a
+client the order tools refuse. `private` of the outcome says that a private tool was called, so the
+rest of the turn is private. An API that does not find it takes the turn as private.
 
 `private` (optional boolean) says that our code may log nothing the turn says, error texts included. It
 is always so with `parts` or `kept`. Foundry's own tracing, which recorded the text of hosted turns, is
@@ -100,6 +104,10 @@ def _is_kept(kept: object) -> bool:
     )
 
 
+def _text(value: object) -> str:
+    return value if isinstance(value, str) else ""
+
+
 def parse_turn(body: object) -> TurnInput | None:
     """Build the TurnInput from the request body (pending outputs are folded into the input), or None if malformed."""
     if not isinstance(body, dict):
@@ -128,7 +136,11 @@ def parse_turn(body: object) -> TurnInput | None:
             return None
         return TurnInput(
             user=UserContext(
-                str(user["oid"]), str(user.get("username", "")), frozenset(user.get("roles") or [])
+                str(user["oid"]),
+                str(user.get("username", "")),
+                frozenset(user.get("roles") or []),
+                _text(user.get("name")),
+                _text(user.get("client")),
             ),
             conversation_id=str(body["conversation_id"]),
             turn_id=str(body["turn_id"]),
@@ -170,6 +182,7 @@ async def stream_turn(runtime: Runtime, turn: TurnInput) -> AsyncIterator[bytes]
                         "usage": outcome.usage,
                         "kept": outcome.kept,
                         "unrecorded": outcome.unrecorded,
+                        "private": outcome.private,
                     },
                 )
             )

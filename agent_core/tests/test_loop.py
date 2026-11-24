@@ -12,7 +12,8 @@ from voltrieve_agent.model import (
     ResponsesModelClient,
     TextDelta,
 )
-from voltrieve_agent.tools import ClientTool, ServerTool, current_correlation_id
+from voltrieve_agent.private import current_private
+from voltrieve_agent.tools import ClientTool, ServerTool, current_correlation_id, current_turn_id
 
 
 class FakeModel:
@@ -511,3 +512,143 @@ async def test_mcp_calls_report_when_they_ran():
     items = [i for i in items if isinstance(i, McpCall)]
     assert items[0].server == "voltrieve-parts-kb" and items[0].arguments == '{"q":"disc"}'
     assert items[0].started_ms is not None and items[0].finished_ms >= items[0].started_ms
+
+
+SECRET = "SECRET STREET 1"
+
+
+def private_call(then=()):
+    """A model that calls the private tool and then does what `then` says."""
+    arguments = f'{{"city": "{SECRET}"}}'
+    return FakeModel([[FunctionCall("c1", "order", arguments), Completed()], [*then, TextDelta("ok")]])
+
+
+async def echo(args, user):
+    return args["city"]
+
+
+async def failing(args, user):
+    raise RuntimeError(args["city"])
+
+
+@pytest.mark.parametrize("handler", [echo, failing])
+async def test_a_private_tool_is_in_no_event_and_no_log(user, events, caplog, handler):
+    tools = [ServerTool("order", "d", SCHEMA, handler, private=True)]
+    model = private_call()
+    with caplog.at_level("DEBUG"):
+        outcome = await run_turn(model, tools, turn(user), events)
+    assert outcome.status == "done"
+    called, returned = (
+        next(e.data for e in events.events if e.data.get("step") == step)
+        for step in ("server_tool_called", "server_tool_returned")
+    )
+    assert called == {"step": "server_tool_called", "component": "tools", "detail": "order", "tool": "order",
+                      "iteration": 1, "private": True}
+    assert set(returned) == {"step", "component", "detail", "tool", "duration_ms"}
+    assert SECRET not in str([e.data for e in events.events])
+    assert SECRET not in caplog.text
+    assert model.calls[1]["input"][0]["output"] == SECRET or handler is failing
+
+
+async def test_the_arguments_of_a_refused_private_call_are_in_no_event(user, events):
+    tools = [ServerTool("order", "d", SCHEMA, echo, private=True, clients=frozenset({"web"}), client_refusal="No.")]
+    model = private_call()
+    await run_turn(model, tools, turn(user), events)
+    assert "client_not_allowed" in steps(events) and SECRET not in str([e.data for e in events.events])
+    assert model.calls[1]["input"][0]["output"] == "No."
+
+
+class QuotingModel(FakeModel):
+    """Fails with the text of what it was sent, as an API error may."""
+
+    async def stream(self, *, input, **kwargs):
+        if not isinstance(input, str):
+            raise RuntimeError(str(input))
+        for item in self.scripts.pop(0):
+            yield item
+
+
+@pytest.mark.parametrize("then", [None, Failed("model_failed", SECRET)])
+async def test_a_failure_after_a_private_call_is_logged_without_its_text(user, events, caplog, then):
+    model = private_call([then] if then else [])
+    if then is None:
+        model = QuotingModel(model.scripts)
+    tools = [ServerTool("order", "d", SCHEMA, echo, private=True)]
+    outcome = await run_turn(model, tools, turn(user), events)
+    assert outcome.status == "failed" and caplog.records
+    assert SECRET not in caplog.text and current_private.get() is False
+
+
+async def test_a_failure_in_the_stream_of_a_private_call_is_logged_without_its_text(user, events, caplog):
+    call = FunctionCall("c1", "order", "{}")
+    tools = [ServerTool("order", "d", SCHEMA, echo, private=True)]
+    await run_turn(FakeModel([[call, Failed("model_failed", SECRET)]]), tools, turn(user), events)
+    assert "model_failed" in caplog.text and SECRET not in caplog.text
+
+
+async def test_the_turn_id_reaches_the_tools_and_is_gone_after(user, events):
+    seen = []
+
+    async def handler(args, u):
+        seen.append((current_turn_id.get(), current_correlation_id.get()))
+        return "ok"
+
+    model = FakeModel([[FunctionCall("c1", "check_stock", '{"city": "x"}')], [TextDelta("ok")]])
+    given = turn(user)
+    given.correlation_id = "corr-1"
+    await run_turn(model, [tool(handler)], given, events)
+    assert seen == [("turn-1", "corr-1")] and current_turn_id.get() is None
+
+
+PICK_FILE = ClientTool("pick_file", "Pick", {"type": "object", "properties": {}})
+
+
+@pytest.mark.parametrize(("name", "private"), [("order", True), ("check_stock", False)])
+@pytest.mark.parametrize("pauses", [True, False])
+async def test_the_outcome_says_that_a_private_tool_was_used(user, events, name, private, pauses):
+    call = FunctionCall("c1", name, '{"city": "x"}')
+    client = [FunctionCall("c2", "pick_file", "{}")] if pauses else []
+    model = FakeModel([[call, *client], [TextDelta("ok")]])
+    tools = [ServerTool("order", "d", SCHEMA, echo, private=True), tool()]
+    outcome = await run_turn(model, tools, turn(user, [PICK_FILE]), events)
+    assert outcome.status == ("paused" if pauses else "done") and outcome.private is private
+
+
+async def test_the_outcome_of_a_private_turn_is_private(user, events):
+    given = turn(user, [PICK_FILE])
+    given.private = True
+    outcome = await run_turn(FakeModel([[FunctionCall("c2", "pick_file", "{}")]]), [], given, events)
+    assert outcome.status == "paused" and outcome.private
+
+
+async def test_an_unknown_tool_shows_no_arguments(user, events):
+    arguments = f'{{"address": "{SECRET}"}}'
+    model = FakeModel([[FunctionCall("c1", "prepare_order", arguments)], [TextDelta("ok")]])
+    await run_turn(model, [tool()], turn(user), events)
+    called = next(e.data for e in events.events if e.data.get("step") == "server_tool_called")
+    assert called["tool"] == "prepare_order" and "arguments" not in called
+    assert SECRET not in str([e.data for e in events.events])
+
+
+async def test_a_client_tool_does_not_make_the_turn_private(user, events):
+    outcome = await run_turn(FakeModel([[FunctionCall("c2", "pick_file", "{}")]]), [], turn(user, [PICK_FILE]), events)
+    assert outcome.private is False
+
+
+async def test_the_calls_from_the_first_private_one_say_that_the_turn_is_private(user, events):
+    order = ServerTool("order", "d", SCHEMA, echo, private=True, concurrent=False)
+
+    def call(name, n):
+        return FunctionCall(f"c{n}", name, '{"city": "x"}')
+
+    model = FakeModel([
+        [call("check_stock", 1)], [call("check_stock", 2), call("order", 3)], [call("check_stock", 4)], [TextDelta("ok")]
+    ])
+    given = turn(user)
+    await run_turn(model, [tool(), order], given, events)
+    called = [e.data for e in events.events if e.data.get("step") == "server_tool_called"]
+    # The second check_stock runs before the order, but the model had made both calls by then.
+    assert [(c["tool"], c.get("private")) for c in called] == [
+        ("check_stock", None), ("check_stock", True), ("order", True), ("check_stock", True)
+    ]
+    assert given.private and current_private.get() is False

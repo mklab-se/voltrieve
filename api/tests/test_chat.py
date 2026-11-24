@@ -1,6 +1,8 @@
 import json
 
 import pytest
+from voltrieve_agent.events import AgentEvent, trace
+from voltrieve_agent.loop import TurnOutcome
 
 from tests.conftest import answer, pause, parse_sse
 
@@ -637,3 +639,107 @@ async def test_the_test_header_also_marks_the_tool_results_round(multi, auth, ba
     rounds = [s.attributes for s in spans.get_finished_spans() if s.attributes.get("voltrieve.kind") == "tool_results"]
     assert [a["voltrieve.client"] for a in rounds] == ["test"]
     assert len(backend.metadata) == 1  # only the first message created a conversation
+
+
+def private_pause(private=True):
+    async def run(ctx, emit):
+        outcome = await pause(pending=[{"type": "function_call_output", "call_id": "s1", "output": "SECRET 1"}])(ctx, emit)
+        outcome.private = private
+        return outcome
+
+    return run
+
+
+async def quoting_failure(ctx, emit):
+    raise RuntimeError(f"bad request: {ctx.pending_outputs} {ctx.input}")
+
+
+@pytest.mark.parametrize("private", [True, False])
+async def test_a_turn_that_goes_on_after_a_private_tool_is_private(app, client, auth, backend, caplog, private):
+    backend.script = [private_pause(private), pause(), quoting_failure]
+    paused = parse_sse((await chat(client, auth, {"message": "go", "client_tools": [TOOL]})).text)[-1][1]
+    assert app.state.store.get(paused["turn_id"]).private is private
+    with caplog.at_level("DEBUG"):
+        for _ in range(2):  # it stays private over a second pause
+            r = await client.post("/chat/tool-results", headers=auth, json=results_body(paused, "call_1"))
+    assert parse_sse(r.text)[-1][1]["code"] == "internal_error"
+    assert [c.private for c in backend.contexts] == [False, private, private]
+    assert "Turn failed" in caplog.text and ("bad request" in caplog.text) is not private
+
+
+async def test_a_failed_close_after_a_private_tool_logs_no_text(client, auth, backend, caplog):
+    backend.script = [private_pause(), answer()]
+    paused = parse_sse((await chat(client, auth, {"message": "go", "client_tools": [TOOL]})).text)[-1][1]
+    backend.abandon_error = RuntimeError("SECRET 1")
+    await chat(client, auth, {"message": "new", "conversation_id": paused["conversation_id"]})
+    assert "Could not close the abandoned turn" in caplog.text and "SECRET 1" not in caplog.text
+
+
+async def test_a_failed_source_lookup_after_a_private_tool_logs_no_text(app, client, auth, backend, caplog):
+    class Broken:
+        async def resolve(self, text):
+            raise RuntimeError(f"cannot look up {text}")
+
+    async def run(ctx, emit):
+        await emit(AgentEvent("delta", {"text": "SECRET 1"}))
+        return TurnOutcome("done", private=True)
+
+    app.state.turns.sources = Broken()
+    backend.script = [run]
+    assert parse_sse((await chat(client, auth)).text)[-1][0] == "done"
+    assert "Source lookup failed" in caplog.text and "SECRET 1" not in caplog.text
+
+
+async def test_the_client_header_is_not_a_cors_header(multi):
+    r = await multi.options(
+        "/chat",
+        headers={"Origin": "http://localhost:5173", "Access-Control-Request-Method": "POST",
+                 "Access-Control-Request-Headers": "x-voltrieve-client"},
+    )
+    assert r.status_code == 400
+
+
+async def test_the_client_header_does_not_change_the_usage_count(multi, auth, backend):
+    backend.script = [answer()]
+    await chat(multi, auth, **{"X-Voltrieve-Client": "car"})
+    assert backend.metadata[0]["client"] == "cli"
+    assert backend.contexts[0].user.client == "car"
+
+
+async def test_the_name_reaches_the_tools(multi, backend, make_token):
+    backend.script = [answer(), answer()]
+    await chat(multi, {"Authorization": f"Bearer {make_token(name='Anna A')}"})
+    await chat(multi, {"Authorization": f"Bearer {make_token()}"})
+    assert [c.user.name for c in backend.contexts] == ["Anna A", "anna@example.com"]
+
+
+@pytest.mark.parametrize("private", [True, False])
+async def test_the_rest_of_a_request_after_a_private_tool_is_quiet(client, auth, backend, caplog, private):
+    async def run(ctx, emit):
+        mark = {"private": True} if private else {}
+        await emit(trace("server_tool_called", "tools", "order", tool="order", **mark))
+        await emit(trace("server_tool_called", "tools", "check_stock", tool="check_stock", arguments="SECRET 1"))
+        await emit(trace("server_tool_returned", "tools", "check_stock", tool="check_stock", output_preview="SECRET 2"))
+        raise RuntimeError("SECRET 3")
+
+    backend.script = [run]
+    with caplog.at_level("DEBUG"):
+        r = await chat(client, auth)
+    assert parse_sse(r.text)[-1][1]["code"] == "internal_error" and "Turn failed: RuntimeError" in caplog.text or not private
+    assert [f"SECRET {n}" in caplog.text for n in (1, 2, 3)] == [not private] * 3
+
+
+async def test_a_pause_after_a_private_tool_is_private_whatever_the_outcome_says(app, client, auth, backend):
+    async def run(ctx, emit):
+        await emit(trace("server_tool_called", "tools", "order", tool="order", private=True))
+        return await pause()(ctx, emit)
+
+    backend.script = [run]
+    paused = parse_sse((await chat(client, auth, {"message": "go", "client_tools": [TOOL]})).text)[-1][1]
+    assert app.state.store.get(paused["turn_id"]).private
+
+
+@pytest.mark.parametrize("name", ["prepare_car_order", "place_car_order"])
+async def test_a_client_cannot_declare_an_order_tool(client, auth, backend, name):
+    r = await chat(client, auth, {"message": "hi", "client_tools": [{**TOOL, "name": name}]})
+    assert r.status_code == 422 and name in r.text and backend.contexts == []

@@ -10,9 +10,15 @@ from voltrieve_agent.knowledge import (
     PARTS_KNOWLEDGE_BASE_NAME,
     KnowledgeBase,
 )
-from voltrieve_agent.tools import ServerTool, UserContext
+from voltrieve_agent.tools import ServerTool, UserContext, current_turn_id
 
 BOOK_ROLE = "TestDrive.Book"
+ORDER_ROLE = "Order.Place"
+ORDER_CLIENTS = frozenset({"web", "cli"})
+CAR_REFUSAL = (
+    "It is not possible to order a car from within the car. "
+    "You are welcome to talk with Runa about buying a car on the Voltrieve website."
+)
 CURATED_TOOL = "get_curated_answer"
 KB_SEARCH_TOOL = "search_voltrieve_docs"
 PARTS_SEARCH_TOOL = "search_spare_parts"
@@ -71,6 +77,22 @@ def build_server_tools(
         # The requester is the signed-in user, never something the model supplies.
         return await dealer.book(args["model"], args["city"], args["date"], user.oid)
 
+    # Who orders, from where and when comes from the context, never from the model.
+    async def prepare_car_order(args: dict, user: UserContext) -> str:
+        if "address" not in args:
+            return await dealer.terms(args["model"])
+        return await dealer.offer(
+            args["model"],
+            args["address"],
+            customer=user.oid,
+            name=user.name,
+            turn=current_turn_id.get(),
+            client=user.client,
+        )
+
+    async def place_car_order(args: dict, user: UserContext) -> str:
+        return await dealer.place(args["offer"], customer=user.oid, turn=current_turn_id.get())
+
     async def get_current_date(args: dict, user: UserContext) -> str:
         return datetime.datetime.now(DEALER_TIMEZONE).date().isoformat()
 
@@ -85,6 +107,13 @@ def build_server_tools(
             "additionalProperties": False,
         }
 
+    ordering = {
+        "required_role": ORDER_ROLE,
+        "clients": ORDER_CLIENTS,
+        "client_refusal": CAR_REFUSAL,
+        "private": True,
+        "concurrent": False,
+    }
     return [
         ServerTool(
             CURATED_TOOL,
@@ -170,5 +199,30 @@ def build_server_tools(
             required_role=BOOK_ROLE,
             status=("booking_test_drive", "Booking your test drive"),
             concurrent=False,  # it changes something, so it never races another tool
+        ),
+        ServerTool(
+            "prepare_car_order",
+            "Call this first when the user wants to buy or order a car, before you ask for "
+            "anything. Without an address it gives the price and the stock. With the address the "
+            "user gave, it makes an offer to read back.",
+            schema(
+                {
+                    "model": MODEL_PROPERTY,
+                    "address": {"type": "string", "minLength": 5, "maxLength": 200},
+                },
+                ["model"],
+            ),
+            prepare_car_order,
+            status=("preparing_order", "Preparing your order"),
+            **ordering,
+        ),
+        ServerTool(
+            "place_car_order",
+            "Order the car of an offer. Only when the user has said yes to the offer in a later "
+            "message.",
+            schema({"offer": {"type": "string", "maxLength": 40}}, ["offer"]),
+            place_car_order,
+            status=("placing_order", "Placing your order"),
+            **ordering,
         ),
     ]

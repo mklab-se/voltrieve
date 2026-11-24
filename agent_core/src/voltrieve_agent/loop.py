@@ -48,6 +48,7 @@ from voltrieve_agent.tools import (
     ToolSet,
     UserContext,
     current_correlation_id,
+    current_turn_id,
 )
 from voltrieve_agent.unstored import Unstored, assistant_item
 
@@ -88,6 +89,9 @@ class TurnOutcome:
     client_call_ids: list[str] = field(default_factory=list)
     kept: dict | None = field(default=None, repr=False)  # for TurnInput.kept, when paused
     unrecorded: bool = False  # the answer was given but could not be recorded
+    # The turn was private, or became so: a private tool was called, and the pending outputs may hold
+    # what it said. What follows in this turn is private too.
+    private: bool = False
 
 
 def _output_item(call_id: str, output: str) -> dict:
@@ -124,28 +128,33 @@ async def _record(
 
 
 async def _run_server_tool(toolset, call, user, emit, iteration) -> tuple[str, int]:
+    private = toolset.is_private(call.name)
+    shown = {} if private else {"arguments": call.arguments}
+    if current_private.get():
+        shown["private"] = True  # a host that logs arguments and outputs stops here
     await emit(
         trace(
             "server_tool_called",
             "tools",
             call.name,
             tool=call.name,
-            arguments=call.arguments,
             iteration=iteration + 1,
+            **shown,
         )
     )
     await emit(status(toolset.status_of(call.name)))
     began = time.perf_counter()
     output = await toolset.execute(call.name, call.arguments, user, emit)
     duration_ms = round((time.perf_counter() - began) * 1000)
+    shown = {} if private else {"output_preview": output[:500]}
     await emit(
         trace(
             "server_tool_returned",
             "tools",
             call.name,
             tool=call.name,
-            output_preview=output[:500],
             duration_ms=duration_ms,
+            **shown,
         )
     )
     return output, duration_ms
@@ -190,11 +199,15 @@ async def run_turn(
     max_iterations: int = 8,
 ) -> TurnOutcome:
     token = current_correlation_id.set(turn.correlation_id or turn.turn_id)
+    turn_id = current_turn_id.set(turn.turn_id)
     private = current_private.set(current_private.get() or turn.private)
     try:
-        return await _run(model, server_tools, turn, emit, max_iterations)
+        outcome = await _run(model, server_tools, turn, emit, max_iterations)
+        outcome.private = current_private.get()
+        return outcome
     finally:
         current_private.reset(private)
+        current_turn_id.reset(turn_id)
         current_correlation_id.reset(token)
 
 
@@ -242,6 +255,11 @@ async def _run(model, server_tools, turn, emit, max_iterations) -> TurnOutcome:
                     await emit(AgentEvent("delta", {"text": item.text}))
                 elif isinstance(item, FunctionCall):
                     calls.append(item)
+                    if toolset.is_private(item.name):
+                        # An error text from here on may quote the call or its output, so the
+                        # rest of the turn is logged as a private one. run_turn resets it.
+                        current_private.set(True)
+                        turn.private = True  # for a host that logs an error that escapes
                 elif isinstance(item, OutputItem):
                     output_items.append(item.raw)
                 elif isinstance(item, McpStarted):

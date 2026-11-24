@@ -48,6 +48,7 @@ def make_token(rsa_key):
             "roles": overrides.get("roles", ["Chat.User"]),
             "oid": overrides.get("oid", "oid-anna"),
             "preferred_username": "anna@example.com",
+            **({"name": overrides["name"]} if overrides.get("name") is not None else {}),
             **({"azp": overrides["azp"]} if overrides.get("azp") != "" else {}),
             "nbf": now - 10,
             "exp": now + overrides.get("exp_delta_seconds", 300),

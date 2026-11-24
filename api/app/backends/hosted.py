@@ -127,6 +127,8 @@ class HostedBackend(ConversationBackend):
                 "oid": ctx.user.oid,
                 "username": ctx.user.username,
                 "roles": sorted(ctx.user.roles),
+                "name": ctx.user.name,
+                "client": ctx.user.client,
             },
             "correlation_id": ctx.correlation_id,
             "parts": ctx.parts,
@@ -182,10 +184,8 @@ class HostedBackend(ConversationBackend):
         outcome: dict | None = None
         try:
             if response.status_code != 200:
-                if ctx.private:  # the body may quote the request
-                    raise HostedAgentError(f"HTTP {response.status_code}", status_code=response.status_code)
-                body = (await response.aread())[:500].decode(errors="replace")
-                raise HostedAgentError(f"HTTP {response.status_code}: {body}", status_code=response.status_code)
+                # Without the body: it may quote the request, which always holds a name.
+                raise HostedAgentError(f"HTTP {response.status_code}", status_code=response.status_code)
             new_session = response.headers.get(SESSION_HEADER)
             if new_session:
                 self._remember_session(ctx.conversation_id, new_session)
@@ -194,6 +194,8 @@ class HostedBackend(ConversationBackend):
                     if kind == OUTCOME_EVENT:
                         outcome = data
                         break
+                    if data.get("private") is True:
+                        ctx.private_tool = True
                     await emit(AgentEvent(kind, data))
             except httpx.HTTPError as exc:
                 raise HostedAgentError(f"the event stream broke: {exc!r}", stream_started=True) from exc
@@ -212,6 +214,7 @@ class HostedBackend(ConversationBackend):
             outcome.get("client_call_ids") or [],
             kept=kept if isinstance(kept, dict) else None,
             unrecorded=outcome.get("unrecorded") is True,
+            private=outcome.get("private") is not False,  # private unless it says that it is not
         )
 
 

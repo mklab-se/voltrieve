@@ -152,3 +152,22 @@ async def test_azp_is_read_from_the_token(validator, make_token):
 async def test_a_token_without_azp_gives_an_empty_one(validator, make_token):
     claims = await validator.validate(f"Bearer {make_token(azp='')}")
     assert claims.azp == ""
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("Anna Andersson", "Anna Andersson"),
+        ("  Anna\nAndersson\t\u200b", "Anna Andersson"),
+        ("x" * 99 + " y", "x" * 99),
+        ("x" * 300, "x" * 100),
+        (None, "anna@example.com"),
+        ("", "anna@example.com"),
+        (" \n", "anna@example.com"),
+        (["Anna"], "anna@example.com"),
+    ],
+)
+async def test_the_name_is_cleaned_and_falls_back_to_the_username(validator, make_token, name, expected):
+    claims = await validator.validate(f"Bearer {make_token(name=name)}")
+    assert claims.name == expected and claims.username == "anna@example.com"
+    assert "Andersson" not in repr(claims)
