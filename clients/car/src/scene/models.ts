@@ -171,8 +171,8 @@ export function carParts(): CarParts[] {
     const paint = merge([
       part(taper(slab(body, WIDE, 0.14), 0.62), "#ffffff"),
       part(taper(slab(cabin, WIDE - 0.16, 0.12), belt), "#ffffff"),
-      part(box(0.16, 0.1, 0.13), "#ffffff", { at: [-WIDE / 2 - 0.04, 0.99 + tall, -0.62] }),
-      part(box(0.16, 0.1, 0.13), "#ffffff", { at: [WIDE / 2 + 0.04, 0.99 + tall, -0.62] }),
+      part(new SphereGeometry(1, 14, 10).scale(0.11, 0.075, 0.07), "#ffffff", { at: [-WIDE / 2 - 0.02, 1.02 + tall, -0.66] }),
+      part(new SphereGeometry(1, 14, 10).scale(0.11, 0.075, 0.07), "#ffffff", { at: [WIDE / 2 + 0.02, 1.02 + tall, -0.66] }),
     ]);
     const parts = [
       ...windows.map((w) => part(taper(flatSide(w, WIDE - 0.135), belt), GLASS)),

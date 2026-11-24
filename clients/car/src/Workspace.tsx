@@ -4,6 +4,7 @@ import { uploadPhoto } from "./attachments";
 import type { Auth, AuthSession } from "./auth";
 import { Cockpit } from "./components/Cockpit";
 import { Menu } from "./components/Menu";
+import { readUnderTheHood, rememberUnderTheHood, UnderTheHood } from "./components/UnderTheHood";
 import type { AppConfig } from "./config";
 import { carContext } from "./context";
 import { Drive } from "./drive";
@@ -13,7 +14,7 @@ import { Pedals } from "./pedals";
 import type { StreetScene } from "./scene/Scene";
 import { fetchSourceUrl, openSource } from "./sources";
 import { CAR_TOOLS, runCarTool } from "./tools";
-import type { ClientToolCall, SourceItem } from "./types";
+import type { Backend, ClientToolCall, SourceItem } from "./types";
 import { useChat } from "./useChat";
 import { useDriving } from "./useDriving";
 import { useHud } from "./useHud";
@@ -62,7 +63,9 @@ export function Workspace({ config, auth, session }: Props) {
   );
   const context = useCallback(() => carContext(drive.car, now()), [drive, now]);
   const renew = useCallback((ids: string[]) => drive.renewPhotos(ids), [drive]);
-  const chat = useChat({ auth, config, backend: "loop", tools: CAR_TOOLS, runTool, context, renew });
+  const [backend, setBackend] = useState<Backend>("loop");
+  const [underTheHood, setUnderTheHood] = useState(readUnderTheHood);
+  const chat = useChat({ auth, config, backend, tools: CAR_TOOLS, runTool, context, renew });
   const { state, busy, send, reset } = chat;
 
   const hud = useHud(state.turns.at(-1), busy, driving.gauges.block);
@@ -123,6 +126,7 @@ export function Workspace({ config, auth, session }: Props) {
         sourceError={sourceError}
         onOpenSource={openDocument}
       />
+      {underTheHood && <UnderTheHood state={state} backend={backend} onBackend={setBackend} busy={!free} />}
       <Menu
         onNewChat={() => {
           reset();
@@ -130,6 +134,11 @@ export function Workspace({ config, auth, session }: Props) {
         }}
         onSignOut={() => void auth.signOut()}
         username={session.username}
+        underTheHood={underTheHood}
+        onUnderTheHood={(on) => {
+          setUnderTheHood(on);
+          rememberUnderTheHood(on);
+        }}
       />
     </div>
   );

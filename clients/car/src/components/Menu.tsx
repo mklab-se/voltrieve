@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MenuIcon } from "./icons";
 import { ASSISTANT_NAME } from "./Runa";
 
@@ -6,12 +6,15 @@ interface Props {
   onNewChat: () => void;
   onSignOut: () => void;
   username: string;
-  children?: ReactNode;
+  underTheHood: boolean;
+  onUnderTheHood: (on: boolean) => void;
+  /** For the tests, which cannot click. */
+  openAtFirst?: boolean;
 }
 
 /** The menu in the corner. */
-export function Menu({ onNewChat, onSignOut, username, children }: Props) {
-  const [open, setOpen] = useState(false);
+export function Menu({ onNewChat, onSignOut, username, underTheHood, onUnderTheHood, openAtFirst = false }: Props) {
+  const [open, setOpen] = useState(openAtFirst);
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
@@ -43,7 +46,10 @@ export function Menu({ onNewChat, onSignOut, username, children }: Props) {
           <button type="button" onClick={choose(onNewChat)}>
             New chat
           </button>
-          {children}
+          <button type="button" className="switch" role="switch" aria-checked={underTheHood} onClick={choose(() => onUnderTheHood(!underTheHood))}>
+            Under the hood
+            <span className="switch-track" aria-hidden="true" />
+          </button>
           <button type="button" onClick={choose(onSignOut)} title={`Signed in as ${username}`}>
             Sign out
           </button>
