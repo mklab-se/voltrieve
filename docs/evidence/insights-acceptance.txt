@@ -83,6 +83,7 @@ Cost, with the list prices in scripts/model_costs.py
 Not verified
    403 for a user without Dashboard.View, live (only tests: the one account at hand has the role).
    A run on real conversations, the schedule, and the switch from Manual to Schedule.
-   The job at the cap of 2,000 conversations per source: 4 minutes for 514, so about 8 seconds each at eight at a time.
+   The job at the cap of 2,000 conversations per source. 514 took 4 minutes, listing and grouping included. At that speed
+   2,000 take about 16 minutes, and both sources at the cap about 31, which is over the deadline of 25 minutes.
    Names of groups over several nights of real use (the same run twice kept 100 % of the names).
    The price of the detection.
