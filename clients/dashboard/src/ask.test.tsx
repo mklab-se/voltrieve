@@ -30,8 +30,10 @@ const ROWS = [
 ];
 
 /** The text of the page, without the tags. */
-function page(source: Source, state: AskState): { html: string; text: string } {
-  const html = renderToStaticMarkup(<AskPage source={source} state={state} onSource={() => {}} onRetry={() => {}} />);
+function page(source: Source, state: AskState, now?: string): { html: string; text: string } {
+  const html = renderToStaticMarkup(
+    <AskPage source={source} state={state} now={now ? Date.parse(now) : undefined} onSource={() => {}} onRetry={() => {}} />,
+  );
   return { html, text: html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ") };
 }
 
@@ -79,7 +81,7 @@ describe("the page", () => {
   });
 
   it("says which data it shows, and the note, in every state", () => {
-    for (const status of ["loading", "failed"] as const) {
+    for (const status of ["loading", "failed", "denied"] as const) {
       expect(page("real", { status }).text).toContain("This is real use.");
       expect(page("seeded", { status }).text).toContain("This is made up data, for demos.");
       expect(page("real", { status }).text).toContain(NOTE);
@@ -121,6 +123,24 @@ describe("the page", () => {
 
   it("says so in a sentence when the request fails", () => {
     expect(page("real", { status: "failed" }).text).toContain("What people ask could not be loaded.");
+    expect(page("real", { status: "failed" }).text).toContain("Try again");
+  });
+
+  it("says that the account has no access, with nothing to try again", () => {
+    const { html, text } = page("real", { status: "denied" });
+    expect(text).toContain("This account has no access to what people ask.");
+    expect(html).not.toContain("<button");
+    expect(text).not.toMatch(/could not be loaded|Loading/);
+  });
+
+  it("says when the last run of real use is more than two days old", () => {
+    const ready = (source: Source, run: string | null): AskState => ({ status: "ready", data: answer(source, { run }) });
+    const show = (source: Source, run: string | null, now: string) => page(source, ready(source, run), now).text;
+    const run = "2026-11-24T02:30:00Z";
+    expect(show("real", run, "2026-11-28T03:00:00Z")).toContain("The last run was 4 days ago. Nights may be missing.");
+    expect(show("real", run, "2026-11-26T02:30:00Z")).not.toContain("Nights may be missing");
+    expect(show("seeded", run, "2026-11-28T03:00:00Z")).not.toContain("Nights may be missing");
+    expect(show("real", null, "2026-11-28T03:00:00Z")).not.toContain("Nights may be missing");
   });
 
   const { html, text } = page("real", {

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  about, answeredShare, askView, buildInsightsRequest, cut, day, label, loadInsights, nextTab, runs, sampleNote, tabFromHash, trends,
+  about, answeredShare, askView, buildInsightsRequest, cut, day, failure, label, loadInsights, nextTab, runs, sampleNote, staleNote, tabFromHash, trends,
   type Insights, type InsightsRow,
 } from "./insights";
 
@@ -57,6 +57,16 @@ describe("the request", () => {
     await expect(load(null)).rejects.toThrow();
   });
 
+  it("tells a 403 from every other failure", async () => {
+    const load = (status: number) => {
+      vi.stubGlobal("fetch", async () => new Response("{}", { status }));
+      return loadInsights("http://api", auth, "real", new AbortController().signal).then(() => "loaded", failure);
+    };
+    expect(await load(403)).toBe("denied");
+    for (const status of [401, 404, 422, 500, 503]) expect(await load(status)).toBe("failed");
+    expect(failure(new TypeError("Failed to fetch"))).toBe("failed");
+  });
+
   it("leaves out a row without a number, so that one bad row does not take the page down", async () => {
     const bad = { ...row({ cut: "client" }), people: null };
     const week = { end: "2026-11-22", topic: "fault", people: null, conversations: 5 };
@@ -111,6 +121,23 @@ describe("words", () => {
     expect(sampleNote(0.999)).toBe("A sample of 99 % of the conversations");
     expect(sampleNote(1)).toBeNull();
     expect(sampleNote(null)).toBeNull();
+  });
+});
+
+describe("the age of the last run", () => {
+  const run = "2026-11-24T02:30:00Z";
+  const note = (now: string, source: "real" | "seeded" = "real", at: string | null = run) => staleNote(source, at, Date.parse(now));
+
+  it("is named when it is more than two days, in whole days", () => {
+    expect(note("2026-11-26T02:30:00Z")).toBeNull();
+    expect(note("2026-11-26T02:30:01Z")).toBe("The last run was 2 days ago. Nights may be missing.");
+    expect(note("2026-12-04T02:29:00Z")).toBe("The last run was 9 days ago. Nights may be missing.");
+  });
+
+  it("is not named for made up data, without a run, or for a run that is no moment", () => {
+    expect(note("2026-12-24T00:00:00Z", "seeded")).toBeNull();
+    expect(note("2026-12-24T00:00:00Z", "real", null)).toBeNull();
+    expect(note("2026-12-24T00:00:00Z", "real", "soon")).toBeNull();
   });
 });
 

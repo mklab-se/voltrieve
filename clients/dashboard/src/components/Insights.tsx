@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { Auth } from "../auth";
 import {
-  about, askView, cut, day, label, loadInsights, moment, runs, sampleNote, trends,
+  about, askView, cut, day, failure, label, loadInsights, moment, runs, sampleNote, staleNote, trends,
   type Insights, type InsightsRow, type Source, type TopicView, type Trends,
 } from "../insights";
 
-export type AskState = { status: "loading" } | { status: "failed" } | { status: "ready"; data: Insights };
+export type AskState = { status: "loading" } | { status: "failed" } | { status: "denied" } | { status: "ready"; data: Insights };
 
 /** The totals that the nightly job saved. Real and made up data are asked for, and shown, one at a time. */
 export function Ask({ apiUrl, auth }: { apiUrl: string; auth: Auth }) {
@@ -18,7 +18,7 @@ export function Ask({ apiUrl, auth }: { apiUrl: string; auth: Auth }) {
     setState({ status: "loading" });
     loadInsights(apiUrl, auth, source, ctrl.signal).then(
       (data) => !ctrl.signal.aborted && setState({ status: "ready", data }),
-      () => !ctrl.signal.aborted && setState({ status: "failed" }),
+      (error: unknown) => !ctrl.signal.aborted && setState({ status: failure(error) }),
     );
     return () => ctrl.abort();
   }, [apiUrl, auth, source, attempt]);
@@ -29,15 +29,17 @@ export function Ask({ apiUrl, auth }: { apiUrl: string; auth: Auth }) {
 interface PageProps {
   source: Source;
   state: AskState;
+  now?: number;
   onSource: (source: Source) => void;
   onRetry: () => void;
 }
 
 const SOURCES: [Source, string][] = [["real", "Real"], ["seeded", "Made up"]];
 
-export function AskPage({ source, state, onSource, onRetry }: PageProps) {
+export function AskPage({ source, state, now = Date.now(), onSource, onRetry }: PageProps) {
   // Right after the switch, the answer is still the other source's. It is never shown under this one's name.
   const data = state.status === "ready" && state.data.source === source ? state.data : undefined;
+  const stale = data ? staleNote(source, data.run, now) : null;
   return (
     <section className="dash ask" aria-label="What people ask">
       <div className="dash-head">
@@ -58,12 +60,18 @@ export function AskPage({ source, state, onSource, onRetry }: PageProps) {
         {data && <span>{data.run ? `Last run ${moment(data.run)}.` : "No run yet."}</span>}
         {data?.window && <span>Conversations started {day(data.window.start)} to {day(data.window.end)}.</span>}
         {data && sampleNote(data.sample_share) && <span>{sampleNote(data.sample_share)}.</span>}
-        {!data && state.status !== "failed" && <span>Loading…</span>}
+        {stale && <span>{stale}</span>}
+        {!data && state.status !== "failed" && state.status !== "denied" && <span>Loading…</span>}
       </p>
       {state.status === "failed" && (
         <div className="dash-problem ask-failed" role="alert">
           <span>What people ask could not be loaded.</span>
           <button className="ghost" onClick={onRetry}>Try again</button>
+        </div>
+      )}
+      {state.status === "denied" && (
+        <div className="dash-problem ask-failed" role="alert">
+          <span>This account has no access to what people ask. Ask the person who runs this deployment.</span>
         </div>
       )}
       {data && <Results data={data} />}

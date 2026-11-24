@@ -47,12 +47,20 @@ export function buildInsightsRequest(apiUrl: string, token: string, source: Sour
   };
 }
 
+/** The API says that this account may not see the totals. Trying again gives the same. */
+export class NoAccess extends Error {}
+
+export function failure(error: unknown): "denied" | "failed" {
+  return error instanceof NoAccess ? "denied" : "failed";
+}
+
 /** An answer for another source is a failure: made up data must never be shown as real. */
 export async function loadInsights(apiUrl: string, auth: { getToken(): Promise<string> }, source: Source, signal: AbortSignal): Promise<Insights> {
   const token = await auth.getToken();
   signal.throwIfAborted();
   const { url, init } = buildInsightsRequest(apiUrl, token, source);
   const response = await fetch(url, { ...init, signal });
+  if (response.status === 403) throw new NoAccess("status 403");
   if (!response.ok) throw new Error(`status ${response.status}`);
   const data = (await response.json()) as Insights | null;
   if (data?.source !== source || !Array.isArray(data.rows) || !Array.isArray(data.weeks)) throw new Error("not an answer");
@@ -106,6 +114,7 @@ export function about(count: number): string {
   return `about ${count.toLocaleString("en")}`;
 }
 
+const DAY_MS = 86_400_000;
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 /** A day such as 22 Nov 2026. The windows are whole days in UTC. */
@@ -125,6 +134,14 @@ export function moment(iso: string): string {
 export function sampleNote(share: number | null): string | null {
   // Rounded down, so that a sample never says 100 %.
   return share !== null && share < 1 ? `A sample of ${Math.floor(share * 100 + 1e-9)} % of the conversations` : null;
+}
+
+const OLD_DAYS = 2;
+
+/** Says when the last run is old. Real use has a run every night. Made up data has one when somebody starts it. */
+export function staleNote(source: Source, run: string | null, now: number): string | null {
+  const days = run === null ? NaN : (now - Date.parse(run)) / DAY_MS;
+  return source === "real" && days > OLD_DAYS ? `The last run was ${Math.floor(days)} days ago. Nights may be missing.` : null;
 }
 
 // What the page shows.
@@ -199,7 +216,6 @@ export function askView(data: Insights): { total?: InsightsRow; clients: Insight
 }
 
 const WEEKS = 12;
-const DAY_MS = 86_400_000;
 
 function dayNumber(iso: string): number {
   return Date.parse(`${iso.slice(0, 10)}T00:00:00Z`) / DAY_MS;
