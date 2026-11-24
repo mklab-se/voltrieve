@@ -66,7 +66,7 @@ class Booking:
 class DealerData:
     def __init__(self, raw: dict, parts: dict | None = None):
         self._cities: list[str] = raw["cities"]
-        self._stock: dict[str, dict[str, int]] = raw["stock"]
+        self._opening_stock: dict[str, dict[str, int]] = raw["stock"]
         self._prices: dict[str, dict[str, int]] = raw["prices"]
         self._currencies: dict[str, str] = raw["currencies"]
         parts = parts or {"stock": {}, "distances_km": {}}
@@ -82,6 +82,19 @@ class DealerData:
     @property
     def cities(self) -> list[str]:
         return list(self._cities)
+
+    @property
+    def opening_stock(self) -> dict[str, dict[str, int]]:
+        """What the store gets when it has no stock, and at a reset."""
+        return self._opening_stock
+
+    @property
+    def articles(self) -> list[str]:
+        return list(self._part_stock)
+
+    def price_sek(self, model: str) -> int:
+        self.check(model, None)
+        return self._prices["SE"][model]
 
     def part_stock(self, article: str, city: str | None) -> list[PartStockRow]:
         """Every city's stock of one article: the city asked about first, then the others by
@@ -99,19 +112,21 @@ class DealerData:
             PartStockRow(c, by_city[c], self._distances[city][c]) for c in others
         ]
 
-    def _check(self, model: str | None, city: str | None) -> None:
-        if model is not None and model not in self._stock:
+    def check(self, model: str | None, city: str | None) -> None:
+        if model is not None and model not in self._opening_stock:
             raise UnknownModel(model)
         if city is not None and city not in self._cities:
             raise UnknownCity(city)
 
-    def stock(self, model: str | None, city: str | None) -> list[StockRow]:
-        self._check(model, city)
+    def stock_rows(
+        self, stock: dict[str, dict[str, int]], model: str | None, city: str | None
+    ) -> list[StockRow]:
+        """The stock in the order of this data, whatever the order of the store."""
         return [
-            StockRow(m, c, n)
-            for m, by_city in self._stock.items()
+            StockRow(m, c, stock.get(m, {}).get(c, 0))
+            for m in self._opening_stock
             if model is None or m == model
-            for c, n in by_city.items()
+            for c in self._cities
             if city is None or c == city
         ]
 
@@ -125,7 +140,7 @@ class DealerData:
         )
 
     def book(self, model: str, city: str, date: dt.date, requester: str) -> Booking:
-        self._check(model, city)
+        self.check(model, city)
         if date <= today():
             raise DateNotInFuture(date.isoformat())
         return Booking(str(uuid.uuid4()), model, city, date, requester)

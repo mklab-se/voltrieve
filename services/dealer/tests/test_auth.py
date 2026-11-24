@@ -174,3 +174,68 @@ async def test_token_missing_required_claim_is_401(validator, rsa_key, tenant_id
     with pytest.raises(AuthError) as e:
         await validator.validate(token)
     assert e.value.status_code == 401
+
+
+STAFF = {"scp": "manage_as_user", "name": "Bo Exempel", "preferred_username": "bo@example.com"}
+
+
+async def test_a_staff_token(staff_validator, make_token):
+    claims = await staff_validator.validate(make_token(roles=["Dealer.Manage"], claims=STAFF))
+    assert claims.name == "Bo Exempel"
+
+
+@pytest.mark.parametrize(
+    "claims, name",
+    [
+        ({"preferred_username": "bo@example.com"}, "bo@example.com"),
+        ({"name": "", "preferred_username": "bo@example.com"}, "bo@example.com"),
+        ({"name": " Bo\n\x00Exempel "}, "Bo Exempel"),
+        ({"name": ["Bo"]}, ""),
+        ({"name": "B" * 300}, "B" * 200),
+        ({}, ""),
+    ],
+)
+async def test_the_name_of_a_caller(staff_validator, make_token, claims, name):
+    token = make_token(roles=["Dealer.Manage"], claims={"scp": "manage_as_user", **claims})
+    assert (await staff_validator.validate(token)).name == name
+
+
+@pytest.mark.parametrize(
+    "roles, claims",
+    [
+        (["Dealer.Access"], {}),  # Runa
+        (["Dealer.Access", "Dealer.Manage"], {}),  # no scope: an application, or an id token
+        (["Dealer.Manage"], {"scp": "other"}),
+        (["Dealer.Manage"], {"scp": "manage_as_user_too"}),
+        (["Dealer.Manage"], {"scp": ["manage_as_user"]}),
+        (["Dealer.Manage"], {"scp": None}),
+        ([], STAFF),
+        (["Dealer.Access"], STAFF),
+    ],
+)
+async def test_the_staff_door_needs_the_scope_and_the_role(staff_validator, make_token, roles, claims):
+    with pytest.raises(AuthError) as e:
+        await staff_validator.validate(make_token(roles=roles, claims=claims))
+    assert e.value.status_code == 403
+
+
+async def test_the_scope_among_others(staff_validator, make_token):
+    token = make_token(roles=["Dealer.Manage"], claims={"scp": "other manage_as_user"})
+    assert (await staff_validator.validate(token)).oid
+
+
+@pytest.mark.parametrize("scope", ["manage_as_user", "other", "", None])
+async def test_the_machine_door_is_closed_to_people(validator, make_token, scope):
+    with pytest.raises(AuthError) as e:
+        await validator.validate(make_token(claims={"scp": scope}))
+    assert e.value.status_code == 403
+
+
+def test_the_app_has_both_doors(settings):
+    from app.main import create_app
+
+    state = create_app(settings).state
+    assert (state.validator._required_role, state.validator._required_scope) == ("Dealer.Access", None)
+    assert (state.staff_validator._required_role, state.staff_validator._required_scope) == (
+        "Dealer.Manage", "manage_as_user",
+    )  # fmt: skip

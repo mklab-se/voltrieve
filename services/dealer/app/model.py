@@ -68,10 +68,15 @@ def new_offer_id() -> str:
     return secrets.token_urlsafe(9)
 
 
-def clean_address(text: str) -> str:
-    """One line without control characters. The error does not repeat the text."""
+def one_line(text: str) -> str:
+    """Without control characters."""
     visible = (" " if unicodedata.category(char)[0] in "CZ" else char for char in text)
-    line = " ".join("".join(visible).split())
+    return " ".join("".join(visible).split())
+
+
+def clean_address(text: str) -> str:
+    """The error does not repeat the text."""
+    line = one_line(text)
     shortest, longest = ADDRESS_LENGTH
     if not shortest <= len(line) <= longest:
         raise ValueError(f"The address must be {shortest} to {longest} characters in one line.")
