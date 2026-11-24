@@ -410,7 +410,9 @@ async def test_no_address_is_asked_for_when_the_terms_fail(tools, buyer, events,
 async def test_prepare_with_an_address_posts_who_and_when_from_the_context(tools, buyer, events, in_turn):
     route = respx.post(f"{BASE}/orders/offers").respond(201, json={"offer": "offer-1", "price": 529000})
     out = await tools[0].execute("prepare_car_order", ORDER_CALLS["prepare_car_order"], buyer, events)
-    assert json.loads(out) == {"offer": "offer-1", "price": 529000} and len(respx.calls) == 1
+    answer, next_step = out.split("\n")
+    assert json.loads(answer) == {"offer": "offer-1", "price": 529000} and len(respx.calls) == 1
+    assert next_step == "Nothing is ordered yet. Read it back and ask. Wait for the answer in the next message."
     request = route.calls.last.request
     assert json.loads(request.content) == {
         "model": "fjord", "address": ADDRESS, "customer": "oid-anna", "name": "Anna A", "turn": "turn-7",

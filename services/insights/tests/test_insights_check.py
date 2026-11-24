@@ -50,7 +50,7 @@ class FakeModel:
 
 
 class FakePii:
-    def __init__(self, catches=("Lindqvist", "Sandberg"), short=False, fails=None):
+    def __init__(self, catches=("Lindqvist", "Sandberg", "Odenplan"), short=False, fails=None):
         self.catches, self.short, self.fails = catches, short, fails
 
     async def clean(self, names):
@@ -113,7 +113,7 @@ def test_a_group_that_is_not_named_like_the_need_fails(name):
 
 
 def test_a_group_whose_name_was_replaced_fails():
-    found = by_name(run(pii=FakePii(catches=("home", "Lindqvist", "Sandberg"))))["a need"]
+    found = by_name(run(pii=FakePii(catches=("home", "Lindqvist", "Sandberg", "Odenplan"))))["a need"]
     assert found.verdict == "FAIL" and UNNAMED in "\n".join(found.lines)
 
 
@@ -201,7 +201,7 @@ def test_no_name_at_all_proves_nothing():
     assert names["c steering"].verdict == "REPORT" and names["d real names"].verdict == "REPORT"
 
 
-@pytest.mark.parametrize("catches", [(), ("Lindqvist",), ("Sandberg",)])
+@pytest.mark.parametrize("catches", [(), ("Lindqvist",), ("Sandberg",), ("Odenplan",), ("Lindqvist", "Sandberg")])
 def test_a_detection_that_misses_a_planted_name_fails(catches):
     outcome = run(pii=FakePii(catches=catches))
     found = by_name(outcome)["d forced names"]
@@ -214,7 +214,7 @@ def test_a_detection_that_misses_a_planted_name_fails(catches):
 
 def test_each_planted_name_and_what_became_of_it_is_shown():
     text = "\n".join(by_name(run())["d forced names"].lines)
-    assert text.count("replaced") == 2 and "kept" not in text
+    assert text.count("replaced") == 3 and "kept" not in text
     real = "\n".join(by_name(run())["d real names"].lines)
     for name in check.PLANTED:
         assert f"{name}: replaced" in real
@@ -226,7 +226,7 @@ def test_a_planted_name_that_is_left_in_a_real_group_name_fails():
 
 
 def test_neutral_names_of_the_planted_intents_pass():
-    neutral = FakeModel(change=lambda name, body: "Towing" if "Sandberg" in name else "Charging" if "Anna" in name else name)
+    neutral = FakeModel(change=lambda name, body: "Towing" if "tow" in name else "Charging" if "Anna" in name else name)
     assert by_name(run(neutral))["d real names"].verdict == "PASS"
 
 

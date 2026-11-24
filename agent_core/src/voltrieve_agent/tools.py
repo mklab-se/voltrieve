@@ -48,6 +48,10 @@ class ServerTool:
     # What the user is told while this runs: a stable code and a default text.
     status: tuple[str, str] = WORKING
 
+    def __post_init__(self) -> None:
+        if self.clients is not None and not self.client_refusal.strip():
+            raise ValueError(f"The tool '{self.name}' names clients and has no client_refusal")
+
 
 @dataclass(frozen=True)
 class ClientTool:

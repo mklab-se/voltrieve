@@ -234,3 +234,10 @@ async def test_a_failing_ordinary_tool_is_logged_as_before(user, events, caplog)
 
     await ToolSet([ServerTool("lookup", "d", SCHEMA, handler)], []).execute("lookup", '{"city": "x"}', user, events)
     assert caplog.records[-1].exc_info
+
+
+@pytest.mark.parametrize("refusal", ["", "  "])
+def test_a_tool_that_names_clients_must_have_a_refusal(refusal):
+    with pytest.raises(ValueError, match="order.*client_refusal"):
+        ServerTool("order", "d", SCHEMA, None, clients=frozenset({"web"}), client_refusal=refusal)
+    ServerTool("order", "d", SCHEMA, None)

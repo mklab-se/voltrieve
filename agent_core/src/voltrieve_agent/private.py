@@ -24,19 +24,27 @@ _ID_NUMBER = re.compile(r"\b(?:19|20)?\d{6}[-+]?\d{4}\b")  # Swedish personal id
 _PHONE = re.compile(r"(?:\+\d|\b0\d)[\d\s()-]{5,18}\d")
 # Swedish forms only. A name ends with one of the words (Storgatan 1, Olof Palmes gata 7), with up to two
 # capitalized words before it, and the apartment and postal code after it. ä may be typed as a, or as a
-# and a combining mark. Every repeat is bounded, or runs over one word that the lookbehind starts once.
+# and a combining mark. Not a distance or a price (körväg 300 km), and not a lower case väg or vägen
+# without a name (på väg 2026). Every repeat is bounded, or runs over one word that the lookbehind starts
+# once.
 _POSTAL_DIGITS = r"(?:SE?-)?[1-9]\d{2}"
 _ADDRESS = re.compile(
-    r"(?<!\w)(?:[A-ZÅÄÖ][^\W\d_]*[^\S\n]){0,2}"
+    r"(?<!\w)(?:(?:[A-ZÅÄÖ][^\W\d_]{2,}[^\S\n]){1,2}|(?!v[äa]\u0308?g(?:en)?(?![^\W\d_])))"
     r"(?i:[^\W\d_]*(?:gatan?|v[äa]\u0308?g(?:en)?|torg(?:et)?|gr(?:ä|a\u0308)nd(?:en)?"
     r"|all(?:é|e\u0301)n?|stigen|backen|kajen|esplanaden)"
     r"\s{0,3}(?:nr\.?\s{0,3})?\d{1,4}(?!\d))"
+    r"(?!(?:-\d{1,4})?\s{0,2}(?:km|mil|m|kr|SEK|sek)(?!\w))"
     r"(?:[A-Za-z](?!\w)|\s[A-Z](?!\w))?(?:-\d{1,4}[A-Za-z]?(?!\w))?"
     r"(?i:,?\s(?:lgh|lägenhet|apt)\.?\s?\d{1,4})?"
     rf"(?:,?\s{{1,2}}{_POSTAL_DIGITS}\s?\d{{2}}(?!\w))?"
 )
-# With its space, so a price or a part number (12500, 529 000, VP-10007) stays readable.
-_POSTAL_CODE = re.compile(rf"(?<![\w-])(?<!\d\s){_POSTAL_DIGITS}\s\d{{2}}(?!\w)(?!\s\d)")
+# With its space, so a price or a part number (12500, 529 000, VP-10007) stays readable, and not before
+# a tyre's rim, a unit or a count (245 45 R20, 345 40 Nm, 400 20-inch).
+_POSTAL_CODE = re.compile(
+    rf"(?<![\w-])(?<!\d\s){_POSTAL_DIGITS}\s\d{{2}}(?![\w-])(?!\s\d)(?!\s?%)"
+    r"(?!\s(?i:R\d{2}|nm|v|volt|a|w|kw|kwh|km|mil|m|mm|cm|kg|kr|sek|bar|hk|hp|st|pcs"
+    r"|inch(?:es)?|tum|percent|procent)(?!\w))"
+)
 
 MAX_ERRORS = 8
 MAX_FRAMES = 30  # of each error, the ones closest to it
