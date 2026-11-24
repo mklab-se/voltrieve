@@ -43,7 +43,7 @@ Cost, with the list prices in scripts/model_costs.py
 
 2. What a model call leaves behind (a chat completion with a marker in the text, 14:59 UTC, and the marker planted in
    one of the 150 seeded conversations): no row in any table of the workspace 14 minutes later, and 0 stored completions
-   listed. The job's own identity and calls are checked the same way in insights-acceptance.txt.
+   listed. This call was made by the deployer. The job's own calls: insights-acceptance.txt, section 8.
 
 3. Where the intents stood: 0 of the 108 planted personal details reached an intent, before and after the filter. The
    filter had nothing to do in this run: the model did not write them. The 50 planted conversations hold names, streets

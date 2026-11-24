@@ -80,6 +80,19 @@ Cost, with the list prices in scripts/model_costs.py
    groups that can be saved. Its price was not found in Azure's price list for the text meter. Microsoft's page says about
    1 USD per 1,000 texts.
 
+8. The job's own calls leave no text
+   One seeded conversation holds a random marker. It is dated 2026-11-22, inside the window of the run at 16:07, which read
+   all 514 selected conversations. Searched at 16:26, 16 minutes after that run ended, 6 hours back, in every table: no
+   rows. Stored completions listed: 0.
+
+9. The notice
+   "A nightly job counts what people ask about. It saves only topics shared by several people, never your chat." is in the
+   deployed files of the website and the car (read at 15:00). Not looked at in a signed in session.
+
+10. Missing nights
+   The workbook's query ran live for the seeded source: 18 of the last 30 days have no run. The failed run of 15:50 saved no
+   run row.
+
 Not verified
    403 for a user without Dashboard.View, live (only tests: the one account at hand has the role).
    A run on real conversations, the schedule, and the switch from Manual to Schedule.
