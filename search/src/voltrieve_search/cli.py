@@ -71,11 +71,14 @@ def prunable_indexes() -> list[tuple[SearchRestClient, str, str]]:
     is gone, nothing can find its chunks again.
 
     SEARCH_BASIC_ENDPOINT is required, because it shows that the whole environment is loaded. With
-    SEARCH_ENDPOINT alone a second service would keep the pruned chunks."""
+    SEARCH_ENDPOINT alone a second service would keep the pruned chunks. It may be empty when
+    SEARCH_BASIC is off, and then SEARCH_SERVERLESS_ENDPOINT shows the same."""
+    basic = os.environ.get("SEARCH_BASIC_ENDPOINT", "")
+    if not basic:
+        require_env("SEARCH_SERVERLESS_ENDPOINT" if os.environ.get("SEARCH_BASIC") == "off" else "SEARCH_BASIC_ENDPOINT")
     endpoints = dict.fromkeys(
         e.rstrip("/")
-        for e in (require_env("SEARCH_BASIC_ENDPOINT"), require_env("SEARCH_ENDPOINT"),
-                  os.environ.get("SEARCH_SERVERLESS_ENDPOINT", ""))
+        for e in (basic, require_env("SEARCH_ENDPOINT"), os.environ.get("SEARCH_SERVERLESS_ENDPOINT", ""))
         if e
     )
     found = []

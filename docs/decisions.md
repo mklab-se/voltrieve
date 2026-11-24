@@ -37,6 +37,17 @@ On 2026-11-24 the product owner asked for the newest search APIs. The data plane
 
 The numbers are in [`search-versions.txt`](https://github.com/mklab-se/voltrieve/blob/main/docs/evidence/search-versions.txt). The design has what breaks, the order and the way back: [design](https://github.com/mklab-se/voltrieve/blob/main/docs/superpowers/specs/2026-11-24-search-foundry-iq-design.md). The commands are in [Deployment](deploy.md#order-for-an-update-with-the-new-search-values).
 
+### The Basic search service can go
+
+On 2026-11-24 the Basic service had cost 517 SEK of the month to date, about 22 SEK a day. A full month of that is two thirds of the budget. It has been unused since Serverless is `active`. Serverless had cost 1.25 SEK so far. So the product owner asked to have Basic removed.
+
+- **A value, not a deletion.** `SEARCH_BASIC` is `on` or `off`. `off` leaves the service, its roles and every reference out of the template. A provision never deletes it: the owner does, by name, after a check ([the steps](deploy.md#removing-the-basic-service)).
+- **The guard is double.** `off` needs `SEARCH_SERVERLESS` at `active`. The preprovision hook refuses anything else, and so does the template itself, before it creates anything.
+- **Basic stays on by default.** A new environment has nothing to fall back on until Serverless is filled, and one `azd up` has to be enough. A new environment therefore still pays for Basic until someone moves it to Serverless.
+- **The way back** is a new, empty service that is filled again from storage: 22 SEK a day from then on, a round of embeddings under 0.01 USD, two provisions, and a region that takes a new service. The fallback of switching to Basic in one provision is gone.
+
+Not verified: the removal and the way back have not been run.
+
 ### Bicep BCP081 warnings are expected
 
 The lint reports BCP081 ("does not have types available") for `Microsoft.CognitiveServices/*@2026-11-15-preview`, `Microsoft.ContainerRegistry/registries@2026-11-01`, `Microsoft.Web/staticSites@2025-05-01`, `Microsoft.Resources/resourceGroups@2026-06-01` and `Microsoft.Storage/*@2026-09-01`. These versions are newer than Bicep's type data. The warnings do not block deployment, but Bicep cannot validate those resources' properties before deploying, so errors there appear at deployment time. `infra/tests/test_bicep.sh` does not fail on them.

@@ -5,6 +5,18 @@ if [ "${SEARCH_SERVERLESS:-off}" = active ] && [ -z "${SEARCH_SERVERLESS_ENDPOIN
   echo "preprovision: SEARCH_SERVERLESS is active, but there is no Serverless service. Set it to standby, provision and fill the service first" >&2
   exit 1
 fi
+# Without Basic everything has to use the Serverless service. infra/main.bicep refuses it too.
+case "${SEARCH_BASIC:-on}" in
+  on) ;;
+  off)
+    if [ "${SEARCH_SERVERLESS:-off}" != active ]; then
+      echo "preprovision: SEARCH_BASIC is off, which needs SEARCH_SERVERLESS active, because nothing else would answer searches. Set SEARCH_BASIC to on, or make the Serverless service active first" >&2
+      exit 1
+    fi ;;
+  *)
+    echo "preprovision: SEARCH_BASIC is on or off" >&2
+    exit 1 ;;
+esac
 DOMAIN="${VOLTRIEVE_VERIFIED_DOMAIN:-$(az rest -m GET -u 'https://graph.microsoft.com/v1.0/domains' --query "value[?isDefault].id | [0]" -o tsv)}"
 if [ -z "$DOMAIN" ]; then
   echo "preprovision: could not determine the verified domain; set VOLTRIEVE_VERIFIED_DOMAIN" >&2

@@ -11,9 +11,13 @@ param location string = 'swedencentral'
 @description('Region for Azure AI Search. Sweden Central and West Europe cannot create new search services.')
 param searchLocation string = 'francecentral'
 
-@description('A Serverless search service next to the Basic one (SEARCH_SERVERLESS). off: not deployed. standby: deployed, nothing uses it. active: SEARCH_ENDPOINT points at it. The Basic service stays in all three. A deployed service is not deleted by going back to off.')
+@description('A Serverless search service next to the Basic one (SEARCH_SERVERLESS). off: not deployed. standby: deployed, nothing uses it. active: SEARCH_ENDPOINT points at it. A deployed service is not deleted by going back to off.')
 @allowed(['off', 'standby', 'active'])
 param serverlessSearch string = 'off'
+
+@description('The Basic search service (SEARCH_BASIC). on: deployed. off: not deployed, nothing refers to it, and only allowed with serverlessSearch active. A deployed service is not deleted by going to off: docs/deploy.md says how.')
+@allowed(['on', 'off'])
+param basicSearch string = 'on'
 
 @description('Region for the Serverless search service.')
 param serverlessSearchLocation string = 'swedencentral'
@@ -62,7 +66,11 @@ var planningModels = [
 ]
 var deployServerless = serverlessSearch != 'off'
 var serverlessActive = serverlessSearch == 'active'
-var searchEndpoint = serverlessActive ? searchServerless!.outputs.endpoint : search.outputs.endpoint
+// The failure is part of every condition below, so it stops the deployment before it creates anything.
+var deployBasic = basicSearch == 'on'
+  ? true
+  : serverlessActive ? false : fail('SEARCH_BASIC is off, which needs SEARCH_SERVERLESS active, because nothing else would answer searches')
+var searchEndpoint = serverlessActive ? searchServerless!.outputs.endpoint : search!.outputs.endpoint
 var placeholderImage = 'mcr.microsoft.com/dotnet/samples:aspnetapp'
 var dealerName = 'ca-dealer-${environmentName}'
 var apiName = 'ca-api-${environmentName}'
@@ -125,7 +133,7 @@ module foundry 'modules/foundry.bicep' = {
   }
 }
 
-module search 'modules/search.bicep' = {
+module search 'modules/search.bicep' = if (deployBasic) {
   scope: rg
   params: {
     name: 'srch-voltrieve-${token}'
@@ -383,10 +391,10 @@ module apiUsesFoundry 'modules/role-foundry.bicep' = {
   }
 }
 
-module apiReadsSearch 'modules/role-search.bicep' = {
+module apiReadsSearch 'modules/role-search.bicep' = if (deployBasic) {
   scope: rg
   params: {
-    resourceName: search.outputs.name
+    resourceName: search!.outputs.name
     principalId: apiApp.outputs.principalId
     roleDefinitionId: searchIndexDataReader
     principalType: 'ServicePrincipal'
@@ -405,10 +413,10 @@ module hostedUsesFoundry 'modules/role-foundry.bicep' = if (!empty(hostedAgentPr
   }
 }
 
-module hostedReadsSearch 'modules/role-search.bicep' = if (!empty(hostedAgentPrincipalId)) {
+module hostedReadsSearch 'modules/role-search.bicep' = if (deployBasic && !empty(hostedAgentPrincipalId)) {
   scope: rg
   params: {
-    resourceName: search.outputs.name
+    resourceName: search!.outputs.name
     principalId: hostedAgentPrincipalId
     roleDefinitionId: searchIndexDataReader
     principalType: 'ServicePrincipal'
@@ -416,42 +424,42 @@ module hostedReadsSearch 'modules/role-search.bicep' = if (!empty(hostedAgentPri
 }
 
 // Role assignments are declared on the target resource (least privilege).
-module searchReadsStorage 'modules/role-storage.bicep' = {
+module searchReadsStorage 'modules/role-storage.bicep' = if (deployBasic) {
   scope: rg
   params: {
     resourceName: storage.outputs.name
-    principalId: search.outputs.principalId
+    principalId: search!.outputs.principalId
     roleDefinitionId: storageBlobDataReader
     principalType: 'ServicePrincipal'
   }
 }
 
-module searchUsesFoundry 'modules/role-foundry.bicep' = {
+module searchUsesFoundry 'modules/role-foundry.bicep' = if (deployBasic) {
   scope: rg
   params: {
     resourceName: foundry.outputs.name
-    principalId: search.outputs.principalId
+    principalId: search!.outputs.principalId
     roleDefinitionId: cognitiveServicesOpenAIUser
     principalType: 'ServicePrincipal'
   }
 }
 
 // The knowledge base calls the chat model for query planning, which needs this role.
-module searchPlansWithFoundry 'modules/role-foundry.bicep' = {
+module searchPlansWithFoundry 'modules/role-foundry.bicep' = if (deployBasic) {
   scope: rg
   params: {
     resourceName: foundry.outputs.name
-    principalId: search.outputs.principalId
+    principalId: search!.outputs.principalId
     roleDefinitionId: cognitiveServicesUser
     principalType: 'ServicePrincipal'
   }
 }
 
 // The project identity calls the knowledge base MCP endpoint for prompt agents.
-module projectReadsSearch 'modules/role-search.bicep' = {
+module projectReadsSearch 'modules/role-search.bicep' = if (deployBasic) {
   scope: rg
   params: {
-    resourceName: search.outputs.name
+    resourceName: search!.outputs.name
     principalId: foundry.outputs.projectPrincipalId
     roleDefinitionId: searchIndexDataReader
     principalType: 'ServicePrincipal'
@@ -512,20 +520,20 @@ module deployerManagesProject 'modules/role-foundry.bicep' = if (!empty(principa
   }
 }
 
-module deployerSearchService 'modules/role-search.bicep' = if (!empty(principalId)) {
+module deployerSearchService 'modules/role-search.bicep' = if (deployBasic && !empty(principalId)) {
   scope: rg
   params: {
-    resourceName: search.outputs.name
+    resourceName: search!.outputs.name
     principalId: principalId
     roleDefinitionId: searchServiceContributor
     principalType: 'User'
   }
 }
 
-module deployerSearchData 'modules/role-search.bicep' = if (!empty(principalId)) {
+module deployerSearchData 'modules/role-search.bicep' = if (deployBasic && !empty(principalId)) {
   scope: rg
   params: {
-    resourceName: search.outputs.name
+    resourceName: search!.outputs.name
     principalId: principalId
     roleDefinitionId: searchIndexDataContributor
     principalType: 'User'
@@ -569,8 +577,8 @@ output PARTS_KB_CONNECTION_NAME string = partsKbConnection.outputs.name
 output EMBEDDING_DEPLOYMENT string = foundry.outputs.embeddingDeployment
 output EMBEDDING_MODEL string = embeddingModelName
 output SEARCH_ENDPOINT string = searchEndpoint
-output SEARCH_SERVICE_NAME string = serverlessActive ? searchServerless!.outputs.name : search.outputs.name
-output SEARCH_BASIC_ENDPOINT string = search.outputs.endpoint
+output SEARCH_SERVICE_NAME string = serverlessActive ? searchServerless!.outputs.name : search!.outputs.name
+output SEARCH_BASIC_ENDPOINT string = deployBasic ? search!.outputs.endpoint : ''
 output SEARCH_SERVERLESS_ENDPOINT string = deployServerless ? searchServerless!.outputs.endpoint : ''
 output STORAGE_ACCOUNT_NAME string = storage.outputs.name
 output STORAGE_RESOURCE_ID string = storage.outputs.id

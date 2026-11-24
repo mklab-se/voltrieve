@@ -1,7 +1,9 @@
-"""Reads the compiled template on stdin (test_bicep.sh): what hangs on serverlessSearch, and what
-`active` moves."""
+"""Reads the compiled template on stdin (test_bicep.sh): what hangs on serverlessSearch and
+basicSearch, what `active` moves, and that without the Basic service nothing refers to it."""
 
+import ast
 import json
+import re
 import sys
 
 template = json.load(sys.stdin)
@@ -18,7 +20,12 @@ assert parameters["planningModelName"]["defaultValue"] == "gpt-5.4-mini"
 
 conditional = {n for n, m in modules.items() if "deployServerless" in str(m.get("condition"))}
 assert conditional == {"searchServerless", "searchServerlessRoles"}, conditional
-assert "condition" not in modules["search"]
+assert parameters["basicSearch"]["allowedValues"] == ["on", "off"]
+assert parameters["basicSearch"]["defaultValue"] == "on"
+# everything that is about Basic: its roles, and who may use it. Nothing else hangs on it
+BASIC = {"search", "apiReadsSearch", "hostedReadsSearch", "searchReadsStorage", "searchUsesFoundry",
+         "searchPlansWithFoundry", "projectReadsSearch", "deployerSearchService", "deployerSearchData"}
+assert {n for n, m in modules.items() if "deployBasic" in str(m.get("condition"))} == BASIC
 assert template["variables"]["deployServerless"] == "[not(equals(parameters('serverlessSearch'), 'off'))]"
 assert template["variables"]["serverlessActive"] == "[equals(parameters('serverlessSearch'), 'active')]"
 
@@ -72,4 +79,88 @@ assert role("readers")[1] == "[variables('searchIndexDataReader')]"
 deployer = role("deployer")
 assert deployer[0] == "[parameters('deployerPrincipalId')]"
 assert "searchServiceContributor" in deployer[1] and "searchIndexDataContributor" in deployer[1]
+
+
+# every combination of the two values, worked out as a deployment would: if() takes one branch only
+class Refused(Exception):
+    pass
+
+
+class Deployment:
+    def __init__(self, **values):
+        self.values = {n: p.get("defaultValue", n) for n, p in parameters.items()} | values
+
+    def text(self, value, reached):
+        """The value of one template string. `reached` collects the modules it refers to."""
+        if not (isinstance(value, str) and value.startswith("[") and not value.startswith("[[")):
+            return value
+        # if, and, or and not are words of Python, so they get another name
+        expression = re.sub(r"\b(if|and|or|not|true|false|null)\(", r"arm_\1(", value[1:-1])
+        return self.walk(ast.parse(expression, mode="eval").body, reached)
+
+    def walk(self, node, reached):
+        if isinstance(node, ast.Constant):
+            return node.value
+        if not isinstance(node, ast.Call):
+            for child in ast.iter_child_nodes(node):
+                self.walk(child, reached)
+            return "unknown"
+        name = node.func.id if isinstance(node.func, ast.Name) else ""
+        if name == "arm_if":
+            test = self.walk(node.args[0], reached)
+            assert isinstance(test, bool), ast.unparse(node)
+            return self.walk(node.args[1 if test else 2], reached)
+        args = [self.walk(a, reached) for a in node.args]
+        if name == "fail":
+            raise Refused(args[0])
+        if name == "reference":
+            reached.add(args[0])
+        if name == "variables":
+            return self.text(template["variables"][args[0]], reached)
+        known = {
+            "parameters": lambda: self.values[args[0]], "equals": lambda: args[0] == args[1],
+            "empty": lambda: args[0] == "", "arm_not": lambda: not args[0], "arm_and": lambda: all(args),
+            "arm_or": lambda: any(args), "arm_true": lambda: True, "arm_false": lambda: False,
+        }
+        return known[name]() if name in known else "unknown"
+
+    def everything(self, value, reached):
+        if isinstance(value, dict):
+            value = list(value.values())
+        if isinstance(value, list):
+            for item in value:
+                self.everything(item, reached)
+        else:
+            self.text(value, reached)
+
+    def run(self):
+        """The deployed modules, and for each of them and each output the modules it refers to."""
+        deployed = {n: m for n, m in modules.items() if self.text(m.get("condition", True), set())}
+        uses = {}
+        for name, value in [(n, m["properties"].get("parameters", {})) for n, m in deployed.items()] + [
+            (n, o["value"]) for n, o in template["outputs"].items()
+        ]:
+            self.everything(value, uses.setdefault(name, set()))
+        return set(deployed), uses
+
+
+everyone = {"hostedAgentPrincipalId": "agent", "principalId": "deployer"}
+for serverless in ("off", "standby", "active"):
+    deployed, uses = Deployment(serverlessSearch=serverless, **everyone).run()  # Basic is on by default
+    assert BASIC <= deployed and uses["SEARCH_BASIC_ENDPOINT"] == {"search"}
+    assert all(reached <= deployed for reached in uses.values()), (serverless, uses)
+    if serverless != "active":
+        try:
+            Deployment(basicSearch="off", serverlessSearch=serverless, **everyone).run()
+        except Refused as refused:
+            assert "SEARCH_SERVERLESS active" in str(refused)
+        else:
+            raise AssertionError(f"Basic can be off with Serverless {serverless}")
+
+deployed, uses = Deployment(basicSearch="off", serverlessSearch="active", **everyone).run()
+assert deployed & BASIC == set() and {"searchServerless", "searchServerlessRoles"} <= deployed
+assert all(reached <= deployed for reached in uses.values()), uses  # nothing refers to what is not there
+for user in ("apiApp", "kbConnection", "partsKbConnection", "SEARCH_ENDPOINT", "SEARCH_SERVICE_NAME"):
+    assert "searchServerless" in uses[user], user
+assert uses["SEARCH_BASIC_ENDPOINT"] == set()
 print("serverless ok")

@@ -45,17 +45,18 @@ if grep -q "planningModelVersion" main.bicep modules/foundry.bicep; then echo "g
 for model in "{ name: 'gpt-5.4-mini', version: '2026-03-17' }" "{ name: 'gpt-6-luna', version: '2026-09-22' }"; do
   grep -qF "$model" main.bicep || { echo "main.bicep lacks planning deployment $model"; exit 1; }
 done
-# Serverless search is off by default, and the Basic service is never conditional
+# Serverless search is off and the Basic service on by default
 grep -q "^param serverlessSearch string = 'off'$" main.bicep || { echo "Serverless search is not off by default"; exit 1; }
 grep -q '"serverlessSearch": { "value": "${SEARCH_SERVERLESS=off}" }' main.parameters.json || { echo "SEARCH_SERVERLESS does not default to off"; exit 1; }
-grep -q "^module search 'modules/search.bicep' = {$" main.bicep || { echo "the Basic service became conditional"; exit 1; }
+grep -q "^param basicSearch string = 'on'$" main.bicep || { echo "the Basic service is not on by default"; exit 1; }
+grep -q '"basicSearch": { "value": "${SEARCH_BASIC=on}" }' main.parameters.json || { echo "SEARCH_BASIC does not default to on"; exit 1; }
 grep -q "sku: { name: 'basic' }" modules/search.bicep || { echo "the Basic service changed tier"; exit 1; }
 grep -q "sku: { name: 'serverless' }" modules/search-serverless.bicep || { echo "no Serverless service"; exit 1; }
 for f in modules/search.bicep modules/search-serverless.bicep; do
   grep -q "disableLocalAuth: true" $f || { echo "$f allows keys"; exit 1; }
   grep -q "knowledgeRetrieval: 'standard'" $f || { echo "$f has the free retrieval plan"; exit 1; }
 done
-# what is compiled: what hangs on the parameter, and what active moves
+# what is compiled: what hangs on the two parameters, what active moves, and that off leaves nothing of Basic
 az bicep build --file main.bicep --stdout 2>/dev/null | python3 tests/check_serverless.py || { echo "check_serverless.py failed"; exit 1; }
 # the insights role reads conversations and nothing more
 R=modules/insights-role.bicep

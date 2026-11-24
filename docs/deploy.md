@@ -50,7 +50,8 @@ The name is limited to 22 characters and appears in resource names. Optional val
 | --- | --- | --- |
 | `AZURE_SEARCH_LOCATION` | `francecentral` | Search region |
 | `PLANNING_MODEL_NAME` | `gpt-5.4-mini` | The model that plans Search queries. The only other value is `gpt-6-luna`, which is opt-in and follows [its own order](#order-for-an-update-with-the-new-search-values) |
-| `SEARCH_SERVERLESS` | `off` | A Serverless search service next to the Basic one. `off`: not deployed. `standby`: deployed, nothing uses it. `active`: the API and agents use it. Basic stays in all three, and going back to `off` does not delete a deployed service |
+| `SEARCH_SERVERLESS` | `off` | A Serverless search service next to the Basic one. `off`: not deployed. `standby`: deployed, nothing uses it. `active`: the API and agents use it. `SEARCH_BASIC` alone decides on Basic. Going back to `off` does not delete a deployed service |
+| `SEARCH_BASIC` | `on` | The Basic search service. `off`: not deployed, and nothing refers to it. Only with `SEARCH_SERVERLESS` at `active`, or the provision stops. It does not delete a deployed service: [Removing the Basic service](#removing-the-basic-service) |
 | `INSIGHTS_SCHEDULE` | `off` | The usage insights job. `off`: it starts by hand only. `on`: every night at 02:30 UTC, once the job has its image |
 | `INSIGHTS_NOTICE_DATE` | empty | The first full UTC day the notice was live in the car and on the website, as `YYYY-MM-DD`: the day after it went live. Real chats started before it are never read. Empty: no real chat is read |
 | `VOLTRIEVE_VERIFIED_DOMAIN` | the tenant's default domain | Domain for the tester account |
@@ -233,9 +234,9 @@ Approximate:
 
 | Resource | Idle cost |
 | --- | --- |
-| Azure AI Search Basic | About 75 USD a month |
+| Azure AI Search Basic | About 75 USD a month (22 SEK a day on the November 2026 bill). 0 only once the service is [deleted](#removing-the-basic-service) |
 | Azure AI Search Serverless, `off` (the default) | 0 |
-| Azure AI Search Serverless, `standby` or `active` | Storage under 0.01 USD a month, and 0.255 USD per CU hour while it works, on top of Basic. It sleeps after 10 idle minutes |
+| Azure AI Search Serverless, `standby` or `active` | Storage under 0.01 USD a month, and 0.255 USD per CU hour while it works, on top of Basic while that one exists. It sleeps after 10 idle minutes |
 | Container Registry Basic | About 5 USD a month |
 | Log Analytics | Small, by ingestion. The insights table adds a few MB a year |
 | Usage insights job | None: per run, one a night at most when it is on |
@@ -288,6 +289,98 @@ azd env set HOSTED_AGENT_PRINCIPAL_ID ""
 ```
 
 The tester password is printed again only if the account was deleted and is recreated.
+
+## Removing the Basic service
+
+Once Serverless is `active`, nothing uses the Basic service, but it costs the same, about 22 SEK a day. Setting a value never deletes it: azd deploys incrementally, so a service that leaves the template stays in Azure and stays on the bill. The delete is a command of its own, run by the product owner.
+
+```mermaid
+flowchart LR
+    Active["SEARCH_SERVERLESS=active"] --> Count["1. Compare the counts"]
+    Count --> Off["2. SEARCH_BASIC=off, provision.<br/>Basic still runs and costs"]
+    Off --> Check["3. Smoke and routing check"]
+    Check --> Delete["4. The owner deletes it.<br/>No way to undo"]
+    Off -. "SEARCH_BASIC=on, provision:<br/>nothing is lost" .-> Active
+    Delete -. "SEARCH_BASIC=on, provision:<br/>a new, empty service" .-> Active
+```
+
+**1. Compare what the two services hold,** while the environment still knows both. Keep this shell open, because step 2 empties `SEARCH_BASIC_ENDPOINT`:
+
+```sh
+eval "$(azd env get-values)"   # not exported, so the provision below reads its own values
+BASIC_ENDPOINT="$SEARCH_BASIC_ENDPOINT"
+BASIC_NAME="${BASIC_ENDPOINT#https://}"; BASIC_NAME="${BASIC_NAME%%.*}"
+BASIC_PRINCIPAL="$(az search service show -n "$BASIC_NAME" -g "$AZURE_RESOURCE_GROUP" --query identity.principalId -o tsv)"
+search_get() { az rest --resource https://search.azure.com --url "$1?api-version=2026-11-01-preview" --query "$2" -o tsv; }
+for endpoint in "$BASIC_ENDPOINT" "$SEARCH_SERVERLESS_ENDPOINT"; do
+  echo "$endpoint"
+  search_get "$endpoint/knowledgebases" 'value[].name'
+  for index in $(search_get "$endpoint/indexes" 'value[].name'); do
+    echo "$index $(search_get "$endpoint/indexes/$index/stats" documentCount)"
+  done
+done
+```
+
+Both must have the same two indexes (`voltrieve-docs-index`, `voltrieve-parts-index`) and the same two knowledge bases. The counts are chunks. They should be equal. Basic may hold older documents, because a provision only fills the active service. If Serverless has fewer, run `SEARCH_ENDPOINT="$SEARCH_SERVERLESS_ENDPOINT" uv run --project search voltrieve-search index` and compare again. Stop if Basic holds an index or a knowledge base that Serverless does not.
+
+**2. Leave Basic out.** The preview must not create or delete a search service:
+
+```sh
+azd env set SEARCH_BASIC off
+azd provision --preview
+azd provision
+scripts/deploy-agents.sh
+```
+
+The provision keeps the Serverless endpoint everywhere. It stops managing the Basic service and its eight role assignments, which all stay where they are. `SEARCH_BASIC_ENDPOINT` becomes empty, and `voltrieve-search upload --prune` then only knows Serverless.
+
+**3. Check that everything answers without it:**
+
+```sh
+PLANNING_MODEL="$(azd env get-value PLANNING_MODEL)" SEARCH_ENDPOINT="$(azd env get-value SEARCH_ENDPOINT)" \
+  uv run --project search voltrieve-search smoke
+uv run scripts/smoke.py
+uv run tests/routing/check.py
+az monitor metrics list --resource "$(az search service show -n "$BASIC_NAME" -g "$AZURE_RESOURCE_GROUP" --query id -o tsv)" \
+  --metric SearchQueriesPerSecond --offset 2h --interval PT5M --query 'value[].timeseries[].data[?average > `0`] | []'
+```
+
+The last command must print `[]`: no query reached Basic in two hours, with the checks in them.
+
+**4. The owner deletes it.** Not a script, not a hook and not an agent without the owner's yes. Look at the name and the tier first: it must say `basic`, and it must not be the name in `SEARCH_SERVICE_NAME`:
+
+```sh
+az search service show -n "$BASIC_NAME" -g "$AZURE_RESOURCE_GROUP" --query '{name:name, tier:sku.name}' -o table
+echo "keep: $(azd env get-value SEARCH_SERVICE_NAME)"
+az search service delete -n "$BASIC_NAME" -g "$AZURE_RESOURCE_GROUP"
+```
+
+It asks for a yes. **It cannot be undone:** the indexes, the knowledge bases and the indexer history of that service are gone. No data is lost that Serverless does not hold: the documents are in storage, the definitions are in the repository, and step 1 compared the counts. Older versions of the prompt agents point at Basic and stop working. The versions that step 2 created do not.
+
+Its identity leaves three role assignments behind, one on storage and two on Foundry. They let nobody in. Look at the list, then delete them:
+
+```sh
+az role assignment list --all --query "[?principalId=='$BASIC_PRINCIPAL'].{id:id, role:roleDefinitionName}" -o table
+az role assignment delete --ids $(az role assignment list --all --query "[?principalId=='$BASIC_PRINCIPAL'].id" -o tsv)
+```
+
+**The way back.** Before step 4 nothing is lost: set `SEARCH_BASIC` to `on`, provision, and fill it as below. After step 4 the same commands create a new, empty service:
+
+```sh
+azd env set SEARCH_BASIC on
+azd provision
+
+set -a; eval "$(azd env get-values)"; set +a
+export SEARCH_ENDPOINT="$SEARCH_BASIC_ENDPOINT"        # this shell only, the API still uses Serverless
+uv run --project search voltrieve-search apply         # 403: the new roles need some minutes
+uv run --project search voltrieve-search index
+uv run --project search voltrieve-search smoke
+unset SEARCH_ENDPOINT
+```
+
+Then, in a new shell, `SEARCH_SERVERLESS` goes to `standby`, with a provision and `scripts/deploy-agents.sh`. The [rollback of Serverless](#order-for-an-update-with-the-new-search-values) is refused until `SEARCH_BASIC` is `on`. The way back costs about 22 SEK a day from the minute the service exists, one round of embeddings (159 chunks, under 0.01 USD), and the time of two provisions. It also needs the region to take a new service: `AZURE_SEARCH_LOCATION` was accepted on 2026-11-04, and that is no promise.
+
+Not verified: none of these commands has been run. Checked without Azure: the compiled template, worked out for every combination of the two values.
 
 ## Order for an update with the new search values
 

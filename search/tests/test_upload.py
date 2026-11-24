@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 import voltrieve_search.upload as upload
 from voltrieve_search.client import SearchApiError
 
@@ -228,7 +230,7 @@ class PruneSearch:
 def prune(monkeypatch, search, deleted=("d/old.pdf",), args=("--prune",), **env):
     import voltrieve_search.cli as cli
 
-    for name in ("SEARCH_ENDPOINT", "SEARCH_BASIC_ENDPOINT", "SEARCH_SERVERLESS_ENDPOINT"):
+    for name in ("SEARCH_ENDPOINT", "SEARCH_BASIC", "SEARCH_BASIC_ENDPOINT", "SEARCH_SERVERLESS_ENDPOINT"):
         monkeypatch.delenv(name, raising=False)
     for name, value in {"STORAGE_ACCOUNT_NAME": "s", "DOCS_CONTAINER": "d", "PARTS_CONTAINER": "p", **env}.items():
         monkeypatch.setenv(name, value)
@@ -278,6 +280,32 @@ def test_prune_needs_the_whole_environment(monkeypatch, capsys):
     search = PruneSearch()
     assert prune(monkeypatch, search, SEARCH_ENDPOINT=BASIC) == 1
     assert search.events == [] and "SEARCH_BASIC_ENDPOINT" in capsys.readouterr().err
+
+
+def test_prune_works_without_the_basic_service(monkeypatch):
+    search = PruneSearch()
+    assert prune(monkeypatch, search, SEARCH_BASIC="off", SEARCH_BASIC_ENDPOINT="", SEARCH_ENDPOINT=SERVERLESS,
+                 SEARCH_SERVERLESS_ENDPOINT=SERVERLESS) == 0
+    assert search.deleted == [(SERVERLESS, "voltrieve-docs-index")]
+
+
+def test_prune_still_reaches_a_basic_service_the_environment_names(monkeypatch):
+    """off is set, but not provisioned yet."""
+    search = PruneSearch()
+    assert prune(monkeypatch, search, SEARCH_BASIC="off", SEARCH_BASIC_ENDPOINT=BASIC, SEARCH_ENDPOINT=SERVERLESS,
+                 SEARCH_SERVERLESS_ENDPOINT=SERVERLESS) == 0
+    assert sorted(search.deleted) == [(BASIC, "voltrieve-docs-index"), (SERVERLESS, "voltrieve-docs-index")]
+
+
+@pytest.mark.parametrize(("env", "missing"), [
+    ({"SEARCH_BASIC": "off"}, "SEARCH_SERVERLESS_ENDPOINT"),
+    ({"SEARCH_BASIC": "on", "SEARCH_SERVERLESS_ENDPOINT": "set"}, "SEARCH_BASIC_ENDPOINT"),
+    ({"SEARCH_SERVERLESS_ENDPOINT": "set"}, "SEARCH_BASIC_ENDPOINT"),
+])
+def test_an_empty_basic_endpoint_needs_basic_off_and_a_serverless_service(monkeypatch, capsys, env, missing):
+    search = PruneSearch()
+    assert prune(monkeypatch, search, SEARCH_ENDPOINT=SERVERLESS, SEARCH_BASIC_ENDPOINT="", **env) == 1
+    assert search.events == [] and missing in capsys.readouterr().err
 
 
 def test_an_upload_or_a_dry_run_needs_no_search_service(monkeypatch):

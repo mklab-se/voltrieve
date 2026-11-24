@@ -7,6 +7,7 @@
     "searchLocation": { "value": "${AZURE_SEARCH_LOCATION=francecentral}" },
     "planningModelName": { "value": "${PLANNING_MODEL_NAME=gpt-5.4-mini}" },
     "serverlessSearch": { "value": "${SEARCH_SERVERLESS=off}" },
+    "basicSearch": { "value": "${SEARCH_BASIC=on}" },
     "principalId": { "value": "${AZURE_PRINCIPAL_ID}" },
     "tenantId": { "value": "${TENANT_ID}" },
     "dealerExists": { "value": "${SERVICE_DEALER_RESOURCE_EXISTS=false}" },
