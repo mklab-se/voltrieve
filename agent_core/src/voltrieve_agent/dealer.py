@@ -7,6 +7,14 @@ import httpx
 
 from voltrieve_agent.tools import current_correlation_id
 
+# What the model is told after the terms.
+ASK_FOR_ADDRESS = (
+    "Nothing is ordered yet. Ask the user for the delivery address, and say that it is saved with "
+    "the order."
+)
+# An offer becomes one order, so placing it twice is safe. Starting over is not.
+PLACE_AGAIN = "The order may have been received. Call place_car_order again with the same offer."
+
 
 class DealerClient:
     def __init__(
@@ -34,7 +42,31 @@ class DealerClient:
         body = {"model": model, "city": city, "date": date, "requester": requester}
         return await self._call("POST", "/test-drives", json=body)
 
-    async def _call(self, method: str, path: str, **kwargs) -> str:
+    async def terms(self, model: str) -> str:
+        return await self._call("GET", "/orders/terms", params={"model": model}, then=ASK_FOR_ADDRESS)
+
+    async def offer(
+        self, model: str, address: str, customer: str, name: str, turn: str | None, client: str
+    ) -> str:
+        body = {
+            "model": model,
+            "address": address,
+            "customer": customer,
+            "name": name,
+            "turn": turn,
+            "client": client,
+        }
+        return await self._call("POST", "/orders/offers", json=body)
+
+    async def place(self, offer: str, customer: str, turn: str | None) -> str:
+        body = {"offer": offer, "customer": customer, "turn": turn}
+        return await self._call("POST", "/orders", json=body, on_timeout=PLACE_AGAIN)
+
+    async def _call(
+        self, method: str, path: str, then: str = "", on_timeout: str | None = None, **kwargs
+    ) -> str:
+        """The answer, with `then` after it when the call succeeded. `on_timeout` is the text for a
+        request that was sent and got no answer in time."""
         headers = {
             "Authorization": f"Bearer {await self._token_provider()}",
             "X-Correlation-Id": current_correlation_id.get() or str(uuid.uuid4()),
@@ -44,9 +76,11 @@ class DealerClient:
                 method, f"{self._base_url}{path}", headers=headers, **kwargs
             )
         except httpx.HTTPError as exc:
+            if on_timeout is not None and isinstance(exc, httpx.ReadTimeout):
+                return on_timeout
             return f"The dealer service could not be reached ({type(exc).__name__}). Try again later."
         if response.is_success:
-            return response.text
+            return f"{response.text}\n{then}" if then else response.text
         if response.status_code >= 500:
             return (
                 f"The dealer service is unavailable (HTTP {response.status_code}). "

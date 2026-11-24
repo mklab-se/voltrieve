@@ -22,6 +22,21 @@ _ID_NUMBER = re.compile(r"\b(?:19|20)?\d{6}[-+]?\d{4}\b")  # Swedish personal id
 # A phone number starts with + or 0 (070-123 45 67, +46 70 123 45 67): prices, dates and part
 # numbers do not, so they stay readable.
 _PHONE = re.compile(r"(?:\+\d|\b0\d)[\d\s()-]{5,18}\d")
+# Swedish forms only. A name ends with one of the words (Storgatan 1, Olof Palmes gata 7), with up to two
+# capitalized words before it, and the apartment and postal code after it. ä may be typed as a, or as a
+# and a combining mark. Every repeat is bounded, or runs over one word that the lookbehind starts once.
+_POSTAL_DIGITS = r"(?:SE?-)?[1-9]\d{2}"
+_ADDRESS = re.compile(
+    r"(?<!\w)(?:[A-ZÅÄÖ][^\W\d_]*[^\S\n]){0,2}"
+    r"(?i:[^\W\d_]*(?:gatan?|v[äa]\u0308?g(?:en)?|torg(?:et)?|gr(?:ä|a\u0308)nd(?:en)?"
+    r"|all(?:é|e\u0301)n?|stigen|backen|kajen|esplanaden)"
+    r"\s{0,3}(?:nr\.?\s{0,3})?\d{1,4}(?!\d))"
+    r"(?:[A-Za-z](?!\w)|\s[A-Z](?!\w))?(?:-\d{1,4}[A-Za-z]?(?!\w))?"
+    r"(?i:,?\s(?:lgh|lägenhet|apt)\.?\s?\d{1,4})?"
+    rf"(?:,?\s{{1,2}}{_POSTAL_DIGITS}\s?\d{{2}}(?!\w))?"
+)
+# With its space, so a price or a part number (12500, 529 000, VP-10007) stays readable.
+_POSTAL_CODE = re.compile(rf"(?<![\w-])(?<!\d\s){_POSTAL_DIGITS}\s\d{{2}}(?!\w)(?!\s\d)")
 
 MAX_ERRORS = 8
 MAX_FRAMES = 30  # of each error, the ones closest to it
@@ -33,10 +48,12 @@ def mask_emails(text: str) -> str:
 
 
 def mask_contacts(text: str) -> str:
-    """The text with email addresses, phone numbers and Swedish id numbers replaced."""
+    """The text with email addresses, phone numbers, Swedish id numbers, street addresses and postal
+    codes replaced. Addresses are a best effort: a pattern cannot find every one."""
     masked = mask_emails(text)
     masked = _PHONE.sub(lambda m: "[phone]" if sum(c.isdigit() for c in m[0]) >= 8 else m[0], masked)
-    return _ID_NUMBER.sub("[id number]", masked)
+    masked = _ID_NUMBER.sub("[id number]", masked)
+    return _POSTAL_CODE.sub("[postal code]", _ADDRESS.sub("[address]", masked))
 
 
 def pseudonym(oid: str) -> str:

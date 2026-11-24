@@ -7,8 +7,8 @@ import respx
 
 from voltrieve_agent.dealer import DealerClient
 from voltrieve_agent.knowledge import KnowledgeBase
-from voltrieve_agent.server_tools import build_server_tools
-from voltrieve_agent.tools import ToolSet, UserContext, current_correlation_id
+from voltrieve_agent.server_tools import CAR_REFUSAL, ORDER_CLIENTS, ORDER_ROLE, build_server_tools
+from voltrieve_agent.tools import ToolSet, UserContext, current_correlation_id, current_turn_id
 
 BASE = "https://dealer.test"
 
@@ -183,9 +183,9 @@ def test_routing_descriptions_say_what_each_base_does_not_hold():
     assert "does not say which parts a job needs" in tools["search_spare_parts"].description
 
 
-def test_only_the_booking_tool_runs_alone():
+def test_only_the_tools_that_change_something_run_alone():
     alone = [t.name for t in build_server_tools(None, None) if not t.concurrent]
-    assert alone == ["book_test_drive"]
+    assert alone == ["book_test_drive", "prepare_car_order", "place_car_order"]
 
 
 async def test_parts_search_uses_the_parts_knowledge_base(monkeypatch):
@@ -323,3 +323,158 @@ def test_parts_description_names_the_new_catalogs():
     parts = next(t for t in build_server_tools(None, None) if t.name == "search_spare_parts").description
     for kind in ("tyres", "interior", "body", "lighting"):
         assert kind in parts, kind
+
+
+ADDRESS = "Storgatan 1, 753 20 Uppsala"
+ORDER_TOOLS = ("prepare_car_order", "place_car_order")
+ORDER_CALLS = {
+    "prepare_car_order": json.dumps({"model": "fjord", "address": ADDRESS}),
+    "place_car_order": json.dumps({"offer": "offer-1"}),
+}
+
+
+def order_user(client="web", *roles):
+    return UserContext("oid-anna", "anna@example.com", frozenset(roles or {"Order.Place"}), "Anna A", client)
+
+
+@pytest.fixture
+def buyer():
+    return order_user()
+
+
+@pytest.fixture
+def in_turn():
+    reset = current_turn_id.set("turn-7")
+    yield
+    current_turn_id.reset(reset)
+
+
+def order_tools():
+    return [t for t in build_server_tools(None, None) if t.name in ORDER_TOOLS]
+
+
+def test_the_order_tools_are_private_run_alone_and_need_the_role_and_a_client():
+    assert CAR_REFUSAL == (
+        "It is not possible to order a car from within the car. "
+        "You are welcome to talk with Runa about buying a car on the Voltrieve website."
+    )
+    assert ORDER_CLIENTS == frozenset({"web", "cli"}) and ORDER_ROLE == "Order.Place"
+    assert [t.name for t in order_tools()] == list(ORDER_TOOLS)
+    for tool in order_tools():
+        assert tool.private and not tool.concurrent and tool.required_role == ORDER_ROLE
+        assert tool.clients == ORDER_CLIENTS and tool.client_refusal == CAR_REFUSAL
+    others = [t for t in build_server_tools(None, None) if t.name not in ORDER_TOOLS]
+    assert all(t.clients is None and not t.private for t in others)
+
+
+def test_the_schemas_descriptions_and_statuses_of_the_order_tools():
+    from voltrieve_agent.server_tools import MODEL_SLUGS
+
+    prepare, place = order_tools()
+    assert prepare.parameters["properties"]["model"]["enum"] == MODEL_SLUGS
+    assert prepare.parameters["properties"]["address"] == {"type": "string", "minLength": 5, "maxLength": 200}
+    assert set(prepare.parameters["properties"]) == {"model", "address"}
+    assert prepare.parameters["required"] == ["model"] and prepare.parameters["additionalProperties"] is False
+    assert place.parameters == {
+        "type": "object", "properties": {"offer": {"type": "string", "maxLength": 40}},
+        "required": ["offer"], "additionalProperties": False,
+    }
+    assert prepare.status == ("preparing_order", "Preparing your order")
+    assert place.status == ("placing_order", "Placing your order")
+    assert prepare.description == (
+        "Call this first when the user wants to buy or order a car, before you ask for anything. Without an "
+        "address it gives the price and the stock. With the address the user gave, it makes an offer to read back."
+    )
+    assert place.description == (
+        "Order the car of an offer. Only when the user has said yes to the offer in a later message."
+    )
+
+
+@respx.mock
+async def test_prepare_without_an_address_gives_the_terms_and_asks_for_it(tools, buyer, events, in_turn):
+    route = respx.get(f"{BASE}/orders/terms").respond(200, json={"model": "fjord", "price": 529000})
+    out = await tools[0].execute("prepare_car_order", '{"model": "fjord"}', buyer, events)
+    assert dict(route.calls.last.request.url.params) == {"model": "fjord"} and len(respx.calls) == 1
+    assert '"price":529000' in out.replace(" ", "")
+    assert "Ask the user for the delivery address" in out and "saved with the order" in out
+
+
+@respx.mock
+async def test_no_address_is_asked_for_when_the_terms_fail(tools, buyer, events, in_turn):
+    respx.get(f"{BASE}/orders/terms").respond(503)
+    out = await tools[0].execute("prepare_car_order", '{"model": "fjord"}', buyer, events)
+    assert "unavailable" in out and "address" not in out
+
+
+@respx.mock
+async def test_prepare_with_an_address_posts_who_and_when_from_the_context(tools, buyer, events, in_turn):
+    route = respx.post(f"{BASE}/orders/offers").respond(201, json={"offer": "offer-1", "price": 529000})
+    out = await tools[0].execute("prepare_car_order", ORDER_CALLS["prepare_car_order"], buyer, events)
+    assert json.loads(out) == {"offer": "offer-1", "price": 529000} and len(respx.calls) == 1
+    request = route.calls.last.request
+    assert json.loads(request.content) == {
+        "model": "fjord", "address": ADDRESS, "customer": "oid-anna", "name": "Anna A", "turn": "turn-7",
+        "client": "web",
+    }
+    assert str(request.url) == f"{BASE}/orders/offers" and "Storgatan" not in str(request.headers)
+
+
+@respx.mock
+async def test_place_posts_the_offer_the_customer_and_the_turn(tools, buyer, events, in_turn):
+    route = respx.post(f"{BASE}/orders").respond(201, json={"order_number": "VO-1001"})
+    out = await tools[0].execute("place_car_order", ORDER_CALLS["place_car_order"], buyer, events)
+    assert json.loads(out) == {"order_number": "VO-1001"}
+    sent = json.loads(route.calls.last.request.content)
+    assert sent == {"offer": "offer-1", "customer": "oid-anna", "turn": "turn-7"}
+
+
+@pytest.mark.parametrize("extra", ["customer", "name", "turn", "client"])
+@pytest.mark.parametrize("name", ORDER_TOOLS)
+async def test_the_model_cannot_say_who_orders_or_when(tools, buyer, events, name, extra):
+    arguments = json.loads(ORDER_CALLS[name]) | {extra: "mallory"}
+    out = await tools[0].execute(name, json.dumps(arguments), buyer, events)
+    assert out == f"Error: invalid arguments for '{name}': arguments: additionalProperties False"
+
+
+@respx.mock
+@pytest.mark.parametrize("client", ["car", "other", "test", ""])
+@pytest.mark.parametrize("name", ORDER_TOOLS)
+async def test_the_car_and_unknown_clients_never_reach_the_dealer(tools, events, name, client):
+    out = await tools[0].execute(name, ORDER_CALLS[name], order_user(client, "Chat.User"), events)
+    assert out == CAR_REFUSAL and len(respx.calls) == 0
+    assert [e.data["step"] for e in events.events] == ["client_not_allowed"]
+
+
+@respx.mock
+@pytest.mark.parametrize("name", ORDER_TOOLS)
+async def test_the_order_tools_need_the_role(tools, events, name):
+    out = await tools[0].execute(name, ORDER_CALLS[name], order_user("web", "TestDrive.Book"), events)
+    assert out.startswith("Refused") and len(respx.calls) == 0
+
+
+@respx.mock
+async def test_a_read_timeout_on_placing_says_that_the_order_may_exist(tools, buyer, events, in_turn):
+    route = respx.post(f"{BASE}/orders").mock(side_effect=httpx.ReadTimeout("slow"))
+    out = await tools[0].execute("place_car_order", ORDER_CALLS["place_car_order"], buyer, events)
+    assert out == "The order may have been received. Call place_car_order again with the same offer."
+    assert route.call_count == 1
+
+
+@respx.mock
+async def test_other_failures_give_the_text_of_today(tools, buyer, events, in_turn):
+    unreachable = "The dealer service could not be reached ({}). Try again later."
+    respx.post(f"{BASE}/orders").mock(side_effect=httpx.ConnectError("no"))
+    out = await tools[0].execute("place_car_order", ORDER_CALLS["place_car_order"], buyer, events)
+    assert out == unreachable.format("ConnectError")
+    respx.post(f"{BASE}/orders/offers").mock(side_effect=httpx.ReadTimeout("slow"))
+    out = await tools[0].execute("prepare_car_order", ORDER_CALLS["prepare_car_order"], buyer, events)
+    assert out == unreachable.format("ReadTimeout")
+
+
+@respx.mock
+async def test_a_refusal_of_the_dealer_reaches_the_model_and_no_log(tools, buyer, events, in_turn, caplog):
+    respx.post(f"{BASE}/orders").respond(409, json={"detail": f"The customer has not answered yet. {ADDRESS}"})
+    with caplog.at_level("DEBUG"):
+        out = await tools[0].execute("place_car_order", ORDER_CALLS["place_car_order"], buyer, events)
+    assert "HTTP 409" in out and "has not answered yet" in out
+    assert ADDRESS not in caplog.text and events.events == []

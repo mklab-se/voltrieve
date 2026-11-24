@@ -328,3 +328,56 @@ def test_new_email_pattern_covers_everything_the_old_one_did():
     for _ in range(20_000):
         text = "".join(rng.choice(alphabet) for _ in range(rng.randint(0, 30)))
         assert covered(old, text) <= covered(_EMAIL, text), text
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Storgatan 1, 753 20 Uppsala", "[address] Uppsala"),
+        ("Västra Hamngatan 12B", "[address]"),
+        ("Kungsvägen 3", "[address]"),
+        ("Ringvägen 100 lgh 1102", "[address]"),
+        ("Torget 5", "[address]"),
+        ("send it to storgatan 1 please", "send it to [address] please"),
+        ("Olof Palmes gata 7, lägenhet 12", "[address]"),
+        ("Allégränd 4\nSE-753 20 Uppsala", "[address] Uppsala"),
+        ("Björkallén 12-14, 75320 Uppsala", "[address] Uppsala"),
+        ("KUNGSVÄGEN 3", "[address]"),
+        ("Kungsva\u0308gen 3", "[address]"),
+        ("Kungsvagen 3", "[address]"),
+        ("Storgatan nr 5", "[address]"),
+        ("I live in 753 20 Uppsala", "I live in [postal code] Uppsala"),
+        ("SE-753 20, S-211 22", "[postal code], [postal code]"),
+        ("753\u00a020 Uppsala", "[postal code] Uppsala"),
+        ("Storgatan 1, 070-123 45 67", "[address], [phone]"),
+    ],
+)
+def test_mask_contacts_replaces_addresses(text, expected):
+    from voltrieve_agent.private import mask_contacts
+
+    assert mask_contacts(text) == expected
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["529 000 SEK", "VP-10007", "Fjord 2", "100 km", "model year 2026", "1 500 kr", "VP-753 20", "Order 2 Atlas",
+     "costs 1 529 00", "a service plan 3", "page 12 of the guide", "brake discs 345 mm", "529000 SEK",
+     "gatan", "the 250 kW charger"],
+)
+def test_mask_contacts_keeps_what_is_not_an_address(text):
+    from voltrieve_agent.private import mask_contacts
+
+    assert mask_contacts(text) == text
+
+
+def test_mask_contacts_is_fast_on_long_text_that_looks_like_addresses():
+    import time
+
+    from voltrieve_agent.private import mask_contacts
+
+    for chunk in ("A", "Ab ", "A ", "gata", "gatan ", "Gatan ", "Gatan 1", "Gatan 1 ", "väg", "Väg  ", "vägen nr ",
+                  "753 ", "753 20 ", "SE-", "S-753 ", "ä", "va\u0308g", " ", "Torget 5, ", "lgh "):
+        for text in (chunk * (100_000 // len(chunk)), "Gatan" + " " * 50_000 + chunk * (50_000 // len(chunk))):
+            started = time.perf_counter()
+            mask_contacts(text)
+            assert time.perf_counter() - started < 1, chunk
