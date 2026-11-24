@@ -4,7 +4,7 @@ from collections import Counter
 import pytest
 
 from voltrieve_insights.labels import Labelled
-from voltrieve_insights.totals import MIN_PEOPLE, totals
+from voltrieve_insights.totals import MAX_PER_PERSON, MIN_PEOPLE, totals
 
 LABELS = ("Client", "Topic", "CarModel", "RequestKind", "Result", "GroupName")
 INTENT = "Wants to charge at home without a wall box"
@@ -74,7 +74,21 @@ def test_people_and_conversations_round_to_the_nearest_five(count, saved):
 
 
 def test_people_and_conversations_are_rounded_each_on_its_own():
-    assert cuts(people(6) + [one_person()] * 12, "all") == [{"People": 5, "Conversations": 20}]
+    assert cuts(people(6) + people(6) + [one_person()] * 2, "all") == [{"People": 5, "Conversations": 15}]
+
+
+def test_each_person_counts_at_most_three_times_in_each_row():
+    assert MAX_PER_PERSON == 3
+    items = people(5) + [one_person()] * 40
+    assert cuts(items, "all") == [{"People": 5, "Conversations": 5}]  # 4 + 3 is 7, and 45 is not shown
+    assert cuts(people(5) * 3, "all") == [{"People": 5, "Conversations": 15}]
+    assert cuts(people(5) * 9, "all") == [{"People": 5, "Conversations": 15}]
+
+
+def test_the_cap_is_for_each_row_and_not_shared_between_rows():
+    items = people(5) * 3 + people(5, topic="fault") * 3
+    assert cuts(items, "all") == [{"People": 5, "Conversations": 15}]
+    assert [r["Conversations"] for r in cuts(items, "topic")] == [15, 15]
 
 
 def test_every_cut_has_its_labels_and_the_rest_are_empty_strings():
@@ -112,10 +126,11 @@ def test_every_cut_has_its_labels_and_the_rest_are_empty_strings():
     ],
 )
 def test_each_value_of_a_cut_needs_five_people_of_its_own(cut, field, other):
-    many = people(5, car_model="lumen")
-    few = people(4, start=5, **{"car_model": "lumen", field: other})
-    assert len(cuts(many + few, cut)) == 1
-    assert len(cuts(many + few + people(1, start=9, **{"car_model": "lumen", field: other}), cut)) == 2
+    many = people(6, car_model="lumen") + people(5, start=6, car_model="lumen")
+    few = people(4, start=20, **{"car_model": "lumen", field: other})
+    assert other not in repr(cuts(many + few, cut))
+    few += people(1, start=24, **{"car_model": "lumen", field: other})
+    assert other in repr(cuts(many + few, cut)) and len(cuts(many + few, cut)) == 2
 
 
 def test_a_model_is_counted_within_its_topic():
@@ -129,7 +144,11 @@ def test_a_conversation_without_a_model_is_in_no_model_row():
 
 
 def test_a_result_of_a_group_with_four_people_has_no_row():
-    items = people(5, "Charge at home") + people(4, "Charge at home", start=5, result="not_found")
+    items = (
+        people(5, "Charge at home")
+        + people(4, "Charge at home", start=5, result="not_found")
+        + people(4, "Charge at home", start=9, result="refused")
+    )
     assert cuts(items, "group_result") == [
         {"Topic": "charging", "GroupName": "Charge at home", "Result": "answered", "People": 5, "Conversations": 5}
     ]
@@ -143,7 +162,7 @@ def test_a_group_without_a_row_has_no_result_rows():
 
 def test_small_groups_are_added_together_as_other_within_their_topic():
     items = people(5, "Charge at home") + people(3, "Charge in the rain", start=5) + people(4, "Find a plug", start=8)
-    elsewhere = people(4, "Warning light", start=20, topic="fault")
+    elsewhere = people(4, "Warning light", start=20, topic="fault") + people(5, start=24, topic="fault")
     assert cuts(items + elsewhere, "group") == [
         {"Topic": "charging", "GroupName": "Charge at home", "People": 5, "Conversations": 5},
         {"Topic": "charging", "GroupName": "other", "People": 5, "Conversations": 5},
@@ -161,7 +180,11 @@ def test_the_results_of_other_need_five_people_each():
     items = people(4, "Charge in the rain") + people(4, "Find a plug", start=4, result="refused")
     assert len(cuts(items, "group")) == 1
     assert cuts(items, "group_result") == []
-    assert len(cuts(items + people(1, "Find a plug", start=8, result="refused"), "group_result")) == 1
+    items += people(1, "Warm the car", start=8, result="refused") + people(1, "Warm the car", start=9)
+    assert [(r["GroupName"], r["Result"]) for r in cuts(items, "group_result")] == [
+        ("other", "answered"),
+        ("other", "refused"),
+    ]
 
 
 def test_a_group_the_model_named_other_is_in_the_same_row_as_the_small_ones():
@@ -188,6 +211,80 @@ def test_an_item_in_no_group_is_not_in_other_either():
     assert cuts(people(4, "Find a plug") + people(9, start=4), "group") == []
 
 
+def test_seven_on_car_and_one_on_web_give_no_client_row():
+    items = people(7) + people(1, start=7, client="web")
+    assert cuts(items, "client") == []
+    assert len(cuts(items, "all")) == 1
+
+
+def test_one_person_with_forty_conversations_does_not_show():
+    rows = totals(people(50) + [one_person("oid-50", client="web")] * 40)
+    assert not [r for r in rows if r["Cut"] == "client"]
+    assert {r["Conversations"] for r in rows[1:]} == {55}  # 50 + 3 is 53
+
+
+def test_a_rest_of_four_takes_the_smallest_row_with_it_and_a_rest_of_five_does_not():
+    items = people(9) + people(6, start=9, result="partly") + people(4, start=20, result="refused")
+    assert [r["Result"] for r in cuts(items, "topic_result")] == ["answered"]
+    items += people(1, start=24, result="not_found")
+    assert [r["Result"] for r in cuts(items, "topic_result")] == ["answered", "partly"]
+
+
+def test_of_two_rows_of_the_same_size_the_first_by_its_values_is_taken_out():
+    items = people(6) + people(6, start=6, result="partly") + people(1, start=20, result="refused")
+    assert [r["Result"] for r in cuts(items, "topic_result")] == ["partly"]
+
+
+def test_the_rest_is_people_and_not_conversations():
+    items = people(9) + [one_person("oid-20", result="refused")] * 9
+    assert cuts(items, "topic_result") == []
+
+
+def test_a_person_in_a_saved_row_is_in_the_rest_too():
+    items = people(9) + people(1, result="refused")  # the one person is in both
+    assert cuts(items, "topic_result") == []
+
+
+def test_one_row_taken_out_is_always_enough():
+    # It holds the limit itself, also when its people are the same ones as in the rest.
+    items = people(9) + people(8, start=20, result="partly") + people(7, start=20, result="handed_off")
+    items += people(2, start=20, result="refused")
+    assert [r["Result"] for r in cuts(items, "topic_result", limit=7)] == ["answered", "partly"]
+
+
+def test_conversations_without_a_model_are_the_rest_of_the_models():
+    assert cuts(people(9, car_model="lumen") + people(4, start=9), "topic_model") == []
+    assert len(cuts(people(9, car_model="lumen") + people(5, start=9), "topic_model")) == 1
+
+
+def test_conversations_in_no_group_are_the_rest_of_the_groups():
+    assert cuts(people(9, "Charge at home") + people(4, start=9), "group") == []
+    assert len(cuts(people(9, "Charge at home") + people(5, start=9), "group")) == 1
+
+
+def test_other_is_taken_out_like_any_other_row():
+    items = people(9, "Charge at home") + people(4, "Find a plug", start=9) + people(1, "Rain", start=13)
+    assert [r["GroupName"] for r in cuts(items, "group")] == ["Charge at home", "other"]
+    assert [r["GroupName"] for r in cuts(items + people(1, start=14), "group")] == ["Charge at home"]
+
+
+def test_a_row_that_was_taken_out_has_no_children():
+    fault = people(6, "Warning light", start=9, topic="fault", car_model="lumen")
+    items = people(9, "Charge at home") + fault + people(1, start=20, topic="app_account")
+    assert {r["Topic"] for r in totals(items)[1:]} == {"", "charging"}
+    items = people(9, "Charge at home") + people(6, "Find a plug", start=9) + people(1, start=20)
+    assert {r["GroupName"] for r in totals(items) if r["Cut"] == "group_result"} == {"Charge at home"}
+
+
+def test_a_rest_of_many_small_parts_stays_a_known_corner():
+    items = people(7, topic="fault")
+    for n, result in enumerate(("partly", "not_found", "handed_off", "refused")):
+        items += people(4, start=10 * (n + 1), topic="fault", result=result)
+    assert cuts(items, "topic_result") == [
+        {"Topic": "fault", "Result": "answered", "People": 5, "Conversations": 5}
+    ]
+
+
 def test_real_and_made_up_are_never_counted_together():
     with pytest.raises(ValueError) as error:
         totals(people(4, seeded=True) + people(1, start=4))
@@ -208,34 +305,48 @@ def test_no_row_holds_an_owner_an_intent_an_id_or_a_time():
 # The property test. The truth below is a plain count for each possible row, and shares no code with
 # the module.
 
-CLIENTS = ("car", "web")
+CLIENTS = ("car", "cli", "web")  # two would never leave a rest beside a saved row
 TOPICS = ("charging", "fault", "other")
 MODELS = ("lumen", "terra", None)
-KINDS = ("how_to", "buy")
+KINDS = ("how_to", "buy", "command")
 RESULTS = ("answered", "partly", "refused")
-GROUPS = ("Charge at home", "Find a plug", "Warning light", "unnamed group", "other", None)
+GROUPS = ("Charge at home", "Find a plug", "Warning light", "unnamed group", "other", "Other", None)
 CUTS = ("run", "all", "client", "topic", "topic_model", "topic_result", "topic_kind", "group", "group_result")
+PARENTS = {
+    "client": "all",
+    "topic": "all",
+    "topic_model": "topic",
+    "topic_result": "topic",
+    "topic_kind": "topic",
+    "group": "topic",
+    "group_result": "group",
+}
 
 
 def random_items(rng):
-    owners = [f"oid-{n}" for n in range(rng.randint(1, 40))]
-    weights = [rng.randint(1, 6) for _ in GROUPS]
+    """Some labels are common and some are rare, and some people talk a lot."""
+
+    def weighted(values):
+        weights = [rng.choice((1, 2, 10, 40)) for _ in values]
+        return lambda: rng.choices(values, weights)[0]
+
+    owner = weighted([f"oid-{n}" for n in range(rng.randint(1, 60))])
+    group, client, topic = weighted(GROUPS), weighted(CLIENTS), weighted(TOPICS)
+    model, kind, result = weighted(MODELS), weighted(KINDS), weighted(RESULTS)
     return [
         one_person(
-            rng.choice(owners),
-            rng.choices(GROUPS, weights)[0],
-            client=rng.choice(CLIENTS),
-            topic=rng.choice(TOPICS),
-            car_model=rng.choice(MODELS),
-            kind=rng.choice(KINDS),
-            result=rng.choice(RESULTS),
+            owner(), group(), client=client(), topic=topic(), car_model=model(), kind=kind(), result=result()
         )
-        for _ in range(rng.randint(0, 120))
+        for _ in range(rng.randint(0, 160))
     ]
 
 
-def number_of_people(items):
-    return len({item.owner for item, _ in items})
+def owners(items):
+    return {item.owner for item, _ in items}
+
+
+def capped(items):
+    return sum(min(count, 3) for count in Counter(item.owner for item, _ in items).values())
 
 
 def small_groups(items, topic, limit):
@@ -244,7 +355,7 @@ def small_groups(items, topic, limit):
         name
         for name in GROUPS
         if name is not None
-        and (name == "other" or number_of_people([pair for pair in here if pair[1] == name]) < limit)
+        and (name in ("other", "Other") or len(owners([pair for pair in here if pair[1] == name])) < limit)
     ]
 
 
@@ -285,15 +396,56 @@ def possible_rows(items, limit):
     yield from (row("group_result", Topic=t, Result=r, GroupName=g) for t in TOPICS for r in RESULTS for g in names[t])
 
 
+def labels_of(row):
+    return {name: row[name] for name in LABELS}
+
+
+def is_part(row, parent):
+    """Whether the row is a part of the parent row."""
+    return PARENTS.get(row["Cut"]) == parent["Cut"] and all(
+        row[name] == value for name, value in labels_of(parent).items() if value
+    )
+
+
+def true_rest(parent, parts, items, limit):
+    """The people in the parent row who are in a conversation that is in none of its saved parts."""
+    inside = {id(pair) for part in parts for pair in true_items(part, items, limit)}
+    return owners([pair for pair in true_items(parent, items, limit) if id(pair) not in inside])
+
+
+def wanted_rows(items, limit):
+    """The rows that should be saved, in order, worked out from the top down."""
+    possible = list(possible_rows(items, limit))
+    size = {tuple(row.values()): len(owners(true_items(row, items, limit))) for row in possible}
+    wanted = [row for row in possible if row["Cut"] == "all" and size[tuple(row.values())] >= limit]
+    for parent in wanted:  # it grows
+        for cut in (c for c, p in PARENTS.items() if p == parent["Cut"]):
+            parts = [
+                row
+                for row in possible
+                if row["Cut"] == cut and is_part(row, parent) and size[tuple(row.values())] >= limit
+            ]
+            while parts and 0 < len(true_rest(parent, parts, items, limit)) < limit:
+                parts.remove(min(parts, key=lambda row: (size[tuple(row.values())], tuple(row.values()))))
+            wanted.extend(parts)
+    return [row for row in possible if row in wanted]
+
+
 def nearest_five(number):
     return min(range(0, number + 6, 5), key=lambda multiple: abs(multiple - number))
 
 
-def test_no_row_of_200_random_inputs_stands_for_fewer_than_five_people():
+def provable_rest(parent, parts, limit):
+    """The fewest people a reader of the saved rows can prove are in the rest of a breakdown."""
+    fewest = max(parent["People"] - 2, limit)
+    return max(0, fewest - sum(part["People"] + 2 for part in parts))
+
+
+def test_no_row_and_no_rest_of_200_random_inputs_stands_for_fewer_than_five_people():
     rng = random.Random(20261124)
-    seen, hidden = Counter(), Counter()
+    seen = Counter()
     for _ in range(200):
-        items = random_items(rng)
+        items = [(item, name) for item, name in random_items(rng)]  # each pair is its own object
         asked = rng.choice((1, 5, 5, 8))
         limit = max(asked, 5)
         rows = totals(items, asked)
@@ -301,24 +453,39 @@ def test_no_row_of_200_random_inputs_stands_for_fewer_than_five_people():
 
         for row in rows[1:]:
             true = true_items(row, items, limit)
-            assert number_of_people(true) >= limit
-            assert row["People"] == nearest_five(number_of_people(true)) > 0
-            assert row["Conversations"] == nearest_five(len(true)) > 0
-            seen[row["Cut"]] += 1
-            seen["named other"] += row["GroupName"] == "other"
+            assert len(owners(true)) >= limit
+            assert row["People"] == nearest_five(len(owners(true))) > 0
+            assert row["Conversations"] == nearest_five(capped(true)) > 0
+            seen["saved", row["Cut"]] += 1
+            seen["saved", "other"] += row["GroupName"] == "other"
 
-        wanted = []
+        for parent in rows[1:]:
+            for cut in (c for c, p in PARENTS.items() if p == parent["Cut"]):
+                parts = [row for row in rows if row["Cut"] == cut and is_part(row, parent)]
+                rest = len(true_rest(parent, parts, items, limit))
+                assert rest == 0 or rest >= limit
+                provable = provable_rest(parent, parts, limit)
+                assert provable <= rest
+                seen["provable", cut] += bool(parts and provable)
+                seen["rest", cut] += bool(parts and rest)
+                seen["no rest", cut] += bool(parts and not rest)
+
+        wanted = wanted_rows(items, limit)
+        assert [{"Cut": row["Cut"], **labels_of(row)} for row in rows[1:]] == wanted
+        saved = [{"Cut": row["Cut"], **labels_of(row)} for row in rows]
         for row in possible_rows(items, limit):
-            true = true_items(row, items, limit)
-            if number_of_people(true) >= limit:
-                wanted.append(row)
-            elif true:
-                hidden[row["Cut"]] += 1
-        assert [{k: r[k] for k in ("Cut", *LABELS)} for r in rows[1:]] == wanted
+            if row not in saved:
+                number = len(owners(true_items(row, items, limit)))
+                seen["under", row["Cut"]] += 0 < number < limit
+                seen["taken out", row["Cut"]] += number >= limit and any(is_part(row, parent) for parent in rows[1:])
 
         mixed = list(items)
         rng.shuffle(mixed)
         assert totals(mixed, asked) == rows
 
-    assert all(seen[cut] for cut in CUTS[1:]) and seen["named other"]  # the test met every kind of row
-    assert all(hidden[cut] for cut in CUTS[1:])  # and rows that had to be held back, in every cut
+    # The test met every kind of row, saved and held back, and every kind of rest.
+    assert seen["saved", "all"] and seen["saved", "other"] and seen["under", "all"]
+    for cut in PARENTS:
+        for what in ("saved", "under", "taken out", "rest", "no rest"):
+            assert seen[what, cut], (what, cut)
+    assert sum(seen["provable", cut] for cut in PARENTS)
