@@ -63,7 +63,7 @@ For "What is the cheapest car that you can sell me?", the model also asks for `g
 
 ### What happens when the model names a tool
 
-`build_server_tools()` creates seven `ServerTool` objects with a name, description, schema and Python handler. `ToolSet` keeps them in a dictionary keyed by name. Name, description and schema are sent to the model on every call. The handler never is. When a response names a tool, the loop does this:
+`build_server_tools()` creates ten `ServerTool` objects with a name, description, schema and Python handler. `ToolSet` keeps them in a dictionary keyed by name. Name, description and schema are sent to the model on every call. The handler never is. When a response names a tool, the loop does this:
 
 ```mermaid
 flowchart TD
@@ -331,7 +331,7 @@ client.responses.create(
     instructions=AGENT_INSTRUCTIONS,   # about 5000 characters
     conversation="conv_...",           # Foundry adds the history
     input="What is the cheapest car that you can sell me?",   # unchanged
-    tools=[...],                       # 7 server tools, plus the client's own tools
+    tools=[...],                       # 10 server tools, plus the client's own tools
     parallel_tool_calls=True,
     reasoning={"effort": "medium"},
     stream=True,
@@ -347,7 +347,7 @@ client.responses.create(
 
 For a simple "Good morning!", the input was 920 tokens. Nearly all of that is instructions and tool definitions, so every turn pays for them.
 
-The seven server tools are `get_curated_answer`, `search_voltrieve_docs`, `search_spare_parts`, `check_stock`, `get_prices`, `get_current_date` and `book_test_drive`. The model sees each name, description and JSON schema. Those descriptions and the instructions are the entire routing logic.
+The ten server tools are `get_curated_answer`, `search_voltrieve_docs`, `search_spare_parts`, `check_stock`, `check_part_stock`, `get_prices`, `get_current_date`, `book_test_drive`, `prepare_car_order` and `place_car_order`. The last two are for the website and the CLI: in the car they are refused in `ToolSet.execute` before anything reaches the dealer ([the decision](decisions.md#the-car-rule-is-in-code-by-the-tokens-azp)). The model sees each name, description and JSON schema. Those descriptions and the instructions are the entire routing logic.
 
 The client's tools come in the request: the CLI offers `make_noise`, `honk` and the like, the website `set_theme`, the car `set_speed`, `set_wipers`, `honk`, `park` and `get_sign_photo`. The instructions have grown since the first runs, from about 2300 characters to about 5000, mostly for sources, curated answers and attachments. A turn with a photo adds parts to the user's message and is made unstored: see [Photos and attachments](attachments.md).
 

@@ -310,7 +310,7 @@ None of it names a person. No more ways to cut the numbers are added, since each
 
 ### Only names that can be saved are checked for personal data
 
-Patterns do not catch names of people or streets, so a group name passes Azure AI Language's detection of personal data, and one that fails becomes "unnamed group". Only the names of groups with five people are sent to it. A smaller group becomes "other", so its name goes nowhere and there is nothing to check. That keeps the calls few. The run fails if the detection does not answer. Four categories pass, since they are ordinary in a car question: quantity, date and time, type of person, and organization. So the name of a company could pass the detection, and only the prompt forbids it. Live, two forced names were replaced and two plain ones kept. The planted details never reached a name, so this does not say how the detection handles a real one. Its price was not found for the text meter. Microsoft's page says about 1 USD per 1,000 texts.
+Patterns do not catch the names of people, and street addresses and postal codes are masked only as a best effort (see [the dealer decisions](#dealer-orders-and-inventory)), so a group name passes Azure AI Language's detection of personal data, and one that fails becomes "unnamed group". Only the names of groups with five people are sent to it. A smaller group becomes "other", so its name goes nowhere and there is nothing to check. That keeps the calls few. The run fails if the detection does not answer. Four categories pass, since they are ordinary in a car question: quantity, date and time, type of person, and organization. So the name of a company could pass the detection, and only the prompt forbids it. Live, two forced names were replaced and two plain ones kept. The planted details never reached a name, so this does not say how the detection handles a real one. Its price was not found for the text meter. Microsoft's page says about 1 USD per 1,000 texts.
 
 ### A cap and a random sample
 
@@ -329,6 +329,45 @@ The car and the website say that a nightly job counts what people ask about. Rea
 ### Foundry's tracing
 
 Disconnected, with its own entry: [Closed: Foundry's tracing is disconnected](#closed-foundrys-tracing-is-disconnected).
+
+## Dealer orders and inventory
+
+Decided on 2026-11-24. The [design](https://github.com/mklab-se/voltrieve/blob/main/docs/superpowers/specs/2026-11-24-dealer-orders-design.md) is approved by the product owner. It adds a system that people can look at beside Runa, and a second lesson: what Runa may do depends on where it is used. Nothing in this section has been run live yet. Not run live yet.
+
+### The dealer serves its own page
+
+The page for the representative is built into the dealer image and served by the dealer service itself, from `GET /`. Runa then calls the same system that you look at. The other ways were a separate static site, which needs cross-site setup and one more site, a page that goes through the Web API, which does not look like a system of its own, and a page in the operations dashboard, which mixes sales with the people who run the service. The price is that the page shares the cold start of the service, and that the image also builds the page. Only the page, `/assets/*` and `/config.json` (tenant and client ids) are open to anyone.
+
+### Two doors with two roles
+
+The machine routes need `Dealer.Access`, which only applications can hold. The staff routes need a signed-in user with the scope `manage_as_user` and the role `Dealer.Manage`. Neither opens the other: Runa can read stock and place orders, and cannot deliver, delete or change stock. The page has its own registration, `voltrieve-dealer-site`, which may use that scope and nothing on the API. Ordering needs a third role, `Order.Place`, on the API, so that nobody types an address only to be refused. The deployer gets `Order.Place` and `Dealer.Manage`. The test user gets neither. The Azure CLI is pre-authorized for the dealer's scope, as it is for the API, so that our scripts can read the stock and delete the orders they made. Calls without a valid token are not in the log, since anyone on the internet could flood it. A signed-in caller without the right role is.
+
+### The car rule is in code, by the token's `azp`
+
+A server tool may name the clients it is for. Both order tools name `web` and `cli`. The client is read from the `azp` claim of the validated token, never from a header, the model or the conversation, so a car that calls itself something else is still a car. An unknown client is refused too. The check is in `ToolSet.execute`, before the role check, so it is the same code on all three backends. The refusal is a fixed text that tells Runa what to say, and the trace event is `client_not_allowed`. The tools are listed for the car too, so the refusal is ours and not something the model makes up, and the attempt can be seen. A refused order never reaches the dealer service, so it is not in its log.
+
+- The Azure CLI counts as `cli` for this rule only, not for the usage insights, where it stays `other`. A person who holds `Order.Place` could use the Voltrieve CLI in the same terminal anyway.
+- To test the car's refusal on the deployed service, a script sends `X-Voltrieve-Client: car`. The header can only turn a client into the car: it takes away and never gives. `X-Voltrieve-Test` does not change who may order, so an order in a test turn is a real row, and the script deletes it.
+
+### An order needs a later message
+
+Runa saves an offer with `prepare_car_order` (customer, model, price, address and the turn it was made in) and reads it back. `place_car_order` places it only for the same customer, in a later turn, within 30 minutes. In the same turn the service refuses and Runa must ask. So text in a document, or an eager model, cannot order in one step. That the later message really says yes is left to the model, and is measured by `scripts/orders_check.py`. An offer becomes one order, so placing it again returns the same order: a lost reply is answered by placing the same offer again. The name is the `name` claim of the token, or the username when there is none. It never comes from the model.
+
+### Table Storage and one replica
+
+Stock, orders and offers live in one table in the existing storage account, in one partition, so that a delivery is one transaction: the order changes and the stock goes down, or neither. ETags stop two clicks from both winning. The dealer's identity may read and write that table and nothing else in the account. No new resource or plan is added. Without a working store the calls answer 503 and `/healthz` still answers. The memory store is only for tests and local work.
+
+The service runs as at most one replica, so every open screen gets every event, and it can still scale to zero. An open page reads the state once a minute. That is meant to keep the service awake, and it repairs a missed event. `scripts/dealer_awake.py` measures it. During a deployment two copies may run for a moment: the store is safe then, but a screen can miss an event until its next read.
+
+### The log is in memory
+
+The log holds the latest 200 entries and is lost at a restart. Orders and stock are not. An entry has time, what happened, who (Runa, or the representative's name), the client when known, the result and the correlation id. It names the model, city and order number, and never an address. A database for the log would have been one more thing to keep clean of personal data, for a demo screen.
+
+### Personal data, and the masking
+
+For the first time Voltrieve stores a name and an address itself. The name is the signed-in account's real name, and the address is what the customer types: **use a made up address in a demo.** Both are shown to staff with `Dealer.Manage`, and are deleted with the order, by a reset, or at the first use after 30 days (a service that nobody uses deletes nothing, so this is no firm limit). They are never in a log line, span or metric, and a validation error does not repeat the input. The chat where the address was typed is stored in Foundry like every chat. Masking of Swedish street addresses and postal codes was added to the live dashboard and the nightly job as a best effort: a pattern cannot find every address, and the names of people are still not caught. The website's notice has one more sentence about orders.
+
+Not verified: that a marker in an address is found in no table of Application Insights, and the masking on real addresses.
 
 ## Live findings
 
@@ -427,3 +466,4 @@ up in the indexes, so an invented title gets no link. Other choices:
 - Whether Foundry keeps a photo that was sent in an unstored turn, for abuse monitoring or anything else.
 - A browser sign-in to the car and the new website, and an unstored turn inside the hosted agent, until the evidence runs say otherwise.
 - Indexer duration, final item counts, how long role propagation retries waited, and smoke test scores. The first deployment did not keep these.
+- The dealer system and the orders, live: an order on each backend, the car's refusal on each backend, no order from one message, a "no" or a changed address, how long the page stays awake, a marker in an address in telemetry, and the routing suite after the new instructions. Not run live yet.

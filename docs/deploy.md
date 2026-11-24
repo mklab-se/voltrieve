@@ -58,7 +58,7 @@ The name is limited to 22 characters and appears in resource names. Optional val
 
 The Basic service is in `AZURE_SEARCH_LOCATION`. A Serverless service is in `serverlessSearchLocation`, which defaults to Sweden Central.
 
-The hooks and scripts fill in the rest, such as `TENANT_ID`, `API_CLIENT_ID`, `INSIGHTS_IMAGE`, `INSIGHTS_JOB_NAME`, `INSIGHTS_IDENTITY_ID`, `INSIGHTS_IDENTITY_CLIENT_ID`, `LOG_ANALYTICS_WORKSPACE_ID`, `WEB_URL`, `CAR_URL`, `DASHBOARD_URL`, `CAR_CLIENT_ID`, `DASHBOARD_CLIENT_ID`, `TEST_USER_UPN` and `HOSTED_AGENT_PRINCIPAL_ID`. All of them are identifiers. The Application Insights connection string is an ingestion identifier, not a secret.
+The hooks and scripts fill in the rest, such as `TENANT_ID`, `API_CLIENT_ID`, `INSIGHTS_IMAGE`, `INSIGHTS_JOB_NAME`, `INSIGHTS_IDENTITY_ID`, `INSIGHTS_IDENTITY_CLIENT_ID`, `LOG_ANALYTICS_WORKSPACE_ID`, `WEB_URL`, `CAR_URL`, `DASHBOARD_URL`, `CAR_CLIENT_ID`, `DASHBOARD_CLIENT_ID`, `DEALER_URL`, `DEALER_CLIENT_ID`, `DEALER_SITE_CLIENT_ID`, `DEALER_SP_OBJECT_ID`, `API_SP_OBJECT_ID`, `ORDER_PLACE_ROLE_ID`, `DEALER_MANAGE_ROLE_ID`, `DEALER_SCOPE_ID`, `TEST_USER_UPN` and `HOSTED_AGENT_PRINCIPAL_ID`. All of them are identifiers. The Application Insights connection string is an ingestion identifier, not a secret.
 
 ## Order
 
@@ -76,8 +76,8 @@ What each hook does:
 
 | Hook | When | What |
 | --- | --- | --- |
-| `hooks/preprovision.sh` | Before each provision | Creates or updates the app registrations (`voltrieve-api`, `voltrieve-cli`, `voltrieve-web`, `voltrieve-car`, `voltrieve-dashboard`, `voltrieve-dealer`), the tester, roles and consent, and stores the ids in the azd environment. Idempotent. Runs interactively so the password is visible. |
-| `hooks/postprovision.sh` | After each provision | Checks that `az` and `azd` are the same user. Uploads the documents to their two containers, applies the search objects of both knowledge bases, runs both indexers, gives the API identity `Dealer.Access`, and adds the redirect URI of each of the three sites (`set-spa-redirect --app web|car|dashboard`). Each step retries up to 10 times, 60 seconds apart, for role propagation. |
+| `hooks/preprovision.sh` | Before each provision | Creates or updates the app registrations (`voltrieve-api`, `voltrieve-cli`, `voltrieve-web`, `voltrieve-car`, `voltrieve-dashboard`, `voltrieve-dealer`, `voltrieve-dealer-site`), the tester, roles and consent, and stores the ids in the azd environment. Idempotent. Runs interactively so the password is visible. |
+| `hooks/postprovision.sh` | After each provision | Checks that `az` and `azd` are the same user. Uploads the documents to their two containers, applies the search objects of both knowledge bases, runs both indexers, gives the API identity `Dealer.Access`, and adds the redirect URI of each of the three sites (`set-spa-redirect --app web|car|dashboard`) and of the dealer page (`set-spa-redirect --app dealer`, with the address of the dealer service, which is the page's address). Each step retries up to 10 times, 60 seconds apart, for role propagation. |
 | `hooks/web-prepackage.sh` | Before the web package | Writes `clients/web/.env.production` with public values only. |
 | `hooks/car-prepackage.sh` | Before the car package | Writes `clients/car/.env.production` with public values only. |
 | `hooks/dashboard-prepackage.sh` | Before the dashboard package | Writes `clients/dashboard/.env.production` with public values only. |
@@ -229,6 +229,46 @@ When an environment already runs an older version, deploy the hosted agent befor
 
 Every step leaves the job off. Checking and seeding are in [the runbook](runbook.md#usage-insights).
 
+## Dealer orders: values, roles and redirect
+
+Nothing new has to be set by hand. The preprovision hook creates the registration of the page, `voltrieve-dealer-site`, the scope `manage_as_user` and the roles, and stores their ids in the azd environment: `DEALER_SITE_CLIENT_ID`, `DEALER_SCOPE_ID`, `DEALER_MANAGE_ROLE_ID` and `ORDER_PLACE_ROLE_ID`. The dealer service gets `SITE_CLIENT_ID` from Bicep, and the page reads its tenant and client ids from `/config.json`.
+
+| Role | On | Held by | Needed for |
+| --- | --- | --- | --- |
+| `Order.Place` | `voltrieve-api`, for users | The deployer. Not the test user | Both order tools. Without it Runa refuses before an address is asked for |
+| `Dealer.Manage` | `voltrieve-dealer`, for users | The deployer. Not the test user | Signing in to the dealer page, and the staff routes |
+| `Dealer.Access` | `voltrieve-dealer`, for applications | The API identity and the hosted agent identity (as before) | Runa's calls to the dealer |
+
+The registration of the dealer requires an assignment, so an account without `Dealer.Manage` cannot sign in to the page at all.
+
+**To give a role to somebody else,** assign it as for the other app roles: in the Entra admin center under the enterprise application of `voltrieve-api` or `voltrieve-dealer`, or with the script of the repository, as the deployer:
+
+```sh
+uv run --project infra/scripts/entra voltrieve-entra assign-app-role \
+  --principal-object-id <the user's object id> \
+  --resource-sp-object-id "$(azd env get-value API_SP_OBJECT_ID)" \
+  --app-role-id "$(azd env get-value ORDER_PLACE_ROLE_ID)"
+```
+
+For the dealer page use `DEALER_SP_OBJECT_ID` and `DEALER_MANAGE_ROLE_ID`. A new token is needed before the role shows.
+
+**The redirect.** The dealer page is a single page app served from the address of the dealer service, which only exists after the first provision. So that address is added as a redirect URI by the postprovision hook, and the preprovision hook passes it again on later provisions (`--dealer-redirect-uri`). Do not add it by hand. If sign-in says that the redirect does not match, run `azd provision` again.
+
+## Order for an update with the dealer orders
+
+The other order fails closed: a new API or agent that calls order routes the dealer does not have yet is refused, and Runa cannot order. So the callee goes first:
+
+1. `azd provision`: the table, the dealer's role on it, the registrations, roles and the redirect. Preview it first.
+2. `azd deploy dealer`: the service, with the page. Check that `just dealer` prints an address and that the page shows its sign-in.
+3. `scripts/deploy-agents.sh`: the three prompt agents (new instructions and the two order tools) and the hosted agent. As after every provision, run it at once, and [delete the Foundry connection](decisions.md#closed-foundrys-tracing-is-disconnected) if an older provision recreated it.
+4. `azd deploy api`.
+5. The website, [with the container](#2-apple-silicon-without-rosetta-scriptsdeploy-websh) where the SWA CLI cannot run, for the sentence in the notice.
+6. `uv run scripts/orders_check.py --dry`, then the checks in [the runbook](runbook.md#the-dealer-orders-demo).
+
+**Rollback** goes the other way, the API first, then the agents, then the dealer. Orders and stock stay in the table.
+
+Not run live yet: this order has not been run on the deployed environment.
+
 ## Redeploying
 
 | Change | Command |
@@ -252,7 +292,8 @@ Approximate:
 | Container Registry Basic | About 5 USD a month |
 | Log Analytics | Small, by ingestion. The insights table adds a few MB a year |
 | Usage insights job | None: per run, one a night at most when it is on |
-| Container Apps | None when scaled to zero |
+| Container Apps | None when scaled to zero. The dealer stays awake while a dealer page is open: about 0.05 USD (0.5 SEK) an hour at list price, before the free grant |
+| Table Storage, the dealer's table | Well under 1 SEK a month. No new resource, site or plan |
 | Three Static Web Apps, Free tier | None |
 | Models | None: per token |
 | Hosted agent | None: per active session |
@@ -267,7 +308,7 @@ The car and the dashboard add no idle cost: two more Static Web Apps on the Free
 
 ## Before a demo
 
-The API and the dealer scale to zero after 5 idle minutes. A cold start took 34 seconds for the API and 30 for the dealer in a measured run, which is far over the 10 second limit for the first token. `just warm-up` wakes everything and asks a real question on each backend. `just keep-warm` does the same, then pings `/healthz` every 2 minutes until Ctrl-C, which costs no tokens.
+The API and the dealer scale to zero after 5 idle minutes. A cold start took 34 seconds for the API and 30 for the dealer in a measured run, which is far over the 10 second limit for the first token. `just warm-up` wakes everything and asks a real question on each backend. `just keep-warm` does the same, then pings `/healthz` every 2 minutes until Ctrl-C, which costs no tokens. An open dealer page is meant to keep the dealer awake too, because it reads its state once a minute. Not run live yet. If the page is cold anyway, see [the runbook](runbook.md#when-the-dealer-page-is-cold).
 
 ## Budget alert
 
