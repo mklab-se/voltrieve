@@ -48,6 +48,9 @@ questions:
   - { id: part-stock, group: stock, ask: "I've broken my right side mirror on my Voltrieve Spark. Do you have one in stock in Stockholm?", expect: [parts], tools: [check_part_stock], article: { key: door_mirror_right, fits: Voltrieve Spark } }
   - { id: part-stock-none, group: stock, ask: "Is article {article} in stock at any dealer?", expect: [parts], tools: [check_part_stock], pick: out_everywhere }
 
+  - { id: buy-fjord, group: order, ask: "I want to buy a Fjord", expect: [], tools: [prepare_car_order] }
+  - { id: order-atlas, group: order, ask: "Can I order an Atlas?", expect: [], tools: [prepare_car_order] }
+
   - { id: reverse-lookup, group: parts, ask: "What is article {article} and which cars does it fit?", expect: [parts], reverse: { key: charge_port, fits: Voltrieve Ragn } }
 
   - { id: brakes-fjord, group: both, ask: "I have a Voltrieve Fjord AWD. I want to completely change the brakes on the left front side. Which spare parts do I need?", expect: [docs, parts], job: fjord/AWD/front/left }

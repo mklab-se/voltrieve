@@ -12,7 +12,11 @@ invent a value. Prints every answer. Exits 1 on any miss.
 Answers are saved verbatim except for what write_evidence changes: em-dashes become " - " and
 absolute paths are removed (see docs/evidence/README.md).
 
-Needs `azd env select` (API_URL, API_CLIENT_ID) and `az login` as a user with Chat.User.
+The stock question is compared with the stock the dealer service has now. Without it (that needs the
+role Dealer.Manage) the question is skipped, not passed.
+
+Needs `azd env select` (API_URL, API_CLIENT_ID, DEALER_URL, DEALER_CLIENT_ID) and `az login` as a user
+with Chat.User.
 Environment overrides: VOLTRIEVE_API_URL, VOLTRIEVE_API_CLIENT_ID.
 """
 
@@ -25,7 +29,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 
 from voltrieve_client import Api, ApiError, api_token, api_url, cached_token, write_evidence  # noqa: E402
-from voltrieve_facts import ask_values, check, load_data, load_dealer, load_questions  # noqa: E402
+from voltrieve_facts import ask_values, check, live_dealer, load_data, load_questions  # noqa: E402
 
 
 def main() -> int:
@@ -44,17 +48,19 @@ def main() -> int:
     if args.only:
         wanted = set(args.only.split(","))
         questions = [q for q in questions if q["id"] in wanted]
-    data, dealer = load_data(), load_dealer()
+    data = load_data()
     base = api_url()
     token = cached_token(api_token)
 
-    misses = 0
+    misses = skipped = 0
     for backend in args.backends.split(","):
         say(f"\n== backend: {backend}")
         api = Api(base, token, backend)
         try:
             for q in questions:
                 try:
+                    # The stock as it is now: orders change it.
+                    dealer = live_dealer() if q["expect"]["type"] == "stock" else None
                     ask = q["ask"].format(**ask_values(q["expect"]))
                     turn = api.turn(ask, correlation_id=f"grounding-{backend}-{q['id']}")
                 except ApiError as exc:
@@ -65,13 +71,14 @@ def main() -> int:
                     ok, expected = False, f"no error event, got {turn.error.get('code')}"
                 else:
                     ok, expected = check(q["expect"], turn.text, data, dealer)
-                misses += not ok
-                say(f"{'PASS' if ok else 'MISS'} {q['id']}: {ask}")
+                misses += ok is False
+                skipped += ok is None
+                say(f"{'SKIP' if ok is None else 'PASS' if ok else 'MISS'} {q['id']}: {ask}")
                 say(f"     expected: {expected}")
                 say(f"     answer:   {' '.join(turn.text.split())[:400]}")
         finally:
             api.close()
-    say(f"\n{misses} miss(es)")
+    say(f"\n{misses} miss(es), {skipped} skipped")
     if args.save:
         write_evidence(Path(args.save), "\n".join(transcript) + "\n")
     return 1 if misses else 0

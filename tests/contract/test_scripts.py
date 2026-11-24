@@ -835,3 +835,85 @@ def test_the_script_client_sends_the_client_header_only_when_asked(client):
     api._http = httpx.Client(base_url="http://t", transport=httpx.MockTransport(handle))
     api.turn("hi")
     assert seen == [client or None]
+
+
+STOCK_QUESTION = {"type": "stock", "model": "fjord", "city": "Malm\u00f6"}
+
+
+def staff_over(handler):
+    return voltrieve_client.Staff("https://dealer", lambda: "staff-token", httpx.MockTransport(handler))
+
+
+def test_the_stock_check_uses_the_number_the_service_has_now():
+    facts, _ = _facts()
+
+    def handler(request):
+        assert request.url.path == "/staff/state" and request.headers["authorization"] == "Bearer staff-token"
+        stock = facts.load_dealer()["stock"]
+        return httpx.Response(200, json={"stock": {**stock, "fjord": {**stock["fjord"], "Malm\u00f6": 47}}})
+
+    dealer = facts.live_dealer(lambda: staff_over(handler))
+    assert facts.check(STOCK_QUESTION, "There are 47.", {"models": []}, dealer) == (True, "fjord in Malm\u00f6: 47")
+    assert facts.check(STOCK_QUESTION, "There are 3.", {"models": []}, dealer)[0] is False
+
+
+def unreachable(request):
+    raise httpx.ConnectError("refused")
+
+
+@pytest.mark.parametrize("handler", [
+    unreachable, lambda r: httpx.Response(403), lambda r: httpx.Response(503), lambda r: httpx.Response(200, text="<p>"),
+    lambda r: httpx.Response(200, json={}), lambda r: httpx.Response(200, json=[]),
+    lambda r: httpx.Response(200, json={"stock": {"fjord": {}}}),
+])
+def test_the_stock_check_is_skipped_without_the_service(handler):
+    facts, _ = _facts()
+    dealer = facts.live_dealer(lambda: staff_over(handler))
+    count = facts.load_dealer()["stock"]["fjord"]["Malm\u00f6"]
+    for answer in (f"There are {count}.", "There are 999."):
+        ok, expected = facts.check(STOCK_QUESTION, answer, {"models": []}, dealer)
+        assert ok is None and "not checked" in expected
+
+
+def test_the_stock_check_is_skipped_without_a_token_and_without_live_data():
+    facts, _ = _facts()
+
+    def no_azd():
+        raise SystemExit("Could not read DEALER_URL")
+
+    assert facts.check(STOCK_QUESTION, "3", {"models": []}, facts.live_dealer(no_azd))[0] is None
+    assert facts.check(STOCK_QUESTION, "3", {"models": []})[0] is None
+
+
+def test_a_skipped_check_is_neither_a_pass_nor_a_fail():
+    runbook = pytest.importorskip("runbook")
+    assert [runbook.verdict(ok, "n")[0] for ok in (True, False, None)] == ["PASS", "FAIL", "SKIP"]
+
+
+def test_the_grounding_check_counts_a_skipped_question_apart(monkeypatch, capsys):
+    import importlib.util
+
+    _facts()
+    path = Path(__file__).resolve().parents[2] / "tests" / "grounding" / "check.py"
+    spec = importlib.util.spec_from_file_location("grounding_check", path)
+    grounding = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(grounding)
+
+    class FakeApi:
+        def __init__(self, *args):
+            pass
+
+        def turn(self, *args, **kwargs):
+            return voltrieve_client.Turn(events=[("delta", {"text": "There are 3."})])
+
+        def close(self):
+            pass
+
+    stock = next(q["id"] for q in grounding.load_questions() if q["expect"]["type"] == "stock")
+    monkeypatch.setattr(grounding, "Api", FakeApi)
+    monkeypatch.setattr(grounding, "api_url", lambda: "https://api")
+    monkeypatch.setattr(grounding, "live_dealer", lambda: grounding.check.__globals__["load_dealer"]())
+    monkeypatch.setattr(sys, "argv", ["check.py", "--backends", "loop", "--only", stock])
+    assert grounding.main() == 0
+    out = capsys.readouterr().out
+    assert f"SKIP {stock}" in out and "PASS" not in out and "0 miss(es), 1 skipped" in out

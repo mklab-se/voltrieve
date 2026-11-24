@@ -463,7 +463,10 @@ async def test_a_lost_reply_to_an_order_says_that_it_may_exist(tools, buyer, eve
     route = respx.post(f"{BASE}/orders")
     route.mock(side_effect=reply) if isinstance(reply, Exception) else route.respond(reply, text=ADDRESS)
     out = await tools[0].execute("place_car_order", ORDER_CALLS["place_car_order"], buyer, events)
-    assert out == "The order may have been received. Call place_car_order again with the same offer."
+    assert out == (
+        "The order may have been received. Call place_car_order once more with the same offer. If that fails too, "
+        "tell the user to ask again in a moment, and never say that the car is ordered."
+    )
     assert route.call_count == 1
 
 

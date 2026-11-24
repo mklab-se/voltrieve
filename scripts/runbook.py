@@ -31,7 +31,7 @@ from trace_evidence import resource_group_app, trace_counts, write_report
 from voltrieve_client import (  # noqa: E402
     Api, ApiError, Turn, api_token, api_url, booking_request, cached_token, write_evidence,
 )
-from voltrieve_facts import ROOT, check, load_data, load_dealer, load_questions  # noqa: E402
+from voltrieve_facts import ROOT, check, live_dealer, load_data, load_questions  # noqa: E402
 
 EVIDENCE = ROOT / "docs" / "evidence"
 MAKE_NOISE = {
@@ -76,13 +76,14 @@ class Result:
         return entry
 
 
-def verdict(ok: bool, note: str) -> tuple[str, str]:
-    return ("PASS" if ok else "FAIL"), note
+def verdict(ok: bool | None, note: str) -> tuple[str, str]:
+    """None is a check that could not be made."""
+    return "SKIP" if ok is None else "PASS" if ok else "FAIL", note
 
 
 def run_backend(backend: str, base: str, token, wanted: set[int]) -> list[Result]:
     api = Api(base, token, backend)
-    data, dealer = load_data(), load_dealer()
+    data = load_data()
     questions = {q["step"]: q for q in load_questions() if "step" in q}
     results: list[Result] = []
     conversations: dict[int, str | None] = {}
@@ -131,12 +132,15 @@ def run_backend(backend: str, base: str, token, wanted: set[int]) -> list[Result
         if not want(n) and not (n == 2 and want(10)):
             continue
         q = questions[n]
+        # The stock as it is now: orders change it.
+        dealer = live_dealer() if q["expect"]["type"] == "stock" else None
         r = ask(n, titles[n], q["ask"])
         if r.turn and not r.turn.error:
             ok, expected = check(q["expect"], r.turn.text, data, dealer)
             if n == 8:
                 called = "check_stock" in [d.get("tool") for d in r.turn.trace("server_tool_called")]
-                ok, expected = ok and called, f"{expected}; check_stock called: {called}"
+                ok = False if not called else ok
+                expected = f"{expected}; check_stock called: {called}"
             r.status, r.note = verdict(ok, f"expected {expected}")
         if want(n):
             results.append(r)

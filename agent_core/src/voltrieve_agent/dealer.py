@@ -14,7 +14,10 @@ ASK_FOR_ADDRESS = (
 )
 READ_BACK = "Nothing is ordered yet. Read it back and ask. Wait for the answer in the next message."
 # An offer becomes one order, so placing it twice is safe. Starting over is not.
-PLACE_AGAIN = "The order may have been received. Call place_car_order again with the same offer."
+PLACE_AGAIN = (
+    "The order may have been received. Call place_car_order once more with the same offer. If that "
+    "fails too, tell the user to ask again in a moment, and never say that the car is ordered."
+)
 
 
 class DealerClient:

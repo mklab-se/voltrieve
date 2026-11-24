@@ -42,17 +42,24 @@ def api_url() -> str:
     return (os.environ.get("VOLTRIEVE_API_URL") or azd_value("API_URL")).rstrip("/")
 
 
-def api_token(scope_app_id: str | None = None) -> str:
-    app_id = scope_app_id or os.environ.get("VOLTRIEVE_API_CLIENT_ID") or azd_value("API_CLIENT_ID")
+def _az_token(scope: str, role: str) -> str:
     result = subprocess.run(
-        ["az", "account", "get-access-token", "--scope", f"api://{app_id}/access_as_user",
-         "--query", "accessToken", "-o", "tsv"],
+        ["az", "account", "get-access-token", "--scope", scope, "--query", "accessToken", "-o", "tsv"],
         capture_output=True, text=True, check=False,
     )
     token = result.stdout.strip()
     if result.returncode != 0 or not token:
-        raise SystemExit("Could not get a token from the az CLI. Run `az login` as a user with Chat.User.")
+        raise SystemExit(f"Could not get a token from the az CLI. Run `az login` as a user with {role}.")
     return token
+
+
+def api_token(scope_app_id: str | None = None) -> str:
+    app_id = scope_app_id or os.environ.get("VOLTRIEVE_API_CLIENT_ID") or azd_value("API_CLIENT_ID")
+    return _az_token(f"api://{app_id}/access_as_user", "Chat.User")
+
+
+def staff_token() -> str:
+    return _az_token(f"api://{azd_value('DEALER_CLIENT_ID')}/manage_as_user", "Dealer.Manage")
 
 
 def parse_sse(lines: Iterable[str]) -> Iterator[Event]:
@@ -250,6 +257,46 @@ class Api:
                 correlation_id,
             )
         raise ApiError(0, "too many client tool rounds")
+
+
+class Staff:
+    """The staff API of the dealer service, as a representative. An error holds the status and nothing
+    else: an answer may hold a customer's name and address."""
+
+    def __init__(self, base_url: str, token: Callable[[], str], transport: httpx.BaseTransport | None = None):
+        self._token = token
+        # The service may start from nothing.
+        self._http = httpx.Client(base_url=base_url.rstrip("/"), timeout=90.0, transport=transport)
+
+    def close(self) -> None:
+        self._http.close()
+
+    def send(self, method: str, path: str, body: dict | None = None) -> httpx.Response:
+        headers = {"Authorization": f"Bearer {self._token()}"}
+        try:
+            return self._http.request(method, path, json=body, headers=headers)
+        except httpx.HTTPError as exc:
+            error = f"{path} failed: {type(exc).__name__}"
+        raise ApiError(0, error)
+
+    def state(self) -> dict:
+        response = self.send("GET", "/staff/state")
+        try:
+            state = response.json() if response.status_code == 200 else None
+        except ValueError:
+            state = None
+        if not isinstance(state, dict):
+            raise ApiError(response.status_code, "/staff/state")
+        return state
+
+    def delete(self, number: str) -> None:
+        response = self.send("DELETE", f"/staff/orders/{number}")
+        if response.status_code not in (204, 404):
+            raise ApiError(response.status_code, f"/staff/orders/{number}")
+
+
+def dealer_staff() -> Staff:
+    return Staff(azd_value("DEALER_URL"), cached_token(staff_token))
 
 
 def _seconds_left(token: str) -> float:
