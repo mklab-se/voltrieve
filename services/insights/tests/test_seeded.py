@@ -219,6 +219,61 @@ def test_the_marker_goes_in_exactly_one_conversation():
     assert json.dumps(plan).count("vtmark123abc") == 1
 
 
+def owners_by_text(plan):
+    found = {}
+    for meta, items in plan:
+        found.setdefault(items[0]["content"][0]["text"], []).append(meta["owner_oid"])
+    return found
+
+
+def test_one_copy_is_what_was_written_before():
+    assert seed.plan(EVERY, 4, TODAY, copies=1) == seed.plan(EVERY, 4, TODAY)
+
+
+@pytest.mark.parametrize("copies", range(1, 11))
+@pytest.mark.parametrize("weeks", [1, 4, 8])
+def test_copies_of_one_conversation_never_share_an_owner(copies, weeks):
+    plan = seed.plan(EVERY, weeks, TODAY, copies=copies)
+    assert len(plan) == 150 * copies
+    found = owners_by_text(plan)
+    assert len(found) == 150
+    for owners in found.values():
+        assert len(owners) == len(set(owners)) == copies
+    for meta, _ in plan:
+        assert re.fullmatch(r"seeded-\d+", meta["owner_oid"]) and 1 <= int(meta["owner_oid"][7:]) <= 200
+
+
+def test_copies_bring_many_more_people():
+    def people(copies):
+        return len({meta["owner_oid"] for meta, _ in seed.plan(EVERY, 4, TODAY, copies=copies)})
+
+    assert people(1) <= 40 and people(5) >= 190 and people(10) == 200
+
+
+def test_copies_are_in_the_same_week_and_on_different_days():
+    last = date(2026, 11, 22)
+    weeks, days = {}, {}
+    for meta, items in seed.plan(EVERY, 4, TODAY, copies=5):
+        day = date.fromisoformat(meta["started"])
+        assert last - timedelta(days=27) <= day <= last
+        text = items[0]["content"][0]["text"]
+        weeks.setdefault(text, set()).add((last - day).days // 7)
+        days.setdefault(text, set()).add(day)
+    assert all(len(found) == 1 for found in weeks.values())
+    assert all(len(found) == 5 for found in days.values())
+
+
+def test_the_marker_goes_in_one_conversation_also_with_copies():
+    assert json.dumps(seed.plan(EVERY, 4, TODAY, "vtmark123abc", copies=10)).count("vtmark123abc") == 1
+
+
+def test_without_yes_the_copies_are_counted_and_nothing_is_written(monkeypatch, capsys):
+    monkeypatch.setattr(seed, "token", no_calls)
+    monkeypatch.setattr(seed, "write", no_calls)
+    assert seed.main(["--only", "planted", "--copies", "3"]) == 2
+    assert "150 conversations" in capsys.readouterr().out
+
+
 def test_only_one_part_can_be_chosen():
     assert seed.choose(DATA, None) == EVERY
     assert seed.choose(DATA, "planted") == DATA["planted"]
@@ -236,7 +291,7 @@ def test_without_yes_nothing_is_written(monkeypatch, capsys):
     assert "50 conversations" in capsys.readouterr().out
 
 
-@pytest.mark.parametrize("args", [["--weeks", "0"], ["--weeks", "-1"], ["--marker", "a b"], ["--marker", "x'"]])
+@pytest.mark.parametrize("args", [["--weeks", "0"], ["--weeks", "-1"], ["--marker", "a b"], ["--marker", "x'"], ["--copies", "0"], ["--copies", "11"], ["--copies", "x"]])
 def test_odd_arguments_are_refused(monkeypatch, args):
     monkeypatch.setattr(seed, "write", no_calls)
     with pytest.raises(SystemExit):

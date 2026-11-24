@@ -200,10 +200,15 @@ def _planted(found: list[Found]) -> list[str]:
     ]
 
 
-def report(labelled: list[Found], planted: list[Found], model: Model) -> str:
+def cost(model: Model) -> float:
+    """USD, with the list prices in scripts/model_costs.py."""
     price_in, price_cached, price_out = PRICES[DEPLOYMENT]
     fresh = model.input_tokens - model.cached_tokens
-    usd = (fresh * price_in + model.cached_tokens * price_cached + model.output_tokens * price_out) / 1_000_000
+    return (fresh * price_in + model.cached_tokens * price_cached + model.output_tokens * price_out) / 1_000_000
+
+
+def report(labelled: list[Found], planted: list[Found], model: Model) -> str:
+    usd = cost(model)
     count = len(labelled) + len(planted)
     each = f", {1000 * usd / count:.2f} USD per 1,000 conversations" if count else ""
     when = dt.datetime.now(dt.UTC).strftime("%Y-%m-%d %H:%M UTC")

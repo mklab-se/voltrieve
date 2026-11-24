@@ -8,12 +8,14 @@
 """Write made up conversations straight to Foundry, for demos and to test the usage insights.
 
     uv run scripts/seed_conversations.py                      # says how many it would write
-    uv run scripts/seed_conversations.py --yes [--weeks 4] [--only planted|labelled] [--marker WORD]
+    uv run scripts/seed_conversations.py --yes [--weeks 4] [--only planted|labelled] [--copies 1] [--marker WORD]
 
 The text is services/insights/data/seeded.yaml. Each conversation is marked `seeded`, so it is never
 counted as real use, and gets a made up owner and a day in one of the last `--weeks` settled weeks.
 It calls no model and prints counts only. --marker puts a word in one conversation, so that a live
-search can tell whether anything of it was left somewhere. Running it twice writes everything twice.
+search can tell whether anything of it was left somewhere. --copies writes each conversation that many
+times in the same week, each by another made up person, so that enough people share a need to make a
+named group. A planted detail is then shared by that many people too. Running it twice writes everything twice.
 Needs az, signed in as someone who may write conversations, and FOUNDRY_PROJECT_ENDPOINT.
 """
 
@@ -39,7 +41,9 @@ from voltrieve_insights.conversations import window  # noqa: E402
 
 DATA = ROOT / "services" / "insights" / "data" / "seeded.yaml"
 SCOPE = "https://ai.azure.com/.default"
-OWNERS = 40
+OWNERS = 200
+OWNERS_OF_ONE = 40  # of a plan without copies
+MAX_COPIES = 10
 BACKENDS = ("loop", "prompt", "hosted")
 TRIES = 5
 WAIT = 2.0  # seconds, when the service does not say how long
@@ -81,25 +85,31 @@ def _said(conversation: dict) -> list[str]:
     return [first, *rest]
 
 
-def plan(conversations: list[dict], weeks: int, today: dt.date, marker: str | None = None) -> list[Planned]:
-    """What to write. Each topic is spread over the weeks, and within a week over different owners."""
+def plan(
+    conversations: list[dict], weeks: int, today: dt.date, marker: str | None = None, copies: int = 1
+) -> list[Planned]:
+    """What to write. Each topic is spread over the weeks, and within a week over different owners. The
+    copies of a conversation are in its week, on other days, and each has another owner."""
     _, last = window(dt.datetime.combine(today, dt.time(12), dt.UTC))
+    apart = OWNERS // copies  # copies * apart is at most OWNERS, so no two copies meet
     planned: list[Planned] = []
-    for i, conversation in enumerate(sorted(conversations, key=lambda c: first(c["topic"]))):
-        week, place = i % weeks, i // weeks
-        said = _said(conversation)
-        if marker and i == 0:
-            said[0] += f" My reference is {marker}."
-        meta = {
-            "owner_oid": f"seeded-{(place + week * 5) % OWNERS + 1}",
-            "client": conversation["client"],
-            "backend": BACKENDS[i % len(BACKENDS)],
-            "seeded": "true",
-            "started": (last - dt.timedelta(days=week * 7 + place % 7)).isoformat(),
-        }
-        if "stated" in conversation:
-            meta["car_model"] = conversation["stated"]
-        planned.append((meta, [_message(n, text) for n, text in enumerate(said)]))
+    for copy in range(copies):
+        for i, conversation in enumerate(sorted(conversations, key=lambda c: first(c["topic"]))):
+            week, place = i % weeks, i // weeks
+            said = _said(conversation)
+            if marker and i == 0 and copy == 0:
+                said[0] += f" My reference is {marker}."
+            owner = (place + week * 5) % OWNERS_OF_ONE + copy * apart
+            meta = {
+                "owner_oid": f"seeded-{owner % OWNERS + 1}",
+                "client": conversation["client"],
+                "backend": BACKENDS[i % len(BACKENDS)],
+                "seeded": "true",
+                "started": (last - dt.timedelta(days=week * 7 + (place + copy) % 7)).isoformat(),
+            }
+            if "stated" in conversation:
+                meta["car_model"] = conversation["stated"]
+            planned.append((meta, [_message(n, text) for n, text in enumerate(said)]))
     return planned
 
 
@@ -157,6 +167,13 @@ def _weeks(text: str) -> int:
     return weeks
 
 
+def _copies(text: str) -> int:
+    copies = int(text)
+    if not 1 <= copies <= MAX_COPIES:
+        raise argparse.ArgumentTypeError(f"1 to {MAX_COPIES}")
+    return copies
+
+
 def _marker(text: str) -> str:
     if not (text.isascii() and text.isalnum()):
         raise argparse.ArgumentTypeError("a marker is letters and digits only")
@@ -166,12 +183,13 @@ def _marker(text: str) -> str:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--weeks", type=_weeks, default=4)
+    parser.add_argument("--copies", type=_copies, default=1, metavar="N")
     parser.add_argument("--only", choices=("planted", "labelled"))
     parser.add_argument("--marker", type=_marker, metavar="WORD")
     parser.add_argument("--yes", action="store_true", help="write them")
     args = parser.parse_args(argv)
     today = dt.datetime.now(dt.UTC).date()
-    planned = plan(choose(load(), args.only), args.weeks, today, args.marker)
+    planned = plan(choose(load(), args.only), args.weeks, today, args.marker, args.copies)
     print(f"{len(planned)} conversations, over {args.weeks} weeks.")
     if not args.yes:
         print("Nothing is written without --yes.")
