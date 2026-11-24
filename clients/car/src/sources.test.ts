@@ -116,6 +116,15 @@ describe("opening a source", () => {
     await expect(fetchSourceUrl("https://api.example", "tok", BROCHURE.link!, fetchMock)).rejects.toThrow(/cannot be opened/);
   });
 
+  it.each([
+    ["a lost connection", async () => Promise.reject(new TypeError("Failed to fetch"))],
+    ["a server error", async () => new Response("", { status: 500 })],
+    ["a link it does not know", async () => Response.json({ url: "https://evil.example/a.pdf" })],
+  ])("tells a customer about %s in plain words", async (_, answer) => {
+    const link = fetchSourceUrl("https://api.example", "tok", BROCHURE.link!, answer as typeof fetch);
+    await expect(link).rejects.toThrow("The document could not be opened. Try again.");
+  });
+
   it("opens the window at once and points it at the document when the link arrives", async () => {
     const win = { location: { href: "" }, close: vi.fn(), opener: {} as unknown };
     const open = vi.fn(() => win as unknown as Window);

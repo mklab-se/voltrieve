@@ -28,6 +28,9 @@ interface Props {
 /** What the HUD says while the car does something that takes time. */
 const DOING: Record<string, string | undefined> = { park: "Parking the car", get_sign_photo: "Looking at the sign" };
 
+/** The token, or an error in words for the driver. */
+const signedIn = (auth: Auth) => auth.getToken().catch(() => Promise.reject(new Error("You could not be signed in. Try again.")));
+
 export function Workspace({ config, auth, session }: Props) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const scene = useRef<StreetScene | undefined>(undefined);
@@ -35,8 +38,10 @@ export function Workspace({ config, auth, session }: Props) {
     const made: Drive = new Drive(
       createHorn(),
       (block) => scene.current?.photo(made.car, block) ?? Promise.reject(new Error("The street is not drawn yet.")),
-      async ({ block, blob }) =>
-        uploadPhoto({ apiUrl: config.apiUrl, token: await auth.getToken(), blob, label: `Parking sign in block ${block + 1}` }),
+      async ({ block, blob }) => {
+        const token = await signedIn(auth);
+        return uploadPhoto({ apiUrl: config.apiUrl, token, blob, label: `Parking sign in block ${block + 1}` });
+      },
     );
     return made;
   });
@@ -100,8 +105,8 @@ export function Workspace({ config, auth, session }: Props) {
     if (!source.link) return;
     const link = source.link;
     setSourceError(undefined);
-    openSource(async () => fetchSourceUrl(config.apiUrl, await auth.getToken(), link)).catch((e: unknown) =>
-      setSourceError(e instanceof Error ? e.message : "The document could not be opened."),
+    openSource(async () => fetchSourceUrl(config.apiUrl, await signedIn(auth), link)).catch((e: unknown) =>
+      setSourceError(e instanceof Error ? e.message : "The document could not be opened. Try again."),
     );
   }
 

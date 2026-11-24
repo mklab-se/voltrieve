@@ -1,6 +1,5 @@
 // Copied from clients/web; keep the two alike. Here it also sends the context and attachments.
 import { parseServerEvent } from "./events";
-import { readProblem } from "./problems";
 import { createSseParser } from "./sse";
 import type { Backend, ClientContext, ClientTool, ServerEvent, ToolOutput } from "./types";
 
@@ -65,6 +64,29 @@ export function buildToolResultsRequest(input: ToolResultsInput): { url: string;
   });
 }
 
+/** An HTTP error as an event, with a text for the timeline. It keeps the API's own code, when there is one. */
+export function httpError(status: number, code?: string): ServerEvent {
+  const message =
+    code === "unknown_attachment"
+      ? "The API no longer has the photo."
+      : status === 401
+        ? "The API rejected the access token (401). Try signing in again."
+        : status === 403
+          ? "The API refused the request (403). Check that your account has the Chat.User role, that the token carries the access_as_user scope, and that the conversation is yours."
+          : `The API answered with HTTP ${status}.`;
+  return { type: "error", data: { code: code ?? `http_${status}`, message } };
+}
+
+async function errorCode(res: Response): Promise<string | undefined> {
+  try {
+    const body = (await res.json()) as { detail?: { code?: unknown } } | null;
+    const code = body?.detail?.code;
+    return typeof code === "string" ? code : undefined;
+  } catch {
+    return undefined; // not JSON
+  }
+}
+
 /** POST /chat and yield typed events as they arrive. Never throws for network or HTTP errors. */
 export function streamChat(
   input: ChatRequestInput,
@@ -101,7 +123,7 @@ async function* stream(
     return;
   }
   if (!res.ok || !res.body) {
-    yield { type: "error", data: await readProblem(res) };
+    yield httpError(res.status, await errorCode(res));
     return;
   }
 

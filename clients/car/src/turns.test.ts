@@ -55,8 +55,15 @@ describe("chatReducer", () => {
     expect(s.conversationId).toBe("c1");
   });
 
+  it("starts a new conversation after a 403, and only then", () => {
+    const first = run([{ type: "done", data: { conversation_id: "c1", turn_id: "t1", backend: "loop" } }]);
+    const after = (code: string) => run([{ type: "error", data: { code, message: "" } }], first).conversationId;
+    expect(after("http_403")).toBeUndefined();
+    expect(after("http_500")).toBe("c1");
+  });
+
   it("marks the turn failed on an error event", () => {
     const s = run([{ type: "error", data: { code: "boom", message: "bad" } }]);
-    expect(s.turns[0]).toMatchObject({ status: "error", error: "bad" });
+    expect(s.turns[0]).toMatchObject({ status: "error", entries: [{ kind: "error", code: "boom", message: "bad" }] });
   });
 });

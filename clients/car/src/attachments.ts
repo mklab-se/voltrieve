@@ -1,11 +1,20 @@
-import { readProblem } from "./problems";
-
 export type UploadResult =
   | { status: "ready"; id: string }
   | { status: "rejected"; message: string } // a photo, but not good enough
   | { status: "error"; message: string };
 
 const UPLOAD_MS = 60_000;
+
+/** Runa tells the driver these, so they are in plain words. */
+const REFUSED: Record<number, string> = {
+  401: "Your sign-in is no longer valid. Sign out and in again.",
+  403: "Your account is not allowed to send photos.",
+  408: "The photo took too long to send. Check the connection and try again.",
+  413: "The photo is too large.",
+  415: "The photo cannot be read.",
+  503: "Voltrieve is busy with other photos. Wait a moment and try again.",
+};
+const FAILED = "The photo could not be sent. Try again.";
 
 /** POST /attachments. Never throws for network or HTTP errors. */
 export async function uploadPhoto(
@@ -24,15 +33,15 @@ export async function uploadPhoto(
       signal: AbortSignal.timeout(UPLOAD_MS),
     });
   } catch {
-    return { status: "error", message: `Could not reach the API at ${input.apiUrl}.` };
+    return { status: "error", message: "The photo could not be sent. Check the connection and try again." };
   }
-  if (!response.ok) return { status: "error", message: (await readProblem(response)).message };
+  if (!response.ok) return { status: "error", message: REFUSED[response.status] ?? FAILED };
   const answer = await response.json().catch(() => null);
   if (answer?.status === "ready" && typeof answer.id === "string") return { status: "ready", id: answer.id };
   if (answer?.status === "rejected" && typeof answer.message === "string") {
     return { status: "rejected", message: answer.message };
   }
-  return { status: "error", message: "The car did not understand the API's answer to the photo." };
+  return { status: "error", message: FAILED };
 }
 
 interface Photo {

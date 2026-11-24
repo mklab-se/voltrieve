@@ -32,24 +32,28 @@ describe("uploadPhoto", () => {
   it.each([
     [408, { detail: "The upload took too long" }, /took too long/],
     [413, { detail: "The attachment is too large" }, /too large/],
-    [415, { detail: "Unknown kind of attachment" }, /kind of file/],
+    [415, { detail: "Unknown kind of attachment" }, /cannot be read/],
     [503, { detail: { code: "busy" } }, /busy/],
-    [401, { detail: "x" }, /sign/i],
-    [201, "not json", /did not understand/],
-    [201, { status: "ready", id: 7 }, /did not understand/],
-    [201, { status: "rejected" }, /did not understand/],
-    [201, null, /did not understand/],
-  ])("gives %i %j a clear error", async (status, body, text) => {
+    [401, { detail: "x" }, /sign-in/],
+    [403, { detail: "Chat.User" }, /not allowed/],
+    [500, "not json", /could not be sent/],
+    [201, "not json", /could not be sent/],
+    [201, { status: "ready", id: 7 }, /could not be sent/],
+    [201, { status: "rejected" }, /could not be sent/],
+    [201, null, /could not be sent/],
+  ])("gives %i %j a clear error in plain words", async (status, body, text) => {
     const result = await upload(answering(status as number, body));
     expect(result.status).toBe("error");
-    expect((result as { message: string }).message).toMatch(text as RegExp);
+    const { message } = result as { message: string };
+    expect(message).toMatch(text as RegExp);
+    expect(message).not.toMatch(/API|HTTP|Chat\.User|backend|[0-9]/);
   });
 
   it("gives an error when the API cannot be reached", async () => {
     const down = vi.fn(async () => {
       throw new TypeError("failed");
     });
-    expect(await upload(down as never)).toEqual({ status: "error", message: "Could not reach the API at https://api.example/." });
+    expect(await upload(down as never)).toEqual({ status: "error", message: "The photo could not be sent. Check the connection and try again." });
   });
 });
 
