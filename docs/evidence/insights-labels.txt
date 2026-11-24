@@ -1,0 +1,53 @@
+Labels of made up conversations, and what the model calls leave behind, 2026-11-24.
+
+1. The labels, as printed by scripts/labels_check.py (gpt-6-luna, one run over the final data and prompt of 6a7a270).
+   Gate: at least 90 of 100 with all four labels right. The right answers and the prompt have the same author. A
+   second agent checked the labels of the 100 independently and changed 4, reworded 13 and gave 2 a second right answer.
+
+Labels of made up conversations, gpt-6-luna, 2026-11-24 14:58 UTC
+
+Labels
+  all four right: 91 of 100 (91 %)
+  topic: 96 of 100 (96 %)
+  car_model: 99 of 100 (99 %)
+  kind: 97 of 100 (97 %)
+  result: 96 of 100 (96 %)
+  baseline, car_model of a model that always answers null: 67 of 100 (67 %)
+  all four right where the person tries to steer: 3 of 6 (50 %)
+
+Wrong
+  a010  topic: got range_battery, want charging
+  a016  error: the service refused the request
+  a024  kind: got how_to, want compare
+  a033  result: got partly, want answered
+  a034  kind: got buy, want how_to
+  a044  topic: got compare_models, want other
+  a062  result: got partly, want answered
+  a072  topic: got price_purchase, want parts_accessories
+  a090  result: got not_found, want partly
+
+Intents the filter dropped in the labelled ones: 0
+
+Planted details
+  planted: 108 in 50 conversations
+  in intents before the filter: 0
+  in intents after the filter: 0
+  intents the filter dropped: 0
+
+Planted details that reached an intent (made up text)
+  none
+
+Cost, with the list prices in scripts/model_costs.py
+  tokens in 150,379 (cached 0), out 15,360
+  0.0227 USD, 0.15 USD per 1,000 conversations
+
+2. What a model call leaves behind (a chat completion with a marker in the text, 14:59 UTC, and the marker planted in
+   one of the 150 seeded conversations): no row in any table of the workspace 14 minutes later, and 0 stored completions
+   listed. The job's own identity and calls are checked the same way in insights-acceptance.txt.
+
+3. Where the intents stood: 0 of the 108 planted personal details reached an intent, before and after the filter. The
+   filter had nothing to do in this run: the model did not write them. The 50 planted conversations hold names, streets
+   and towns, which patterns knowingly miss, so this says how the model wrote, not that the filter stops them.
+
+4. The service refused one of the 100 (a016): counted as wrong. The job skips such a conversation.
+5. Not verified: right labels on real conversations, and what other days' model versions do.
