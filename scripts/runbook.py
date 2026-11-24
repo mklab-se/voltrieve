@@ -225,10 +225,12 @@ def table(all_results: dict[str, list[Result]]) -> str:
     return "\n".join(lines) + "\n"
 
 
+# Foundry's own rows (responsesapi, agentsv2) are not required: its tracing is disconnected
+# (docs/evidence/tracing-disconnected.txt).
 REQUIRED_SERVICES = {
     "loop": {"voltrieve-api", "voltrieve-dealer"},
-    "prompt": {"voltrieve-api", "voltrieve-dealer", "responsesapi"},
-    "hosted": {"voltrieve-api", "voltrieve-dealer", "responsesapi", "agentsv2", "voltrieve-hosted"},
+    "prompt": {"voltrieve-api", "voltrieve-dealer"},
+    "hosted": {"voltrieve-api", "voltrieve-dealer", "voltrieve-hosted"},
 }
 
 

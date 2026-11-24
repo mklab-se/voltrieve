@@ -758,3 +758,29 @@ def test_a_hit_in_azure_activity_counts(monkeypatch):
     monkeypatch.setenv("AZURE_RESOURCE_GROUP", "rg")
     monkeypatch.setattr(subprocess, "run", fake_az({"vtmarkaaa": {"AzureActivity": 1}}))
     assert tracing_check.main(["--search", "vtmarkaaa"]) == 1
+
+
+# scripts/runbook.py step 12: the services that one trace must reach.
+
+import runbook  # noqa: E402
+
+
+def _trace_step(monkeypatch, roles):
+    monkeypatch.setattr(runbook, "resource_group_app", lambda: ("rg-test", "appi-test"))
+    monkeypatch.setattr(runbook, "trace_counts", lambda group, app, backend, hours: [[r, "request", 1] for r in roles])
+    monkeypatch.setattr(runbook, "write_report", lambda counts: None)
+    results = {"hosted": []}
+    runbook.check_traces(results)
+    return results["hosted"][-1]
+
+
+def test_trace_step_passes_with_api_hosted_agent_and_dealer(monkeypatch):
+    step = _trace_step(monkeypatch, ["voltrieve-api", "voltrieve-hosted", "voltrieve-dealer"])
+    assert (step.number, step.status) == (12, "PASS")
+
+
+def test_trace_step_fails_without_the_dealer(monkeypatch):
+    monkeypatch.setattr(runbook.time, "monotonic", iter([0, 1000]).__next__)
+    step = _trace_step(monkeypatch, ["voltrieve-api", "voltrieve-hosted"])
+    assert step.status == "FAIL"
+    assert "voltrieve-dealer" in step.note
