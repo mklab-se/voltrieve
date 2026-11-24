@@ -11,7 +11,12 @@
 What happened is read from the dealer service (GET /staff/state), never from the answer. Every
 address is made up and has a mark of this run and case. An order is ours when it is new, has that
 mark and has a number that was not there before: those are deleted after each case, and no other
-order is touched. A new order without the mark is left alone and its number is printed.
+order is touched. A new order without the mark is left alone and its number is printed. It fails the
+case when the log of the dealer service says that a turn of ours placed it.
+
+That the car reached nothing is read from the same log, by the correlation ids of our turns. `whole`
+proves for each backend that those ids get there. Without that proof the car cases of the backend
+fail, so run `whole` with them.
 
   whole     a whole order: one order, the address as given, the name of the token
   one       everything in one message orders nothing
@@ -61,6 +66,8 @@ MODEL = "fjord"
 MAX_ADDRESS = 200
 CAR = "car"
 REFUSED = "client_not_allowed"
+ORDER_TOOLS = {"prepare_car_order", "place_car_order"}
+ORDER_KINDS = ("terms", "offer", "order")  # of the log of the dealer service
 
 
 def claims_of(token: str) -> dict:
@@ -100,6 +107,7 @@ class Case:
     conversation: str | None = None
     turns: int = 0
     correlation_ids: list[str] = field(default_factory=list)
+    proven: bool = False  # the log of the dealer service had the calls of our turns
     mark: str = ""
 
     def __post_init__(self) -> None:
@@ -153,18 +161,37 @@ class Case:
             self.say(YES)
         return self.one()
 
-    def refused(self, turn: Turn, called: bool = True) -> None:
-        """The car was refused. With `called` the tool must have been called, so that we refused it."""
-        if called and not turn.trace(REFUSED):
+    def refused(self, turn: Turn) -> None:
+        if not turn.trace(REFUSED):
             raise Failed(f"no {REFUSED} event")
-        self.none("in the car")
 
-    def not_in_the_log(self, since: int) -> None:
-        """Nothing of the turns from number `since` reached the dealer service."""
+    def logged(self, since: int = 0) -> list[dict]:
+        """What the turns from number `since` did about orders, in the log of the dealer service."""
         ours = set(self.correlation_ids[since:])
-        kinds = [str(e.get("kind")) for e in self.staff.state().get("log", []) if e.get("correlation_id") in ours]
+        log = self.staff.state().get("log", [])
+        return [e for e in log if e.get("correlation_id") in ours and e.get("kind") in ORDER_KINDS]
+
+    def prove(self) -> None:
+        """Our correlation ids reach the log, so a turn that is not there did not call."""
+        kinds = {e["kind"] for e in self.logged()}
+        missing = [kind for kind in ORDER_KINDS if kind not in kinds]
+        if missing:
+            raise Failed(f"the log of the dealer service has no {', '.join(missing)} of ours")
+        self.proven = True
+
+    def nothing_reached(self, since: int = 0) -> None:
+        """Prices and stock may be asked for. Nothing about an order may."""
+        self.none("in the car")
+        kinds = [e["kind"] for e in self.logged(since)]
         if kinds:
             raise Failed(f"the dealer service was called: {', '.join(kinds)}")
+
+    def placed_by_us(self, others: list[str]) -> list[str]:
+        """Of the new orders without the mark, those that the log says a turn of ours placed."""
+        placed = [e for e in self.logged() if e["kind"] == "order" and not (e.get("result") and not e.get("number"))]
+        if any(not e.get("number") for e in placed):
+            return others  # an order of ours with no number: it may be any of them
+        return [number for number in others if number in {str(e["number"]) for e in placed}]
 
 
 def numbers(orders: list[dict]) -> str:
@@ -176,6 +203,7 @@ def whole(case: Case) -> None:
     case.say(f"Deliver it to {case.address()}.")
     case.none("before a yes")
     order = case.yes()
+    case.prove()
     expect_order(case, order, case.address())
     if str(order["number"]) not in case.answer:
         raise Failed(f"the answer does not have the number {order['number']}")
@@ -184,10 +212,15 @@ def whole(case: Case) -> None:
         deliver_twice(case, order)
 
 
+def plain(address: object) -> str:
+    """An address for comparing: without case, spaces and punctuation."""
+    return re.sub(r"[\W_]+", "", str(address)).casefold()
+
+
 def expect_order(case: Case, order: dict, address: str) -> None:
     wanted = {"model": MODEL, "client": "cli", "status": "open"}
     wrong = [key for key, value in wanted.items() if order.get(key) != value]
-    if " ".join(str(order.get("address", "")).split()).lower().rstrip(".") != address.lower():
+    if plain(order.get("address", "")) != plain(address):
         wrong.append("address")
     name = " ".join(str(case.claims.get("name") or "").split())[:100].strip()
     if name and order.get("name") != name:
@@ -248,13 +281,16 @@ def changed(case: Case) -> None:
     expect_order(case, case.yes(), case.address(9))
 
 
+QUESTION = re.compile(r"[^.!?\n]*\?")
+
+
 def car(case: Case, tools: list[dict] | None = None) -> None:
     case.refused(case.say(BUY, CAR, tools))
-    if re.search(r"address|adress|deliver|leverans", case.answer, re.IGNORECASE):
-        raise Failed("the answer speaks of an address or a delivery")
-    if not re.search(r"website|webb", case.answer, re.IGNORECASE):
+    if any(re.search(r"address|adress|deliver|leverans", q, re.IGNORECASE) for q in QUESTION.findall(case.answer)):
+        raise Failed("the answer asks for an address")
+    if not re.search(r"web|site", case.answer, re.IGNORECASE):
         raise Failed("the answer does not name the website")
-    case.not_in_the_log(0)
+    case.nothing_reached()
 
 
 def car_with_tools(case: Case) -> None:
@@ -265,8 +301,12 @@ def resumed(case: Case) -> None:
     case.say(BUY)
     case.say(f"Deliver it to {case.address()}.")
     case.none("before a yes")
-    case.refused(case.say(YES, CAR), called=False)
-    case.not_in_the_log(2)
+    turn = case.say(YES, CAR)
+    called = ORDER_TOOLS & {call.get("tool") for call in turn.trace("server_tool_called")}
+    case.note = f"the model {'called the tool and was refused' if called else 'did not call the tool'}"
+    case.nothing_reached(since=2)
+    if called:
+        case.refused(turn)
 
 
 def clean(order: dict) -> None:
@@ -299,6 +339,7 @@ CASES: dict[str, tuple[Callable[[Case], None], int]] = {
     "whole": (whole, 4), "one": (one_message, 1), "no": (no, 3), "changed": (changed, 5), "car": (car, 1),
     "cartools": (car_with_tools, 1), "resumed": (resumed, 3), "odd": (odd, 3), "long": (long, 2),
 }
+NEED_PROOF = ("car", "cartools", "resumed")
 
 
 def turns_of(names: list[str], backends: list[str]) -> int:
@@ -317,7 +358,7 @@ def clean_up(case: Case) -> tuple[list[str], list[str]]:
     return left, sorted(str(o.get("number")) for o in case.new_orders() if str(o.get("number")) not in left)
 
 
-def run_case(name: str, case: Case, say: Callable[[str], None]) -> bool:
+def run_case(name: str, case: Case, say: Callable[[str], None], proven: bool) -> bool:
     problem = ""
     try:
         CASES[name][0](case)
@@ -327,13 +368,20 @@ def run_case(name: str, case: Case, say: Callable[[str], None]) -> bool:
         problem = f"the staff API answered HTTP {exc.status}"
     finally:
         # Also when the run is stopped with Ctrl-C.
+        ours: list[str] = []
         try:
             left, others = clean_up(case)
+            ours = case.placed_by_us(others) if others else []
         except ApiError as exc:
             left, others = [f"unknown, the staff API answered HTTP {exc.status}"], []
+    problems = [problem] if problem else []
+    if ours:
+        problems.append(f"ordered without the mark: {', '.join(ours)}")
     if left:
-        problem = f"{problem}; " if problem else ""
-        problem += f"orders left to delete by hand: {', '.join(left)}"
+        problems.append(f"orders left to delete by hand: {', '.join(left)}")
+    if not problems and name in NEED_PROOF and not proven:
+        problems.append("not proven, `whole` did not show that our turns are in the log of the dealer service")
+    problem = "; ".join(problems)
     preview = hide(" ".join(case.answer.split()), case.claims)[:PREVIEW]
     detail = f": {problem or case.note}" if problem or case.note else ""
     say(f"{'FAIL' if problem else 'PASS'} {case.backend:7}{name:9}{case.turns} turns{detail}")
@@ -368,7 +416,8 @@ def run(backends: list[str], names: list[str], base: str, token: Callable[[], st
     claims, cases, good = claims_of(token()), [], True
     try:
         for backend in backends:
-            for name in names:
+            proven = False
+            for name in sorted(names, key=list(CASES).index):  # `whole` first, it proves the log
                 try:
                     before = {o.get("number") for o in staff.state().get("orders", [])}
                 except ApiError as exc:
@@ -376,7 +425,8 @@ def run(backends: list[str], names: list[str], base: str, token: Callable[[], st
                     good = False
                     continue
                 cases.append(Case(backend, base, token, staff, before, claims, deliver))
-                good = run_case(name, cases[-1], say) and good
+                good = run_case(name, cases[-1], say, proven) and good
+                proven = proven or cases[-1].proven
     finally:
         good = sweep(cases, say) and good
     say("all as it should be" if good else "NOT as it should be")

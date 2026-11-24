@@ -725,7 +725,8 @@ async def test_the_rest_of_a_request_after_a_private_tool_is_quiet(client, auth,
     backend.script = [run]
     with caplog.at_level("DEBUG"):
         r = await chat(client, auth)
-    assert parse_sse(r.text)[-1][1]["code"] == "internal_error" and "Turn failed: RuntimeError" in caplog.text or not private
+    assert parse_sse(r.text)[-1][1]["code"] == "internal_error" and "Turn failed" in caplog.text
+    assert ("Turn failed: RuntimeError" in caplog.text) is private  # the type, else a traceback
     assert [f"SECRET {n}" in caplog.text for n in (1, 2, 3)] == [not private] * 3
 
 
