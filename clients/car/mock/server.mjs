@@ -5,9 +5,9 @@
 //   npm run dev:mock        (the car with fake auth pointing here)
 //
 // "wipers" calls set_wipers, "honk" honk, "speed" with a number set_speed, "park here" get_sign_photo
-// and then a scripted parking answer, "park" park, "error" an error. Everything else gets a scripted
-// answer. As in the real API: a body over 64 KB is too large, an id that was not given out here is an
-// unknown attachment, and a file named blurred.jpg is rejected.
+// and then a scripted parking answer, "park" park, "error" an error, "how far" a long answer with
+// sources. Everything else gets a scripted answer. As in the real API: a body over 64 KB is too large,
+// an id that was not given out here is an unknown attachment, and a file named blurred.jpg is rejected.
 import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 
@@ -34,6 +34,15 @@ const PARKING =
   "The sign applies to the whole block.";
 
 const ANSWER = "I am Runa, and this is the **Spark**. Ask me to turn on the wipers, to honk or to park.";
+
+const RANGE =
+  "With the Spark in the **Plus** trim you can count on these distances:\n\n" +
+  "- In the city, in summer: **310 km**\n- On the motorway: **220 km**\n- In the city, in winter: **240 km**\n\n" +
+  "Warm the cabin while the car still charges, then the battery is there for the road.";
+const SOURCES = [
+  { id: "spark_owners_manual", title: "Spark owner's manual", kind: "source", link: "/sources/spark_owners_manual" },
+  { id: "winter_driving", title: "Driving in winter", kind: "read_more", link: "/sources/winter_driving" },
+];
 
 const sse = (res) => (event, data) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 
@@ -62,8 +71,8 @@ function toolFor(message, hasPhoto) {
   }
   if (m.includes("honk")) return ["honk", { times: Number(number ?? (m.includes("twice") ? 2 : 1)) }];
   if (m.includes("speed") && number) return ["set_speed", { kmh: Number(number) }];
-  if (m.includes("park here")) return hasPhoto ? undefined : ["get_sign_photo", {}];
-  if (m.includes("park")) return ["park", {}];
+  if (/\bpark here/.test(m)) return hasPhoto ? undefined : ["get_sign_photo", {}];
+  if (/\bpark\b/.test(m)) return ["park", {}];
   return undefined;
 }
 
@@ -103,7 +112,11 @@ async function chat(res, body, backend) {
       calls: [{ call_id: `call-${randomUUID().slice(0, 8)}`, name, arguments: JSON.stringify(args) }],
     });
   }
-  await say(send, /park here/i.test(message) ? PARKING : ANSWER);
+  const range = /how far|range/i.test(message);
+  if (range) send("status", { code: "searching", message: "Reading the owner's manual" });
+  if (range) await sleep(1200);
+  await say(send, /park here/i.test(message) ? PARKING : range ? RANGE : ANSWER);
+  if (range) send("sources", { items: SOURCES });
   send("done", { conversation_id, turn_id, backend, usage: { input_tokens: 1840, output_tokens: 62 } });
 }
 

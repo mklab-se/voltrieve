@@ -87,8 +87,8 @@ const WHITE = new Color("#ffffff");
 const MAX_PIXELS = 3_400_000;
 /** The share of the full resolution, from the best picture to the fastest. */
 const QUALITY = [1, 0.8, 0.62, 0.5];
-const SLOW_FRAME_S = 1 / 48;
-const JUDGE_FRAMES = 50;
+const SLOW_FRAME_S = 1 / 45;
+const JUDGE_FRAMES = 90;
 
 /** Many copies of one thing. Each segment of the street has its own places for them. */
 class Copies {
@@ -197,7 +197,7 @@ export class StreetScene {
   private pitch = 0;
   private sway = 0;
   private level = 0;
-  private slow = { frames: 0, seconds: 0 };
+  private judged = { frames: 0, slow: 0 };
   private size = { width: 0, height: 0, dpr: 0, level: -1 };
 
   constructor(
@@ -362,14 +362,14 @@ export class StreetScene {
     return true;
   }
 
-  /** Slow frames give a smaller picture, and then no mirror. */
+  /** When most frames are slow, the picture gets smaller, and then the mirror goes. A single hitch does not count. */
   private judge(seconds: number): void {
-    if (seconds > 0.5) return; // the tab was hidden
-    this.slow.frames += 1;
-    this.slow.seconds += seconds;
-    if (this.slow.frames < JUDGE_FRAMES) return;
-    if (this.slow.seconds / this.slow.frames > SLOW_FRAME_S && this.level < QUALITY.length - 1) this.level += 1;
-    this.slow = { frames: 0, seconds: 0 };
+    const { judged } = this;
+    judged.frames += 1;
+    if (seconds > SLOW_FRAME_S && seconds < 0.5) judged.slow += 1;
+    if (judged.frames < JUDGE_FRAMES) return;
+    if (judged.slow > 0.6 * JUDGE_FRAMES && this.level < QUALITY.length - 1) this.level += 1;
+    this.judged = { frames: 0, slow: 0 };
   }
 
   private weather(): void {
@@ -386,7 +386,7 @@ export class StreetScene {
     this.glass.exposure = 1.12 - 0.1 * wet;
     for (const m of this.wetStones) {
       m.roughness = 0.92 - 0.7 * wet;
-      m.color.setScalar(1 - 0.36 * wet);
+      m.color.setRGB(1 - 0.48 * wet, 1 - 0.42 * wet, 1 - 0.34 * wet);
       m.envMapIntensity = 0.5 + 1.7 * wet;
     }
   }

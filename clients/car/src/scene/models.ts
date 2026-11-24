@@ -192,14 +192,14 @@ export function carParts(): CarParts[] {
         );
       }
       parts.push(
-        part(box(0.26, 0.2, 0.1), "#a50f16", { at: [x * (WIDE / 2 - 0.2), 0.82 + tall, half - 0.06] }),
-        part(box(0.26, 0.05, 0.105), "#e8733a", { at: [x * (WIDE / 2 - 0.2), 0.75 + tall, half - 0.06] }),
-        part(box(0.36, 0.13, 0.14), "#eef0ee", { at: [x * (WIDE / 2 - 0.3), 0.68 + tall, -half + 0.07] }),
+        part(box(0.26, 0.17, 0.04), "#a50f16", { at: [x * (WIDE / 2 - 0.31), 0.84 + tall, half - 0.04] }),
+        part(box(0.26, 0.045, 0.042), "#d9682f", { at: [x * (WIDE / 2 - 0.31), 0.775 + tall, half - 0.04] }),
+        part(box(0.34, 0.11, 0.06), "#eef0ee", { at: [x * (WIDE / 2 - 0.36), 0.69 + tall, -half + 0.02] }),
       );
       for (const z of [0.5, -0.4]) parts.push(part(box(0.02, 0.028, 0.18), "#202428", { at: [x * (WIDE / 2 - 0.035), 0.86 + tall, z] }));
     }
     parts.push(
-      part(box(0.52, 0.12, 0.03), "#f4f4f1", { at: [0, 0.64 + tall, half + 0.012] }),
+      part(box(0.52, 0.12, 0.03), "#f4f4f1", { at: [0, 0.64 + tall, half + 0.004] }),
       part(box(0.4, 0.065, 0.034), "#33373b", { at: [0.02, 0.64 + tall, half + 0.012] }),
       part(box(0.52, 0.12, 0.03), "#f4f4f1", { at: [0, 0.5, -half - 0.012] }),
       part(box(1.4, 0.2, 0.06), "#1a1c1e", { at: [0, 0.36, half - 0.01] }),
@@ -228,7 +228,7 @@ function leafBall(count: number, radius: [number, number, number], y: number, si
     const up = 1 - (2 * (i + 0.5)) / count;
     const a = i * 2.39996;
     const out = new Vector3(Math.cos(a) * Math.sqrt(1 - up * up), up, Math.sin(a) * Math.sqrt(1 - up * up));
-    const depth = 0.5 + rnd() * 0.62;
+    const depth = 0.52 + rnd() * 0.48;
     const s = size * (0.75 + rnd() * 0.5);
     const g = new PlaneGeometry(s, s);
     g.rotateZ(rnd() * 6.28);
