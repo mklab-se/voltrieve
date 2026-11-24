@@ -142,3 +142,24 @@ def test_the_text_says_real_and_made_up_are_never_added():
     text = ask_items()[0]["content"]["json"]
     assert "never added" in text and "Real and made up" in text
     assert "five people" in text and "rounded to five" in text
+
+
+def test_no_query_names_something_the_engine_refuses():
+    import re
+
+    def queries(node):
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if key == "query" and isinstance(value, str):
+                    yield value
+                else:
+                    yield from queries(value)
+        elif isinstance(node, list):
+            for value in node:
+                yield from queries(value)
+
+    found = list(queries(items()))
+    assert found
+    for query in found:
+        assert not re.search(r"\blatest\b", query), query
+        assert not re.search(r"(?:\blet|\bextend|\bsummarize|,)\s*last\b", query), query

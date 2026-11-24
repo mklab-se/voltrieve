@@ -96,7 +96,7 @@ YEAR = {"durationMs": 31622400000}  # the nightly rows are filtered by WindowEnd
 INSIGHTS = 'let ins = VoltrieveInsights_CL | where Source == "{Source}";\n'
 LATEST = INSIGHTS + """let last_end = toscalar(ins | summarize max(WindowEnd));
 let last_run = toscalar(ins | where WindowEnd == last_end | summarize max(Run));
-let latest = ins | where WindowEnd == last_end and Run == last_run;
+let newest_rows = ins | where WindowEnd == last_end and Run == last_run;
 """
 
 
@@ -117,7 +117,7 @@ def ask_section() -> list[dict]:
              "type": 2, "isRequired": True, "value": "real",
              "jsonData": json.dumps([{"value": "real", "label": "Real"}, {"value": "seeded", "label": "Made up"}])},
         ]}},
-        tiles("The latest run", LATEST + """latest
+        tiles("The latest run", LATEST + """newest_rows
 | summarize people = max(iff(Cut == "all", People, int(null))),
     conversations = max(iff(Cut == "all", Conversations, int(null))),
     share = max(SampleShare), run = max(Run)
@@ -130,19 +130,19 @@ def ask_section() -> list[dict]:
 | mv-expand pack
 | project metric = tostring(pack.metric), value = todouble(pack.value), note = tostring(pack.note)""",
               time_context=YEAR, resource_type=WORKSPACE, resource_id=WORKSPACE_ID),
-        ask_query("Topics of the latest window (people)", LATEST + """latest
+        ask_query("Topics of the latest window (people)", LATEST + """newest_rows
 | where Cut == "topic"
 | project Topic, People
 | order by People desc""", "barchart", "50"),
-        ask_query("Groups of the latest window", LATEST + """latest
+        ask_query("Groups of the latest window", LATEST + """newest_rows
 | where Cut == "group"
 | project GroupName, Conversations, People
 | order by People desc""", "table", "50"),
-        ask_query("Topics per car model", LATEST + """latest
+        ask_query("Topics per car model", LATEST + """newest_rows
 | where Cut == "topic_model"
 | project CarModel, Topic, People
 | order by CarModel asc, People desc""", "table", "50"),
-        ask_query("Per client", LATEST + """latest
+        ask_query("Per client", LATEST + """newest_rows
 | where Cut == "client"
 | project Client, Conversations, People
 | order by People desc""", "table", "50"),
@@ -266,7 +266,7 @@ def workbook() -> dict:
 | extend content = tostring(pack_all())
 | summarize row_count = count(), with_client_line = countif(content contains "From the client"),
     with_photo = countif(content contains "data:image" or content contains "base64"),
-    longest_row = max(strlen(content)), latest = max(timestamp) by stored_in
+    longest_row = max(strlen(content)), newest_at = max(timestamp) by stored_in
 | order by stored_in asc""", "table", "100", noDataMessage="No rows from Foundry's tracing in this time range."),
         *ask_section(),
     ]

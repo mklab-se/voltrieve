@@ -367,7 +367,7 @@
    "type": 3,
    "content": {
     "version": "KqlItem/1.0",
-    "query": "union isfuzzy=true withsource=stored_in dependencies, genAIContent\n| where cloud_RoleName == \"responsesapi\"\n| extend content = tostring(pack_all())\n| summarize row_count = count(), with_client_line = countif(content contains \"From the client\"),\n    with_photo = countif(content contains \"data:image\" or content contains \"base64\"),\n    longest_row = max(strlen(content)), latest = max(timestamp) by stored_in\n| order by stored_in asc",
+    "query": "union isfuzzy=true withsource=stored_in dependencies, genAIContent\n| where cloud_RoleName == \"responsesapi\"\n| extend content = tostring(pack_all())\n| summarize row_count = count(), with_client_line = countif(content contains \"From the client\"),\n    with_photo = countif(content contains \"data:image\" or content contains \"base64\"),\n    longest_row = max(strlen(content)), newest_at = max(timestamp) by stored_in\n| order by stored_in asc",
     "size": 0,
     "title": "Rows written by Foundry's tracing",
     "timeContextFromParameter": "TimeRange",
@@ -406,7 +406,7 @@
    "type": 3,
    "content": {
     "version": "KqlItem/1.0",
-    "query": "let ins = VoltrieveInsights_CL | where Source == \"{Source}\";\nlet last_end = toscalar(ins | summarize max(WindowEnd));\nlet last_run = toscalar(ins | where WindowEnd == last_end | summarize max(Run));\nlet latest = ins | where WindowEnd == last_end and Run == last_run;\nlatest\n| summarize people = max(iff(Cut == \"all\", People, int(null))),\n    conversations = max(iff(Cut == \"all\", Conversations, int(null))),\n    share = max(SampleShare), run = max(Run)\n| project pack = pack_array(\n    pack(\"metric\", \"People\", \"value\", todouble(people), \"note\", \"about, rounded to five\"),\n    pack(\"metric\", \"Conversations\", \"value\", todouble(conversations), \"note\", \"about, rounded to five\"),\n    pack(\"metric\", \"Share sampled (%)\", \"value\", round(100.0 * share, 0), \"note\", \"of the conversations\"),\n    pack(\"metric\", \"Last run (days ago)\", \"value\", todouble(datetime_diff(\"day\", now(), run)),\n        \"note\", format_datetime(run, \"yyyy-MM-dd\")))\n| mv-expand pack\n| project metric = tostring(pack.metric), value = todouble(pack.value), note = tostring(pack.note)",
+    "query": "let ins = VoltrieveInsights_CL | where Source == \"{Source}\";\nlet last_end = toscalar(ins | summarize max(WindowEnd));\nlet last_run = toscalar(ins | where WindowEnd == last_end | summarize max(Run));\nlet newest_rows = ins | where WindowEnd == last_end and Run == last_run;\nnewest_rows\n| summarize people = max(iff(Cut == \"all\", People, int(null))),\n    conversations = max(iff(Cut == \"all\", Conversations, int(null))),\n    share = max(SampleShare), run = max(Run)\n| project pack = pack_array(\n    pack(\"metric\", \"People\", \"value\", todouble(people), \"note\", \"about, rounded to five\"),\n    pack(\"metric\", \"Conversations\", \"value\", todouble(conversations), \"note\", \"about, rounded to five\"),\n    pack(\"metric\", \"Share sampled (%)\", \"value\", round(100.0 * share, 0), \"note\", \"of the conversations\"),\n    pack(\"metric\", \"Last run (days ago)\", \"value\", todouble(datetime_diff(\"day\", now(), run)),\n        \"note\", format_datetime(run, \"yyyy-MM-dd\")))\n| mv-expand pack\n| project metric = tostring(pack.metric), value = todouble(pack.value), note = tostring(pack.note)",
     "size": 0,
     "title": "The latest run",
     "timeContext": {
@@ -449,7 +449,7 @@
    "type": 3,
    "content": {
     "version": "KqlItem/1.0",
-    "query": "let ins = VoltrieveInsights_CL | where Source == \"{Source}\";\nlet last_end = toscalar(ins | summarize max(WindowEnd));\nlet last_run = toscalar(ins | where WindowEnd == last_end | summarize max(Run));\nlet latest = ins | where WindowEnd == last_end and Run == last_run;\nlatest\n| where Cut == \"topic\"\n| project Topic, People\n| order by People desc",
+    "query": "let ins = VoltrieveInsights_CL | where Source == \"{Source}\";\nlet last_end = toscalar(ins | summarize max(WindowEnd));\nlet last_run = toscalar(ins | where WindowEnd == last_end | summarize max(Run));\nlet newest_rows = ins | where WindowEnd == last_end and Run == last_run;\nnewest_rows\n| where Cut == \"topic\"\n| project Topic, People\n| order by People desc",
     "size": 0,
     "title": "Topics of the latest window (people)",
     "timeContext": {
@@ -469,7 +469,7 @@
    "type": 3,
    "content": {
     "version": "KqlItem/1.0",
-    "query": "let ins = VoltrieveInsights_CL | where Source == \"{Source}\";\nlet last_end = toscalar(ins | summarize max(WindowEnd));\nlet last_run = toscalar(ins | where WindowEnd == last_end | summarize max(Run));\nlet latest = ins | where WindowEnd == last_end and Run == last_run;\nlatest\n| where Cut == \"group\"\n| project GroupName, Conversations, People\n| order by People desc",
+    "query": "let ins = VoltrieveInsights_CL | where Source == \"{Source}\";\nlet last_end = toscalar(ins | summarize max(WindowEnd));\nlet last_run = toscalar(ins | where WindowEnd == last_end | summarize max(Run));\nlet newest_rows = ins | where WindowEnd == last_end and Run == last_run;\nnewest_rows\n| where Cut == \"group\"\n| project GroupName, Conversations, People\n| order by People desc",
     "size": 0,
     "title": "Groups of the latest window",
     "timeContext": {
@@ -489,7 +489,7 @@
    "type": 3,
    "content": {
     "version": "KqlItem/1.0",
-    "query": "let ins = VoltrieveInsights_CL | where Source == \"{Source}\";\nlet last_end = toscalar(ins | summarize max(WindowEnd));\nlet last_run = toscalar(ins | where WindowEnd == last_end | summarize max(Run));\nlet latest = ins | where WindowEnd == last_end and Run == last_run;\nlatest\n| where Cut == \"topic_model\"\n| project CarModel, Topic, People\n| order by CarModel asc, People desc",
+    "query": "let ins = VoltrieveInsights_CL | where Source == \"{Source}\";\nlet last_end = toscalar(ins | summarize max(WindowEnd));\nlet last_run = toscalar(ins | where WindowEnd == last_end | summarize max(Run));\nlet newest_rows = ins | where WindowEnd == last_end and Run == last_run;\nnewest_rows\n| where Cut == \"topic_model\"\n| project CarModel, Topic, People\n| order by CarModel asc, People desc",
     "size": 0,
     "title": "Topics per car model",
     "timeContext": {
@@ -509,7 +509,7 @@
    "type": 3,
    "content": {
     "version": "KqlItem/1.0",
-    "query": "let ins = VoltrieveInsights_CL | where Source == \"{Source}\";\nlet last_end = toscalar(ins | summarize max(WindowEnd));\nlet last_run = toscalar(ins | where WindowEnd == last_end | summarize max(Run));\nlet latest = ins | where WindowEnd == last_end and Run == last_run;\nlatest\n| where Cut == \"client\"\n| project Client, Conversations, People\n| order by People desc",
+    "query": "let ins = VoltrieveInsights_CL | where Source == \"{Source}\";\nlet last_end = toscalar(ins | summarize max(WindowEnd));\nlet last_run = toscalar(ins | where WindowEnd == last_end | summarize max(Run));\nlet newest_rows = ins | where WindowEnd == last_end and Run == last_run;\nnewest_rows\n| where Cut == \"client\"\n| project Client, Conversations, People\n| order by People desc",
     "size": 0,
     "title": "Per client",
     "timeContext": {

@@ -124,7 +124,7 @@ async def test_the_previous_names_of_one_source_per_topic(mock, http):
     assert found == {"charging": ["Home charging", "Slow charging"], "fault": ["Red light"]}
     query = json.loads(route.calls.last.request.content)["query"]
     assert query.count("Source == 'seeded'") == 2 and "'real'" not in query
-    assert "max(Run)" in query and "Run == latest" in query
+    assert "max(Run)" in query and "Run == last_run_at" in query
     assert "'other'" in query and "'unnamed group'" in query
 
 
@@ -170,3 +170,11 @@ async def test_reading_back_is_tried_again(mock, http):
 
 def test_the_stream_is_the_one_of_the_table():
     assert store.STREAM == f"Custom-{store.TABLE}"
+
+
+def test_the_query_names_nothing_the_engine_refuses():
+    import re
+
+    query = store._names_query("real")
+    assert not re.search(r"\blatest\b", query)
+    assert not re.search(r"(?:\blet|\bextend|\bsummarize|,)\s*last\b", query)

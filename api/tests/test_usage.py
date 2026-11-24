@@ -181,7 +181,7 @@ async def test_the_queries_take_the_latest_run_of_each_window_end_and_are_limite
     queries = [json.loads(c.request.content)["query"] for c in route.calls]
     rows_q = next(q for q in queries if "join" not in q)
     weeks_q = next(q for q in queries if "join" in q)
-    assert "Run == latest" in rows_q
+    assert "Run == last_run_at" in rows_q
     assert "summarize Run = max(Run) by WindowEnd" in weeks_q and "top " not in weeks_q
     assert "ago(84d)" in weeks_q and "max(Run))" in rows_q and "arg_max" not in rows_q
     for q in queries:
@@ -373,3 +373,13 @@ async def test_a_slow_query_times_out_and_frees_the_lock(usage_app, admin, monke
             assert r.status_code == 503 and r.json()["detail"] == "The usage insights are not available right now"
             route.mock(side_effect=answers())
             assert (await c.get("/admin/insights", headers=admin)).status_code == 200
+
+
+def test_the_queries_name_nothing_the_engine_refuses():
+    import re
+
+    from app.usage import _rows_query, _weeks_query
+
+    for query in (_rows_query("real"), _weeks_query("real")):
+        assert not re.search(r"\blatest\b", query)
+        assert not re.search(r"(?:\blet|\bextend|\bsummarize|,)\s*last\b", query)

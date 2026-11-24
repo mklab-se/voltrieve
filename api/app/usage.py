@@ -42,10 +42,10 @@ class UsageNotConfigured(Exception):
 
 def _rows_query(source: str) -> str:
     return (
-        f'let latest = toscalar({TABLE} | where TimeGenerated > ago({MAX_AGE_DAYS}d) '
+        f'let last_run_at = toscalar({TABLE} | where TimeGenerated > ago({MAX_AGE_DAYS}d) '
         f'| where Source == "{source}" | summarize max(Run));\n'
         f'{TABLE} | where TimeGenerated > ago({MAX_AGE_DAYS}d) | where Source == "{source}" '
-        f"| where Run == latest | project {_PROJECT} | take {ROW_LIMIT + 1}"
+        f"| where Run == last_run_at | project {_PROJECT} | take {ROW_LIMIT + 1}"
     )
 
 

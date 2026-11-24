@@ -105,8 +105,8 @@ def _names_query(source: str) -> str:
     """The group names of the latest run that saved any for this source."""
     rows = f"{TABLE} | where Source == '{source}' and Cut == 'group'"
     return (
-        f"let latest = toscalar({rows} | summarize max(Run));\n"
-        f"{rows} and Run == latest and GroupName !in ('{OTHER}', '{UNNAMED}')\n"
+        f"let last_run_at = toscalar({rows} | summarize max(Run));\n"
+        f"{rows} and Run == last_run_at and GroupName !in ('{OTHER}', '{UNNAMED}')\n"
         "| distinct Topic, GroupName"
     )
 
