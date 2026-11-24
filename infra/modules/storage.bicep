@@ -3,6 +3,7 @@ param location string
 param tags object = {}
 param docsContainer string
 param partsContainer string
+param dealerTableName string
 
 resource storage 'Microsoft.Storage/storageAccounts@2026-09-01' = {
   name: name
@@ -39,7 +40,19 @@ resource parts 'Microsoft.Storage/storageAccounts/blobServices/containers@2026-0
   }
 }
 
+resource tableService 'Microsoft.Storage/storageAccounts/tableServices@2026-09-01' = {
+  parent: storage
+  name: 'default'
+}
+
+resource dealerTable 'Microsoft.Storage/storageAccounts/tableServices/tables@2026-09-01' = {
+  parent: tableService
+  name: dealerTableName
+}
+
 output name string = storage.name
 output id string = storage.id
 output docsContainer string = docs.name
 output partsContainer string = parts.name
+output dealerTable string = dealerTable.name
+output tableEndpoint string = 'https://${storage.name}.table.${environment().suffixes.storage}'

@@ -8,6 +8,9 @@ param image string
 param pullIdentityId string
 param tenantId string
 param dealerClientId string
+param siteClientId string
+param tableEndpoint string
+param tableName string
 param appInsightsConnectionString string
 
 // The system-assigned identity is for service auth; the user-assigned one only pulls the image.
@@ -49,6 +52,9 @@ resource dealer 'Microsoft.App/containerApps@2026-07-01' = {
           env: [
             { name: 'TENANT_ID', value: tenantId }
             { name: 'DEALER_CLIENT_ID', value: dealerClientId }
+            { name: 'SITE_CLIENT_ID', value: siteClientId }
+            { name: 'TABLE_ENDPOINT', value: tableEndpoint }
+            { name: 'TABLE_NAME', value: tableName }
             { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsightsConnectionString }
             { name: 'OTEL_SERVICE_NAME', value: 'voltrieve-dealer' }
             { name: 'LOG_LEVEL', value: 'INFO' }
@@ -57,8 +63,9 @@ resource dealer 'Microsoft.App/containerApps@2026-07-01' = {
         }
       ]
       scale: {
+        // One copy, so every open screen gets every event. It may still scale to zero.
         minReplicas: 0
-        maxReplicas: 2
+        maxReplicas: 1
       }
     }
   }

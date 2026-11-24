@@ -14,7 +14,7 @@ SERVERLESS = "https://sl.search.windows.net"
 def run_hook(tmp_path, **env):
     for name in ("az", "uv"):
         tool = tmp_path / name
-        tool.write_text(f'#!/bin/sh\necho {name} >> "{tmp_path}/calls"\necho example.test\n')
+        tool.write_text(f'#!/bin/sh\necho {name} "$@" >> "{tmp_path}/calls"\necho example.test\n')
         tool.chmod(0o755)
     base = {"PATH": f"{tmp_path}:/usr/bin:/bin", "HOME": os.environ["HOME"]}
     done = subprocess.run(["sh", str(HOOK)], env=base | env, capture_output=True, text=True)
@@ -59,4 +59,15 @@ def test_another_value_for_basic_is_refused(tmp_path):
 def test_every_other_step_is_allowed(tmp_path, env):
     done, calls = run_hook(tmp_path, **env)
     assert done.returncode == 0, done.stderr
-    assert "uv" in calls
+    assert "uv run" in calls
+
+
+def test_a_known_dealer_url_is_passed_to_setup_and_otherwise_left_out(tmp_path):
+    done, calls = run_hook(tmp_path, DEALER_URL="https://dealer.example")
+    assert done.returncode == 0, done.stderr
+    assert '--dealer-redirect-uri https://dealer.example' in calls
+    other = tmp_path / "other"
+    other.mkdir()
+    done, calls = run_hook(other)
+    assert done.returncode == 0, done.stderr
+    assert "--dealer-redirect-uri" not in calls

@@ -12,6 +12,7 @@ Sleep = Callable[[float], None]
 RETRY_ATTEMPTS = 9
 RETRY_BACKOFF_SECONDS = 3.0
 SCOPE_VALUE = "access_as_user"
+DEALER_SCOPE_VALUE = "manage_as_user"
 AZURE_CLI_CLIENT_ID = "04b07795-8ddb-461a-bbee-02f9e1bf7b46"
 
 
@@ -65,7 +66,25 @@ def _scopes(scope_id: str) -> list[dict]:
     ]
 
 
-def api_application_body(scope_id: str, chat_role_id: str, book_role_id: str, dashboard_role_id: str) -> dict:
+def _dealer_scopes(scope_id: str) -> list[dict]:
+    text = "Manage Voltrieve dealer orders and inventory as the signed-in user"
+    return [
+        {
+            "id": scope_id,
+            "value": DEALER_SCOPE_VALUE,
+            "type": "User",
+            "isEnabled": True,
+            "adminConsentDisplayName": "Manage Voltrieve dealer orders",
+            "adminConsentDescription": text,
+            "userConsentDisplayName": "Manage Voltrieve dealer orders as you",
+            "userConsentDescription": text,
+        }
+    ]
+
+
+def api_application_body(
+    scope_id: str, chat_role_id: str, book_role_id: str, dashboard_role_id: str, order_role_id: str
+) -> dict:
     return {
         "signInAudience": "AzureADMyOrg",
         "api": {
@@ -77,6 +96,7 @@ def api_application_body(scope_id: str, chat_role_id: str, book_role_id: str, da
             _app_role(book_role_id, "TestDrive.Book", "Can book test drives.", ["User"]),
             _app_role(dashboard_role_id, "Dashboard.View",
                       "Can see the live operations dashboard, including masked prompts.", ["User"]),
+            _app_role(order_role_id, "Order.Place", "Can order a car.", ["User"]),
         ],
     }
 
@@ -119,14 +139,20 @@ def car_application_body(api_client_id: str, scope_id: str, redirect_uris: list[
     return _spa_application_body(api_client_id, scope_id, "http://localhost:5175", redirect_uris)
 
 
-def dealer_application_body(role_id: str) -> dict:
+def dealer_application_body(access_role_id: str, manage_role_id: str, scope_id: str) -> dict:
     return {
         "signInAudience": "AzureADMyOrg",
-        "api": {"requestedAccessTokenVersion": 2},
+        "api": {"requestedAccessTokenVersion": 2, "oauth2PermissionScopes": _dealer_scopes(scope_id)},
         "appRoles": [
-            _app_role(role_id, "Dealer.Access", "Can call the Voltrieve dealer service.", ["Application"])
+            _app_role(access_role_id, "Dealer.Access", "Can call the Voltrieve dealer service.", ["Application"]),
+            _app_role(manage_role_id, "Dealer.Manage",
+                      "Can manage dealer orders and inventory as a signed-in user.", ["User"]),
         ],
     }
+
+
+def dealer_site_application_body(dealer_client_id: str, scope_id: str, redirect_uris: list[str]) -> dict:
+    return _spa_application_body(dealer_client_id, scope_id, "http://localhost:5176", redirect_uris)
 
 
 # Idempotent operations
@@ -149,14 +175,15 @@ def ensure_application(
     return {**app, **desired}
 
 
-def pre_authorized_body(scope_id: str) -> dict:
-    """Lets the Azure CLI request access_as_user without a consent prompt. Tokens still
-    need the Chat.User app role, which is checked by the API."""
+def pre_authorized_body(scope_id: str, scopes: list[dict] | None = None) -> dict:
+    """Lets the Azure CLI request a scope without a consent prompt: access_as_user on the API
+    (the default) or, with the scopes of the dealer, manage_as_user there. Tokens still need
+    the app role, which the service checks."""
     return {
         "api": {
             # Repeated so PATCH semantics on the api property can never drop them.
             "requestedAccessTokenVersion": 2,
-            "oauth2PermissionScopes": _scopes(scope_id),
+            "oauth2PermissionScopes": scopes if scopes is not None else _scopes(scope_id),
             "preAuthorizedApplications": [
                 {"appId": AZURE_CLI_CLIENT_ID, "delegatedPermissionIds": [scope_id]}
             ]
@@ -164,11 +191,16 @@ def pre_authorized_body(scope_id: str) -> dict:
     }
 
 
-SPA_APPS = {"web": "voltrieve-web", "car": "voltrieve-car", "dashboard": "voltrieve-dashboard"}
+SPA_APPS = {
+    "web": "voltrieve-web",
+    "car": "voltrieve-car",
+    "dashboard": "voltrieve-dashboard",
+    "dealer": "voltrieve-dealer-site",
+}
 
 
 def ensure_spa_redirect(g: GraphClient, uri: str, sleep: Sleep = time.sleep, app: str = "web") -> list[str]:
-    """Add uri to the SPA redirect URIs of one browser app (web, car or dashboard), keeping the existing ones."""
+    """Add uri to the SPA redirect URIs of one browser app (web, car, dashboard or dealer), keeping the existing ones."""
     if app not in SPA_APPS:
         raise ValueError(f"unknown app '{app}'; expected one of {', '.join(SPA_APPS)}")
     display_name = SPA_APPS[app]
@@ -293,15 +325,19 @@ def setup(
     on_password: Callable[[str], None] | None = None,
     car_redirect_uris: list[str] | None = None,
     dashboard_redirect_uris: list[str] | None = None,
+    dealer_redirect_uris: list[str] | None = None,
 ) -> dict[str, str]:
     scope_id = stable_id("scope:access_as_user")
     chat_role_id = stable_id("role:Chat.User")
     book_role_id = stable_id("role:TestDrive.Book")
     dashboard_role_id = stable_id("role:Dashboard.View")
     dealer_role_id = stable_id("role:Dealer.Access")
+    order_role_id = stable_id("role:Order.Place")
+    dealer_manage_role_id = stable_id("role:Dealer.Manage")
+    dealer_scope_id = stable_id("scope:manage_as_user")
 
     api = ensure_application(
-        g, "voltrieve-api", api_application_body(scope_id, chat_role_id, book_role_id, dashboard_role_id), sleep
+        g, "voltrieve-api", api_application_body(scope_id, chat_role_id, book_role_id, dashboard_role_id, order_role_id), sleep
     )
     # The identifier URI embeds the appId, so it can only be set after creation.
     _retrying(
@@ -325,12 +361,29 @@ def setup(
         sleep,
     )
     dealer = ensure_application(
-        g, "voltrieve-dealer", dealer_application_body(dealer_role_id), sleep
+        g,
+        "voltrieve-dealer",
+        dealer_application_body(dealer_role_id, dealer_manage_role_id, dealer_scope_id),
+        sleep,
     )
     _retrying(
         lambda: g.patch(
             f"/applications/{dealer['id']}", {"identifierUris": [f"api://{dealer['appId']}"]}
         ),
+        sleep,
+    )
+    # As for the API: the scope exists by now, so the Azure CLI can be pre-authorized for it.
+    _retrying(
+        lambda: g.patch(
+            f"/applications/{dealer['id']}",
+            pre_authorized_body(dealer_scope_id, _dealer_scopes(dealer_scope_id)),
+        ),
+        sleep,
+    )
+    dealer_site = ensure_application(
+        g,
+        "voltrieve-dealer-site",
+        dealer_site_application_body(dealer["appId"], dealer_scope_id, dealer_redirect_uris or []),
         sleep,
     )
 
@@ -340,6 +393,7 @@ def setup(
     car_sp = ensure_service_principal(g, car["appId"], sleep)
     dashboard_sp = ensure_service_principal(g, dashboard["appId"], sleep)
     dealer_sp = ensure_service_principal(g, dealer["appId"], sleep)
+    dealer_site_sp = ensure_service_principal(g, dealer_site["appId"], sleep)
     _retrying(
         lambda: g.patch(f"/servicePrincipals/{dealer_sp['id']}", {"appRoleAssignmentRequired": True}),
         sleep,
@@ -347,10 +401,14 @@ def setup(
 
     for client_sp in (cli_sp, web_sp, car_sp, dashboard_sp):
         ensure_oauth2_grant(g, client_sp["id"], api_sp["id"], SCOPE_VALUE, sleep)
+    # The dealer page may use the dealer's scope and nothing on the API.
+    ensure_oauth2_grant(g, dealer_site_sp["id"], dealer_sp["id"], DEALER_SCOPE_VALUE, sleep)
 
     # Only the deployer sees the dashboard: it shows other people's prompts, masked.
-    for role_id in (chat_role_id, book_role_id, dashboard_role_id):
+    for role_id in (chat_role_id, book_role_id, dashboard_role_id, order_role_id):
         ensure_app_role_assignment(g, deployer_object_id, api_sp["id"], role_id, sleep)
+    # Only the deployer manages the dealer. The test user gets Chat.User and nothing else.
+    ensure_app_role_assignment(g, deployer_object_id, dealer_sp["id"], dealer_manage_role_id, sleep)
 
     upn = f"voltrieve-tester@{verified_domain}"
     user, password = ensure_user(g, upn, "Voltrieve Tester", sleep)
@@ -368,6 +426,10 @@ def setup(
         "DASHBOARD_CLIENT_ID": dashboard["appId"],
         "DEALER_CLIENT_ID": dealer["appId"],
         "DEALER_APP_ROLE_ID": dealer_role_id,
+        "DEALER_MANAGE_ROLE_ID": dealer_manage_role_id,
+        "DEALER_SCOPE_ID": dealer_scope_id,
+        "DEALER_SITE_CLIENT_ID": dealer_site["appId"],
+        "ORDER_PLACE_ROLE_ID": order_role_id,
         "DEALER_SP_OBJECT_ID": dealer_sp["id"],
         "API_SP_OBJECT_ID": api_sp["id"],
         "CHAT_USER_ROLE_ID": chat_role_id,

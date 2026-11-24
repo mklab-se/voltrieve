@@ -84,4 +84,19 @@ grep -q "'__WORKSPACE_ID__', workspaceId" modules/dashboard-workbook.bicep || { 
 # what is compiled: the roles and their condition, the identity, the table and the rule, and that no module
 # connects Foundry to Application Insights: that would start its server-side tracing of chat text
 az bicep build --file main.bicep --stdout 2>/dev/null | python3 tests/check_insights.py || { echo "check_insights.py failed"; exit 1; }
+# the dealer: at most one replica, may scale to zero, and its table is the only storage it may touch
+grep -q "minReplicas: 0" modules/dealer-app.bicep && grep -q "maxReplicas: 1" modules/dealer-app.bicep || { echo "the dealer must run as 0 to 1 replicas"; exit 1; }
+for env in TABLE_ENDPOINT TABLE_NAME SITE_CLIENT_ID; do
+  grep -q "name: '$env'" modules/dealer-app.bicep || { echo "dealer-app lacks $env"; exit 1; }
+done
+grep -q "^var dealerTableName = 'dealer'$" main.bicep && grep -q "name: dealerTableName" modules/storage.bicep && grep -q "tableServices/tables@" modules/storage.bicep || { echo "storage lacks the dealer table"; exit 1; }
+grep -q "^param siteClientId string" modules/dealer-app.bicep || { echo "dealer-app lacks siteClientId"; exit 1; }
+grep -q '"dealerSiteClientId": { "value": "${DEALER_SITE_CLIENT_ID=}" }' main.parameters.json || { echo "main.parameters.json lacks DEALER_SITE_CLIENT_ID"; exit 1; }
+grep -q "scope: table$" modules/role-storage-table.bicep || { echo "the table role is not scoped to a table"; exit 1; }
+[ "$(grep -c "Microsoft.Authorization/roleAssignments@" modules/role-storage-table.bicep)" = 1 ] || { echo "the table module assigns more than one role"; exit 1; }
+grep -q "^var storageTableDataContributor = '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3'$" main.bicep || { echo "main.bicep lacks the Table Data Contributor GUID"; exit 1; }
+grep -A8 "module dealerReadsTable" main.bicep | grep -q "roleDefinitionId: storageTableDataContributor" || { echo "the dealer does not get Table Data Contributor"; exit 1; }
+grep -A8 "module dealerReadsTable" main.bicep | grep -q "principalId: dealerApp.outputs.principalId" || { echo "the table role is not given to the dealer"; exit 1; }
+# what is compiled: exactly one role names the dealer, and its scope is the table
+az bicep build --file main.bicep --stdout 2>/dev/null | python3 tests/check_dealer.py || { echo "check_dealer.py failed"; exit 1; }
 echo "bicep ok"

@@ -30,6 +30,8 @@ param principalId string
 // deployment always has them.
 param tenantId string = ''
 param dealerClientId string = ''
+@description('The app registration of the dealer page. The page reads it from /config.json.')
+param dealerSiteClientId string = ''
 param apiClientId string = ''
 @description('The app registrations of the car, the website and the command line, to tell their tokens apart in the usage count. Empty counts a client as other.')
 param carClientId string = ''
@@ -80,6 +82,8 @@ var token = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = { 'azd-env-name': environmentName, app: 'voltrieve' }
 
 var storageBlobDataReader = '2a2b9908-6ea1-4ae2-8e65-a410df84e7d1'
+var storageTableDataContributor = '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3'
+var dealerTableName = 'dealer'
 var cognitiveServicesOpenAIUser = '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd'
 var cognitiveServicesUser = 'a97b65f3-24c7-4388-baec-2e87135dc908'
 var foundryProjectManager = 'eadc314b-1a2d-4efa-be10-5d325db5065e'
@@ -176,6 +180,7 @@ module storage 'modules/storage.bicep' = {
     tags: tags
     docsContainer: docsContainer
     partsContainer: partsContainer
+    dealerTableName: dealerTableName
   }
 }
 
@@ -228,7 +233,22 @@ module dealerApp 'modules/dealer-app.bicep' = {
     pullIdentityId: dealerIdentity.outputs.id
     tenantId: tenantId
     dealerClientId: dealerClientId
+    siteClientId: dealerSiteClientId
+    tableEndpoint: storage.outputs.tableEndpoint
+    tableName: storage.outputs.dealerTable
     appInsightsConnectionString: monitoring.outputs.appInsightsConnectionString
+  }
+}
+
+// The dealer may read and write its own table and nothing else in the account.
+module dealerReadsTable 'modules/role-storage-table.bicep' = {
+  scope: rg
+  params: {
+    storageAccountName: storage.outputs.name
+    tableName: storage.outputs.dealerTable
+    principalId: dealerApp.outputs.principalId
+    roleDefinitionId: storageTableDataContributor
+    principalType: 'ServicePrincipal'
   }
 }
 

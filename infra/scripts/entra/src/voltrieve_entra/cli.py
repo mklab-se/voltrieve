@@ -59,6 +59,7 @@ def _run_setup(args: argparse.Namespace) -> None:
         on_password=_print_password,
         car_redirect_uris=args.car_redirect_uri,
         dashboard_redirect_uris=args.dashboard_redirect_uri,
+        dealer_redirect_uris=args.dealer_redirect_uri,
     )
     for key, value in env.items():
         _azd_env_set(key, value)
@@ -85,6 +86,7 @@ def main(argv: list[str] | None = None) -> None:
     p_setup.add_argument("--web-redirect-uri", action="append", default=[])
     p_setup.add_argument("--car-redirect-uri", action="append", default=[])
     p_setup.add_argument("--dashboard-redirect-uri", action="append", default=[])
+    p_setup.add_argument("--dealer-redirect-uri", action="append", default=[])
     p_setup.set_defaults(func=_run_setup)
 
     p_assign = sub.add_parser("assign-app-role", help="Assign an app role to a principal")
