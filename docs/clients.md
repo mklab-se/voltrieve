@@ -1,6 +1,6 @@
 # The clients
 
-Voltrieve has one server and four clients. Each client shows one audience, so someone who watches a demo can tell what it is meant to show. The design is in [the car, the website and attachments](https://github.com/mklab-se/voltrieve/blob/main/docs/superpowers/specs/2026-11-23-car-website-attachments-design.md).
+Voltrieve has one server and five clients. Each client shows one audience, so someone who watches a demo can tell what it is meant to show. The design is in [the car, the website and attachments](https://github.com/mklab-se/voltrieve/blob/main/docs/superpowers/specs/2026-11-23-car-website-attachments-design.md).
 
 | Client | Audience | Shows | Where |
 | --- | --- | --- | --- |
@@ -8,6 +8,7 @@ Voltrieve has one server and four clients. Each client shows one audience, so so
 | The website | A customer who is signed in | Asking Runa about your own car, with a photo if you have one | `clients/web/` |
 | The operations dashboard | Voltrieve employees | What happens in the service: users, response times, cost, errors, and what people ask about | `clients/dashboard/` |
 | The CLI | Developers | A test tool for the API. It does not stand in for a car | `clients/cli/` |
+| The dealer page | A Voltrieve representative | Stock per city, purchase orders and a live log of every call to the dealer service, beside the car or the website | `services/dealer/site/` |
 
 ```mermaid
 flowchart LR
@@ -15,25 +16,30 @@ flowchart LR
     Customer(["Customer"]) --> Web["Website: My Voltrieve<br/>set_theme, photo of a part"]
     Staff(["Employee"]) --> Dash["Operations dashboard<br/>no chat"]
     Dev(["Developer"]) --> CLI["CLI<br/>make_noise, honk, get_local_time,<br/>show_banner, set_gauge"]
+    Rep(["Representative"]) --> Page["Dealer page<br/>orders, inventory, live log, signing"]
     Car -->|"POST /attachments, /chat"| API
     Web -->|"POST /attachments, /chat"| API
     CLI -->|"/chat"| API
+    API -->|"Dealer.Access"| Dealer["Dealer service<br/>serves the page"]
+    Page -->|"Dealer.Manage"| Dealer
     Dash -->|"GET /admin/live, /admin/insights"| API
     Entra["Entra ID<br/>one registration per client"] -. tokens .-> Car
     Entra -. tokens .-> Web
     Entra -. tokens .-> Dash
     Entra -. tokens .-> CLI
+    Entra -. tokens .-> Page
     API["Web API"] --> Backends["A prompt agent, B own loop, C hosted agent"]
 ```
 
 ## Status
 
-All four clients are built in this repository: the car, the website, the operations dashboard and the CLI. This page was checked against the code of the car on 2026-11-24. The pictures on it were taken with mock servers, so the answers and the numbers in them are mock data.
+All five clients are built in this repository: the car, the website, the operations dashboard, the CLI and the dealer page. This page was checked against the code of the car on 2026-11-24. The pictures on it were taken with mock servers, so the answers and the numbers in them are mock data.
 
 Run live on 2026-11-24: the car, the website and the dashboard in a browser against the deployed API, with a token from the az CLI in place of the sign-in page ([`clients-live.txt`](https://github.com/mklab-se/voltrieve/blob/main/docs/evidence/clients-live.txt)). From scripts: photo turns with the car's and the website's context on all three backends ([Photos and attachments](attachments.md#measured)), and the car's five tools on all three backends, 18 of 18. The three sites are deployed and show their sign-in page (looked at by hand).
 
 Not verified:
 
+- the dealer page, the signing and the orders against the deployed service (not run live yet),
 - sign-in to the car, the new website and the dashboard,
 - the dashboard's page "What people ask" against the deployed API in a browser,
 - that the notice's sentence about the nightly job is live in the deployed car and website,
@@ -42,11 +48,11 @@ Not verified:
 
 ## What the clients share
 
-- **Sign-in.** Each browser client is a public client with its own app registration (`voltrieve-web`, `voltrieve-car`, `voltrieve-dashboard`) and the same delegated scope, `access_as_user`. The CLI has `voltrieve-cli`. Users need the `Chat.User` role. The dashboard needs `Dashboard.View`. See [Deployment](deploy.md).
+- **Sign-in.** Each browser client is a public client with its own app registration (`voltrieve-web`, `voltrieve-car`, `voltrieve-dashboard`, `voltrieve-dealer-site`) and the same delegated scope, `access_as_user`. The CLI has `voltrieve-cli`. Users need the `Chat.User` role. The dashboard needs `Dashboard.View`. See [Deployment](deploy.md).
 - **One stream.** All chat clients read the same server-sent events and answer the same `client_tool_calls` through `/chat/tool-results`. The car and the website are copies of one another in their sign-in, stream parser, turn state and answer rendering, with a comment in each that says where its twin lives.
 - **Tools run on the client.** A client declares the tools it offers in every request. The API never runs them. What a tool does is decided in the client.
 - **Which backend answers.** The header `X-Agent-Backend` picks one of the three. For the prompt agent, the API picks the agent whose tools include every declared one: web, then CLI, then car. No match gives `unsupported_client_tool`.
-- **The notice.** The car (in its menu) and the website (under the chat) say the same about the live screen and the stored chat, and then: "A nightly job counts what people ask about. It saves only topics shared by several people, never your chat." The job is not on a schedule and has read no real chat. It may read real chats only from the first full UTC day after the notice went live, and that date is not set ([the decision](decisions.md#real-chats-are-read-from-the-first-full-day-after-the-notice)). The car hides its menu below 1280 pixels, as it hides the car.
+- **The notice.** The car (in its menu) and the website (under the chat) say the same about the live screen and the stored chat, and then: "A nightly job counts what people ask about. It saves only topics shared by several people, never your chat." The website has one more sentence, since a customer can order a car there: "If you order a car, your name and address are saved with the order in the dealer system." The car has not, because a car cannot order. The job is not on a schedule and has read no real chat. It may read real chats only from the first full UTC day after the notice went live, and that date is not set ([the decision](decisions.md#real-chats-are-read-from-the-first-full-day-after-the-notice)). The car hides its menu below 1280 pixels, as it hides the car.
 
 ## The car
 
@@ -127,3 +133,28 @@ Only topics that at least five people share are there, and counts are rounded to
 ## The CLI
 
 A command line for developers. It declares `make_noise`, `honk`, `get_local_time`, `show_banner` and, when asked, `set_gauge`, runs on every backend and shows the whole trace with `--trace`. Most of the recorded evidence comes from scripts that speak the same contract. It no longer stands in for a car: the car is the car client.
+
+## The dealer page
+
+The page of a Voltrieve representative, for users with the `Dealer.Manage` role. It is not a chat. It is served by the dealer service itself, so it has the address of the service: run `just dealer` to print it, or `azd env get-value DEALER_URL`. It has its own app registration, `voltrieve-dealer-site`, and the scope `manage_as_user` of the dealer. An account without a role cannot sign in at all.
+
+![The dealer page: purchase orders with a Deliver button for each, the stock of each model in four cities with a plus and a minus, and the live log of calls on the right](images/dealer.webp)
+
+*The dealer page with mock data from a mock server, in a test session. The names, orders and numbers are made up. One address holds markup on purpose, to show that the page prints it as text.*
+
+- **Purchase orders** with number, car, price, the customer's name, the address and the client. **Deliver** lists the cities that have the model, with the count, and starts on the one with the most. With none, it says "None in stock" and comes on by itself when a car is added. A delivery takes one car from the chosen city. **Delete** removes an order and leaves the stock alone. Both ask first.
+- **Inventory** per model and city. One click on plus or minus changes the number, never below 0, and the number flashes when Runa or a delivery changes it.
+- **The live log** shows every call to the dealer service: stock, parts stock, prices, terms, offers, orders, test drives, refused calls and what staff change. It holds the latest 200 entries, in memory. It names the model, city and order number, and who and from which client. It never holds an address.
+- **The signing.** When an order arrives while the page is open, the page dims and a purchase order slides in with a made up signature, a stamp with the number and the words "Demo order, not a real purchase". Then it flies into the list. A click or Escape skips it, and orders that arrive together queue. It never plays for the orders that were there when the page loaded. It waits while the tab is hidden, so it plays when you look again.
+
+![The signing: a purchase order for a Fjord with a drawn signature and a stamp over the dimmed page](images/dealer-signing.webp)
+
+*The signing, with mock data and a made up address. The signature is a scribble that code draws from the name.*
+
+- **Reset the demo** puts the stock back as in the data file and removes orders, offers and the log. Order numbers go on from where they were: they are never used again.
+- **Chrome or Edge.** The signing and the layout were looked at in Chromium only. Safari and Firefox are not verified.
+- It works from a window 720 pixels wide, so it fits beside the car or the website. It shows a lost connection in the header and connects again by itself. Two representatives can have it open, and both see the same.
+
+**What Runa may do depends on where it is used.** A customer can order a car on the website or in the CLI, never from inside the car. In the car, Runa says: "It is not possible to order a car from within the car. You are welcome to talk with Runa about buying a car on the Voltrieve website." The check is in code and reads the client from the token ([the decision](decisions.md#the-car-rule-is-in-code-by-the-tokens-azp)). Nothing is ordered without a message from the customer after Runa has read the offer back ([the decision](decisions.md#an-order-needs-a-later-message)). Use a made up address: the name on an order is the real name of the account.
+
+Not run live yet: the page, the signing and the orders against the deployed service.

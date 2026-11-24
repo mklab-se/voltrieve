@@ -38,12 +38,17 @@ Most agent samples stop at "it answers". This one answers the questions you meet
 | [The website](docs/clients.md#the-website) | A signed-in customer | Asking Runa about your own car, with a photo if you have one |
 | [The operations dashboard](docs/clients.md#the-operations-dashboard) | Voltrieve employees | What happens in the service: users, times, cost, errors, and what people ask about |
 | [The CLI](docs/clients.md#the-cli) | Developers | A test tool for the API, on every backend, with the whole trace |
+| [The dealer page](docs/clients.md#the-dealer-page) | A Voltrieve representative | Stock, purchase orders and a live log, with a signing when a customer orders through Runa. In the car the same order is refused |
 
-All four clients are built. [The clients](docs/clients.md) says what each one does, and what has not been run live is marked there.
+All five clients are built. [The clients](docs/clients.md) says what each one does, and what has not been run live is marked there.
 
 ![The car: a dashboard from the driver's seat, a street behind the windscreen, 50 km/h on the driver display, and Runa and the last parking sign on the center screen](docs/images/car-driving.webp)
 
 *The car at 50 km/h. Runa's text comes from a mock server, not from the deployed agents. The car, the street and the sign are made up.*
+
+![The dealer page: purchase orders, stock per city and the live log, with a purchase order being signed](docs/images/dealer-signing.webp)
+
+*The dealer page while an order is signed. Mock data and a made up address, from a mock server.*
 
 ## See it: the journey of a prompt
 
@@ -155,7 +160,7 @@ Tear down with `azd down --purge`. App registrations and the tester are not remo
 | `clients/web/` | The website, for customers |
 | `clients/dashboard/` | The operations dashboard, for employees |
 | `clients/cli/` | The CLI, a developer tool |
-| `services/dealer/` | The dealer web service |
+| `services/dealer/` | The dealer web service, with its order store and the page for representatives (`site/`) |
 | `services/insights/` | The job that counts what people ask about |
 | `search/` | Definitions and tooling for the Search objects |
 | `data/` | The source data file, document generator and generated documents |
@@ -167,7 +172,7 @@ Tear down with `azd down --purge`. App registrations and the tester are not remo
 
 ## Costs
 
-Idle, about 80 USD a month plus a small amount for Log Analytics (the usage insights add a few MB a year, and their job costs nothing while it does not run): Search Basic is about 75 USD and Container Registry Basic about 5 USD. Container Apps scale to zero, the three Static Web Apps (website, car and dashboard) are on the Free tier, models bill per token, and the hosted agent bills per active session. A Serverless search service can stand next to Basic. It is off by default. In the dev environment it is on, and Basic was deleted on 2026-11-24, so that environment should idle at about 5 USD a month (not seen on a bill yet). Serverless used about 0.11 USD by the diagnostic metric for a night of test runs, not by an invoice ([Deployment](docs/deploy.md#idle-cost)).
+Idle, about 80 USD a month plus a small amount for Log Analytics (the usage insights add a few MB a year, and their job costs nothing while it does not run; the dealer's table is well under 1 SEK a month, and the dealer stays awake while a dealer page is open, about 0.5 SEK an hour): Search Basic is about 75 USD and Container Registry Basic about 5 USD. Container Apps scale to zero, the three Static Web Apps (website, car and dashboard) are on the Free tier, models bill per token, and the hosted agent bills per active session. A Serverless search service can stand next to Basic. It is off by default. In the dev environment it is on, and Basic was deleted on 2026-11-24, so that environment should idle at about 5 USD a month (not seen on a bill yet). Serverless used about 0.11 USD by the diagnostic metric for a night of test runs, not by an invoice ([Deployment](docs/deploy.md#idle-cost)).
 
 ## Status
 
@@ -203,6 +208,16 @@ Verified live:
 - The prompt agent's 400.
 - Where a photo turn leaves its text and its photo, on 2026-11-24: the photo nowhere we looked, the text of prompt and hosted turns in Foundry's tracing (`docs/evidence/photos-privacy.txt`). [Foundry's tracing was then disconnected](docs/decisions.md#closed-foundrys-tracing-is-disconnected), and the marked question and client's line of a turn on each backend left no rows in telemetry (`docs/evidence/tracing-disconnected.txt`).
 - The authorization denied path, on the loop backend, against real Foundry with a fake token validator.
+
+The dealer system and the orders are built and documented, and have not been run on the deployed service: the dealer service with its table and page, the order tools with the car rule, the dealer page and the checks. Not run live yet. The counts of offline tests below are from before this work and were not updated.
+
+Not verified, for the dealer system and the orders:
+
+- An order on each of the three backends, the car's refusal on each, and no order from one message, after a "no" or with a changed address (`scripts/orders_check.py`).
+- That the dealer page stays awake for 10 quiet minutes with a page open (`scripts/dealer_awake.py`), and how long it takes to open cold.
+- That a marker in an address is found in no table of Application Insights, and that a restart keeps stock and orders.
+- Sign-in to the dealer page, the signing in Safari or Firefox (it was looked at in Chromium only), and the masking of street addresses on real ones.
+- The routing suite on the new instructions, against the limit of 10 s to the first token.
 
 Offline tests pass: `agent_core` 172, `api` 525, `agents/hosted` 49, `search` 67, `services/dealer` 42, `services/insights` 714, `clients/cli` 62, `clients/web` 180, `clients/dashboard` 74, `clients/car` 426, `tests/photos` 229, `tests/contract` 94 and `infra/scripts/entra` 41, plus the 123 of `data/generator` in CI (they need a browser), the Bicep and script checks. Every suite runs in [CI](.github/workflows/tests.yml).
 

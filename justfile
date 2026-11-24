@@ -46,3 +46,7 @@ warm-up:
 # Wake every service and keep them awake until Ctrl-C
 keep-warm:
     uv run scripts/warm_up.py --keep-warm
+
+# Print the address of the dealer page: orders and inventory, for the representative
+dealer:
+    @azd env get-value DEALER_URL

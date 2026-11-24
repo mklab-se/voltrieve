@@ -4,7 +4,7 @@ This walks through design section 13 for each backend, with the trace you should
 
 ## Before you start
 
-Sign in as the deployer. That account holds `Chat.User` and `TestDrive.Book`.
+Sign in as the deployer. That account holds `Chat.User`, `TestDrive.Book`, `Order.Place` and `Dealer.Manage`.
 
 ```sh
 az login
@@ -153,6 +153,63 @@ npm run dev:mock      # in a second terminal, the car on http://localhost:5175 w
 
 The photos of the signs can be checked without Azure too, against the server's photo handler: `npm run sign-photos` in `clients/car`, then `uv run --project api python scripts/spikes/check_sign_photos.py clients/car/out` from the root. On 2026-11-24 it gave 8 ready and 8 `too_blurry` (not recorded in `docs/evidence/`).
 
+## The dealer orders demo
+
+A representative's page beside the website. A customer orders a car through Runa, and the order shows up on the page at the same moment, with a signing. Then the same request is tried in the car, where it is refused. The design is in [decisions](decisions.md#dealer-orders-and-inventory) and the page is described in [the clients](clients.md#the-dealer-page). **Not run live yet.** The steps follow the code, and no one has done them against the deployed service.
+
+**Use a made up address.** The name on an order is the real name of the account you sign in with, and both are stored in the table and shown to every representative. A made up address is, for example, "Storgatan 1, 753 10 Uppsala".
+
+**Use Chrome or Edge** for the page. The signing was looked at in Chromium only, and it waits while the tab is hidden: keep the page visible, for instance in its own window beside the website, or it plays when you come back.
+
+| Step | Do | Expect |
+| --- | --- | --- |
+| 1 | `just warm-up`, then `just keep-warm` if you want it to stay | The API, the dealer and the backends answer. A cold dealer takes about 30 seconds |
+| 2 | Open the page: the address is printed by `just dealer`, or is `DEALER_URL`. Sign in as the deployer | Orders, the inventory and the live log. "Live" in the header |
+| 3 | **Reset the demo**, and confirm | Stock as in the data file, no orders, an empty log |
+| 4 | In another window, open the website (`just open`). Sign in and write `I want to buy a Fjord` | The log gets "Looked up the terms for Fjord". Runa gives the price, says that the address is saved with the order and asks for it |
+| 5 | Give a made up address | The log gets "Asked for an offer". Runa reads back car, price and address and asks whether to order it. Nothing is ordered yet |
+| 6 | Say `Yes` | The signing plays on the page: the paper, the signature, the stamp with `VO-1001`. Then the order is in the list and the log says "Placed order VO-1001". Runa gives the number |
+| 7 | **Deliver** the order, from the city with the most | The order is marked delivered, and the stock of that city goes down by one |
+| 8 | Reduce a model to 0 in every city, then order it on the website | The order is placed and waits. **Deliver** says "None in stock". Press **+** for a city, and the button comes on by itself |
+| 9 | Open the car (`just open-car`) and write `I want to buy a Fjord` | Runa says that it is not possible to order a car from within the car, and that the customer is welcome to talk with Runa on the website. No order call is in the log, and no order is made. A question about price or stock is answered as before |
+
+Under the hood on the website and in the car shows `client_not_allowed` for step 9 ([the timeline](#under-the-hood-and-private-turns)). Delete asks first, and leaves the stock alone.
+
+### When the dealer page is cold
+
+The page and the dealer share a cold start, which was about 30 seconds in a measured run. If the page does not open, or shows a lost connection, wait half a minute and reload, or run `just warm-up` first. An open page reads the state once a minute, which is meant to keep the service awake, and also repairs an event that was missed. After a restart the log is empty, and orders and stock are as they were. Whether an open page really keeps the dealer awake for 10 quiet minutes is not verified: `scripts/dealer_awake.py` measures it. Not run live yet.
+
+### The scripts
+
+**`scripts/orders_check.py`** orders a car through Runa on the deployed service on each backend, and tries to make Runa order one too many. It reads what happened from the dealer (`GET /staff/state`), never from the answer. Every address is made up and carries a mark of the run, and it deletes the orders it made and no other.
+
+```sh
+uv run scripts/orders_check.py --dry                  # how many turns, nothing is sent
+uv run scripts/orders_check.py                        # all cases on all three backends
+uv run scripts/orders_check.py --backends loop --only whole,car --deliver
+uv run scripts/orders_check.py --save docs/evidence/orders.txt
+```
+
+| Case | What it checks |
+| --- | --- |
+| `whole` | A whole order: one order, the address as given, the name of the token. With `--deliver`, two deliveries at once give one 409 and one car less |
+| `one` | Everything in one message orders nothing |
+| `no` | A "no" after the read-back orders nothing |
+| `changed` | An address changed after the read-back is never ordered |
+| `car`, `cartools` | The car is refused before an address is asked for, and the dealer gets nothing |
+| `resumed` | The car cannot place the offer of a conversation that began elsewhere |
+| `odd`, `long` | Markup, line breaks and 5,000 characters in the address give one clean line or no order |
+
+It takes at most 69 turns for all cases on all backends, and the `--dry` run says the number first. At that size it is an estimate of 5 to 10 SEK, not a measurement. It needs `azd env select` and `az login` as a person with `Chat.User`, `Order.Place` and `Dealer.Manage`. A line per case says PASS or FAIL. The exit code is 1 on a FAIL, or when an order of ours is left. The routing suite, run once after the new instructions, costs 15 to 20 SEK and is asked for first. Not run live yet.
+
+**`scripts/dealer_awake.py`** holds the event stream open as the page does, reads the state every minute, and says whether the same replica stayed awake and whether any connection was lost. It sends no chat turns and costs no tokens. It needs `az` signed in as a user with `Dealer.Manage`, and prints no name, address or token.
+
+```sh
+uv run scripts/dealer_awake.py --minutes 12 --read-seconds 60
+```
+
+Not run live yet.
+
 ## Under the hood and private turns
 
 **Under the hood** is a switch in the car and on the website, off by default. On, it shows the event timeline of the turn, the backend picker and the correlation id, the same things the CLI shows with `--trace`. Off, a visitor sees a customer's page or a car, not a test rig.
@@ -171,8 +228,8 @@ The URL is `azd env get-value WEB_URL`. Sign-in is an Entra redirect with PKCE. 
 
 | Account | User | Holds |
 | --- | --- | --- |
-| Deployer | Your own | `Chat.User`, `TestDrive.Book` |
-| Tester | `azd env get-value TEST_USER_UPN` (`voltrieve-tester@<your domain>`) | `Chat.User` only |
+| Deployer | Your own | `Chat.User`, `TestDrive.Book`, `Order.Place`, `Dealer.Manage` |
+| Tester | `azd env get-value TEST_USER_UPN` (`voltrieve-tester@<your domain>`) | `Chat.User` only, so ordering a car is refused |
 
 The tester's password is generated by `azd up` and printed once by the preprovision hook, when the account is created. It is not stored anywhere. If it is lost, reset it in the Entra admin center. A tenant's MFA or sign-in policies may also apply to this account.
 
