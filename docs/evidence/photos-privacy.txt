@@ -32,5 +32,16 @@ Our own setting
   depth. It does not control Foundry's tracing.
   It was not yet deployed when the rows above were written.
 
+A second window, 2026-11-24 from 02:31 UTC, after that setting was deployed
+  Four photo turns with a made up registration, odometer and marker word in them: prompt, loop and hosted, and one on
+  prompt that failed on purpose (a client tool the agent does not know).
+  The marker, the registration, the odometer and the code on the sign:
+    cloud roles voltrieve-api and voltrieve-hosted                0 rows in any table
+    the containers' console log                                   0 of 50 lines
+    cloud role responsesapi                                       4 rows in genAIContent, 4 rows in dependencies
+  data:image or base64, all cloud roles                           0 rows
+  exceptions in the window: 1, from voltrieve-hosted, a library that looks for an optional package when a session
+  starts ("Failed to set up A365 OpenAI Agents instrumentation"). It holds nothing from the turn.
+
 Not verified here: what Foundry keeps outside Application Insights, any change to the tracing (nothing was changed),
 and turns outside the window.

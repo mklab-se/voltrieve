@@ -1,0 +1,55 @@
+Search: routing before and after, and the two planners, 2026-11-24, the deployed dev project.
+
+Routing suite, 45 questions per backend and run, one at a time, one repeat (tests/routing/check.py --repeats 1).
+before-photos: the build before the attachments (98bf343), data plane 2026-08-01-preview, planner gpt-5.4-mini
+after-photos: attachments, car and clients (985d546), same Search, same planner
+planner-gpt-6-luna: build 2194fba, data plane 2026-11-01-preview, planner gpt-6-luna
+search-serverless: build da50cba, same version, planner gpt-5.4-mini, the Serverless service in Sweden Central
+ttft is the median time to first text in seconds, search ttft the same for questions that search, over10 the turns over 10 s.
+planning usd is the planning tokens at list prices read 2026-11-05 (prompt agent: not reported). reasoning is Search's own reasoning tokens.
+Articles: 43 of 43 per backend in each run, 0 invented. Right sources: 45, 44 and 45 of 45 before (prompt, loop, hosted), 44 of 45 on each after and with gpt-6-luna, 45 of 45 on each with Serverless. The misses after are parts questions that also searched the documents.
+
+  before-photos        loop    ttft  4.72 search ttft  5.08 over10 1/45 planning in/out 31642/2134 usd 0.0333 reasoning 2563048
+  before-photos        prompt  ttft  4.16 search ttft  4.85 over10 5/45 planning in/out 0/0 usd 0.0000 reasoning 0
+  before-photos        hosted  ttft  9.05 search ttft  9.72 over10 11/45 planning in/out 33630/2205 usd 0.0351 reasoning 2661326
+  after-photos         loop    ttft  4.50 search ttft  4.80 over10 0/45 planning in/out 33555/2139 usd 0.0348 reasoning 2533404
+  after-photos         prompt  ttft  3.89 search ttft  4.52 over10 3/45 planning in/out 0/0 usd 0.0000 reasoning 0
+  after-photos         hosted  ttft  8.71 search ttft  9.60 over10 12/45 planning in/out 34560/2345 usd 0.0365 reasoning 2893110
+  planner-gpt-6-luna   loop    ttft  4.99 search ttft  5.94 over10 3/45 planning in/out 31703/2311 usd 0.0043 reasoning 2566594
+  planner-gpt-6-luna   prompt  ttft  4.76 search ttft  5.39 over10 2/45 planning in/out 0/0 usd 0.0000 reasoning 0
+  planner-gpt-6-luna   hosted  ttft  9.61 search ttft 10.03 over10 15/45 planning in/out 31740/2304 usd 0.0043 reasoning 2484062
+  search-serverless    loop    ttft  4.50 search ttft  4.96 over10 2/45 planning in/out 33621/2214 usd 0.0352 reasoning 2749426
+  search-serverless    prompt  ttft  4.07 search ttft  4.75 over10 0/45 planning in/out 0/0 usd 0.0000 reasoning 0
+  search-serverless    hosted  ttft  9.00 search ttft 10.20 over10 17/45 planning in/out 33581/2188 usd 0.0350 reasoning 2745028
+
+The search call alone: the 11 smoke questions twice per round, rounds alternating, from a laptop in Sweden, seconds.
+Same service (Basic, France Central), same version, only the planner changes.
+
+round   planner        calls  median  p90   max   planning median  planning p90
+1       gpt-6-luna        22    2.25  2.77  4.05             1.52          2.01
+2       gpt-5.4-mini      22    1.64  2.05  2.78             0.87          1.08
+3       gpt-6-luna        22    2.05  2.53  3.55             1.35          1.59
+4       gpt-5.4-mini      22    1.51  1.77  2.68             0.79          0.92
+5       gpt-6-luna        22    2.15  2.56  3.02             1.32          1.75
+6       gpt-5.4-mini      22    1.64  2.09  2.87             0.86          1.17
+
+Choice: gpt-5.4-mini stays the default and the live planner. Same answers, about half a second less per search. GPT-6 planning works and is one value away.
+
+Basic (France Central) against Serverless (Sweden Central), same version, planner gpt-5.4-mini, rounds alternating.
+
+round   service        calls  median  p90   max   planning median  planning p90
+1       Basic             22    1.62  1.95  3.16             0.91          1.20
+2       Serverless        22    1.35  1.54  2.99             0.78          0.97
+3       Basic             22    1.64  1.84  2.63             0.83          1.02
+4       Serverless        22    1.33  1.71  2.05             0.76          1.10
+5       Basic             22    1.54  1.89  2.60             0.81          0.97
+6       Serverless        22    1.33  1.68  2.60             0.79          1.06
+
+Cold start of Serverless: 14 minutes without a request, then four calls: 2.93, 1.89, 1.22 and 1.65 s. One try.
+Smoke of the filled service: 11 of 11. The Serverless identity planned with its one role. No key anywhere, local auth off.
+Grounding on Serverless: 77 of 78 (26 questions on three backends). The one miss is wording: the answer says that Malmo has
+none and that no other dealer has the part, which is right, but not in the words the check wants.
+
+Compute, PerRequestComputeConsumption in micro CU hours: at least 424,534 from 02:19 to 03:34 UTC, that is 0.42 CU hours, about 0.11 USD at
+0.255 USD. It covers filling the two indexes, about 90 timed searches, the smokes, 135 routing turns and 78 grounding turns.
+It is a diagnostic metric, not the invoice. Storage was 4.7 MB at most.

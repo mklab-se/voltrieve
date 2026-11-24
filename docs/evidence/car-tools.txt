@@ -1,0 +1,20 @@
+Car tools, 2026-11-24. A drawn sign (two_hours_fee) and a pretend car; no real photos.
+ok     wipers on prompt: wipers fast
+ok     horn on prompt: honked 2 times
+ok     speed on prompt: speed 50 km/h
+ok     park on prompt: parked
+ok     sign photo through the tool on prompt: two_hours_fee, 2026-11-24 10:00: no
+ok     honk after a sign question on prompt: an ordinary turn, in the same conversation
+ok     wipers on loop: wipers fast
+ok     horn on loop: honked 2 times
+ok     speed on loop: speed 50 km/h
+ok     park on loop: parked
+ok     sign photo through the tool on loop: two_hours_fee, 2026-11-24 10:00: no
+ok     honk after a sign question on loop: an ordinary turn, in the same conversation
+ok     wipers on hosted: wipers fast
+ok     horn on hosted: honked 2 times
+ok     speed on hosted: speed 50 km/h
+ok     park on hosted: parked
+ok     sign photo through the tool on hosted: two_hours_fee, 2026-11-24 10:00: no
+ok     honk after a sign question on hosted: an ordinary turn, in the same conversation
+18 checks, 0 failed

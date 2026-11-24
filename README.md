@@ -166,36 +166,38 @@ Tear down with `azd down --purge`. App registrations and the tester are not remo
 
 ## Costs
 
-Idle, about 80 USD a month plus a small amount for Log Analytics: Search Basic is about 75 USD and Container Registry Basic about 5 USD. Container Apps scale to zero, the three Static Web Apps (website, car and dashboard) are on the Free tier, models bill per token, and the hosted agent bills per active session. A Serverless search service is built and off, so it adds nothing until it is turned on ([Deployment](docs/deploy.md#idle-cost)).
+Idle, about 80 USD a month plus a small amount for Log Analytics: Search Basic is about 75 USD and Container Registry Basic about 5 USD. Container Apps scale to zero, the three Static Web Apps (website, car and dashboard) are on the Free tier, models bill per token, and the hosted agent bills per active session. A Serverless search service can stand next to Basic. It is off by default. In the dev environment it is on, at about 0.11 USD for a night of test runs ([Deployment](docs/deploy.md#idle-cost)).
 
 ## Status
 
-Deployed and run live on 2026-11-04 and 2026-11-05. Photos, the car, the new website and the newer Search versions came on 2026-11-23 and 2026-11-24, and their live results are not all in the repository yet.
+Deployed and run live on 2026-11-04 and 2026-11-05. Photos, the car, the new website and the newer Search versions were deployed and measured on 2026-11-24.
 
-<!-- MEASURE: what was run live of the car, the website and attachments -->
-Not measured yet: what of the car, the website and the photos has run live, beyond the privacy check below.
+Run live on 2026-11-24, from scripts and not from a signed in browser:
+
+- A photo on all three backends: 252 parking questions with no wrong verdict, and 36 of 36 part numbers right for a broken lamp ([Photos and attachments](docs/attachments.md#measured)).
+- The car's five tools on all three backends, 18 of 18 (`docs/evidence/car-tools.txt`).
+- The three sites are deployed and show their sign-in page.
+- Search on the newest data plane version, on Basic and on Serverless, with two planners: 135 of 135 routing turns right on Serverless (`docs/evidence/search-versions.txt`).
 
 Verified live:
 
 - All three backends through the deployed API: every runbook step passes on the final build, including the automated trace check in step 12.
 - Grounding: 30 of 30 answers passed.
 - The cross-document question "cheapest AWD in Sweden" repeated 6 times per backend: 18 of 18 right. At the default reasoning effort it was 11 to 15 of 18, so the sample uses medium effort.
-- A tool the server has never seen, declared only in the request: relayed on loop and hosted, refused on prompt (`docs/evidence/new-client-tool.txt`). That run used an earlier version of the demo. The demo now declares a car function, `set_seat_heating`, and is not yet run live in that form.
+- A tool the server has never seen, declared only in the request: relayed on loop and hosted, refused on prompt (`docs/evidence/new-client-tool.txt`). The demo declares a car function, `set_seat_heating`.
 - Recovery on all three backends: a paused turn nobody answers, and a conversation resumed after the API scaled to zero (`docs/evidence/repair.txt`).
 - One trace per turn across API, Foundry, hosted agent and dealer (`docs/evidence/application-insights.txt`).
 - The prompt agent's 400.
 - Where a photo turn leaves its text and its photo, on 2026-11-24: the photo nowhere we looked, the text of prompt and hosted turns in Foundry's tracing (`docs/evidence/photos-privacy.txt`). That breaks a rule, and [the decision is open](docs/decisions.md#open-the-product-owner-decides-what-foundrys-tracing-may-record).
 - The authorization denied path, on the loop backend, against real Foundry with a fake token validator.
 
-<!-- MEASURE: the offline test counts, including the new suites (clients/car, clients/dashboard, tests/photos, infra) -->
-Offline tests: every suite runs in [CI](.github/workflows/tests.yml). The counts are not measured yet after the last merge.
+Offline tests pass: `agent_core` 167, `api` 459, `agents/hosted` 40, `search` 62, `services/dealer` 42, `clients/cli` 62, `clients/web` 172, `clients/dashboard` 25, `clients/car` 426, `tests/photos` 228, `tests/contract` 74 and `infra/scripts/entra` 41, plus the Bicep and script checks. Every suite runs in [CI](.github/workflows/tests.yml).
 
 Not verified:
 
-- The car and the new website in a browser against the deployed API, and sign-in to the car, the website and the dashboard.
+- Sign-in to the car, the website and the dashboard, and a conversation from their pages with the deployed API. The pages were seen in a browser with mock servers.
 - The car in Safari or Firefox, on a slow or Windows computer, and with a screen reader. Whether a person hears the horn and the motor.
-- Planning on `gpt-6-luna`, and the Serverless search service.
-- `set_seat_heating`, the new version of the client tool demo.
+- A rollback of the Serverless search service or of the Search versions, and what Serverless costs on an invoice.
 - The workbook's check of Foundry's tracing rows.
 - What each choice about Foundry's tracing does in practice.
 - Reading a small sign in a large photo: [a known limit](docs/attachments.md#the-known-limit).

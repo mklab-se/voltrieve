@@ -175,7 +175,7 @@ The car and the dashboard add no idle cost: two more Static Web Apps on the Free
 
 - A photo adds about 950 input tokens to each turn while it lives.
 - The pictures for the car cost 0.32 USD once: the cockpit in its variants and five house fronts ([how they were made](https://github.com/mklab-se/voltrieve/blob/main/clients/car/assets/README.md)).
-- <!-- MEASURE: cost of the first 20 photo turns, and of the whole photo run --> Not measured yet: the cost of the first 20 photo turns, and of the whole photo run.
+- The first 20 photo turns cost about 0.11 USD, and the whole photo run of 351 turns about 1.10 USD, at list prices ([Photos and attachments](attachments.md#measured)).
 
 ## Before a demo
 
@@ -249,5 +249,4 @@ scripts/deploy-agents.sh
 
 When attachments ship in the same update, use [that order](#order-for-an-update-with-attachments) for step 1, since it deploys the agents before the API too.
 
-<!-- MEASURE: time to first token and cost with gpt-6-luna as the planner, and with Serverless, also after more than 10 idle minutes -->
-Not measured yet: time to first token and cost with `gpt-6-luna` as the planner, and with Serverless, also after more than 10 idle minutes. The commands for Serverless are not verified.
+Measured on 2026-11-24, with the commands above ([`search-versions.txt`](https://github.com/mklab-se/voltrieve/blob/main/docs/evidence/search-versions.txt)): `gpt-6-luna` plans about half a second slower per search. Serverless is about 0.3 s faster per search than Basic when warm, and took 2.9 s for the first call after 14 idle minutes. The rollback commands were not run.

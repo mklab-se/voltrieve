@@ -1,0 +1,33 @@
+Photo comparison, 2026-11-24. Model gpt-6.1-terra, Foundry directly with store=False, drawn signs only, 16 cases, 3 repeats each.
+
+| Approach | Right | Median | Tokens per run (median) | Calls per run (median) |
+| --- | --- | --- | --- | --- |
+| Photo straight into the model call | 48 of 48 | 1.6 s | 1,202 | 1 |
+| The model asks a photo reading tool | 48 of 48 | 5.2 s | 1,851 | 3 |
+| A fixed reading form, then an answer | 45 of 48 | 3.5 s | 1,438 | 2 |
+
+| Where the parking rules live | Right | Median | Tokens per run (median) | Calls per run (median) |
+| --- | --- | --- | --- | --- |
+| Nowhere, the model's own knowledge | 48 of 48 | 1.8 s | 1,094 | 1 |
+| Always in the prompt | 48 of 48 | 1.5 s | 1,366 | 1 |
+| A tool that returns the rules | 48 of 48 | 3.0 s | 2,615 | 2 |
+| A specialist tool that gets the photo | 48 of 48 | 4.8 s | 2,078 | 3 |
+
+Token usage per setup
+
+Photo straight into the model call: 48 runs, 55,725 in (34,740 cached), 2,155 out, 48 calls, about USD 0.033
+The model asks a photo reading tool: 48 runs, 76,125 in (0 cached), 12,543 out, 144 calls, about USD 0.139
+A fixed reading form, then an answer: 48 runs, 63,205 in (40,092 cached), 7,469 out, 96 calls, about USD 0.062
+Nowhere, the model's own knowledge: 48 runs, 50,253 in (31,313 cached), 3,032 out, 48 calls, about USD 0.036
+Always in the prompt: 48 runs, 63,549 in (42,270 cached), 2,074 out, 48 calls, about USD 0.034
+A tool that returns the rules: 48 runs, 122,538 in (99,403 cached), 2,889 out, 96 calls, about USD 0.043
+A specialist tool that gets the photo: 48 runs, 88,223 in (0 cached), 11,466 out, 144 calls, about USD 0.146
+Cost is an estimate at list prices read 2026-11-05 (docs/model-comparison.md and api/app/insights.py), not the bill.
+
+Runs that met a rate limit and waited (left out of the medians): 0 waited of 336.
+
+Misses (3)
+
+form sign-fee-always-sun #2: got yes, error none | {"verdict":"yes","reason":"On Sunday, the 2-hour limit does not apply because no Sunday time is shown. The parking fee m
+form sign-fee-always-sun #3: got yes, error none | {"verdict":"yes","reason":"The times shown are not red, so the two-hour limit does not apply on Sunday."}
+form sign-cleaning-monday #3: got yes, error none | {"verdict":"yes","reason":"It is within the stated Monday period, and no time limit or parking prohibition is shown. The

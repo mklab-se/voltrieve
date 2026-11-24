@@ -1,3 +1,3 @@
-PASS  loop  tool received [0.95], answer: 'Done - emissivity is now set to 0.95.'
-PASS  hosted  tool received [0.95], answer: 'Done - emissivity is now set to 0.95.'
+PASS  loop  tool received [2], answer: 'Your seat heating is set to level 2.'
+PASS  hosted  tool received [2], answer: 'Your seat heating is now at level 2.'
 PASS  prompt  refused as expected, error: unsupported_client_tool

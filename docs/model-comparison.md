@@ -6,8 +6,7 @@ Which model should run the agent, and does it depend on the architecture? This p
 
 All three backends run `gpt-6.1-terra`, chosen from these results. `gpt-5.4-mini` plans the Search queries, and the numbers below were measured with it. `gpt-6-luna` can plan them instead, opt-in with `PLANNING_MODEL_NAME`.
 
-<!-- MEASURE: the same run with gpt-6-luna as the planner -->
-Not measured yet: the same run with `gpt-6-luna` as the planner.
+`gpt-6-luna` was tried as the planner on 2026-11-24. The answers were as good: the same right sources and part numbers in 135 turns. Planning cost about an eighth as much. But it took about half a second longer on every search (median 1.3 to 1.5 s to plan, against 0.8 to 0.9 s), and speed decides, so `gpt-5.4-mini` stays ([`search-versions.txt`](https://github.com/mklab-se/voltrieve/blob/main/docs/evidence/search-versions.txt)).
 
 A last run on that setup, 48 turns per backend:
 

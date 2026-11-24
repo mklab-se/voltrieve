@@ -313,7 +313,7 @@ Start with B if unsure. The core moves to C unchanged, for about 500 lines.
 
 ## A device that brings its own tools
 
-This was run against the deployed API with an earlier version of `scripts/new_client_tool_demo.py`: the client declared a tool in the request that nothing in the API, the agents or Foundry knew. Backends B and C relayed the call to the client and finished the turn, with no server change. Backend A refused it with `unsupported_client_tool` (`docs/evidence/new-client-tool.txt`). The demo was then changed to a car function, `set_seat_heating(level)`, from 0 to 3, and is not yet run live in that form. The script stands in for a car with a function the server has never seen: no car software or vehicle was involved.
+This was run against the deployed API on 2026-11-24 with `scripts/new_client_tool_demo.py`: the client declared a tool in the request, `set_seat_heating(level)` from 0 to 3, that nothing in the API, the agents or Foundry knew. Backends B and C relayed the call to the client with level 2 and finished the turn, with no server change. Backend A refused it with `unsupported_client_tool` (`docs/evidence/new-client-tool.txt`). The script stands in for a car with a function the server has never seen: no car software or vehicle was involved.
 
 The problem: the software in a car exposes `set_seat_heating` to the agent, alongside knowledge bases. This repository did not test a real in-car system or a real seat heater. Two knowledge bases are tested in section 6. The advice below follows from what was measured.
 

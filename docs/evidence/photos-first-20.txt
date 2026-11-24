@@ -1,0 +1,55 @@
+The first 20 photo turns, 2026-11-24, deployed build 985d546, before the Search upgrade.
+uv run tests/routing/check.py --photos --limit 20 --repeats 1 --no-save
+The API used at most 310 MB of its 1 GiB during the run (WorkingSetBytes, one minute maximum).
+
+Routing per backend and question group
+
+backend group   runs  right  vain  missed  together  steps  calls  seconds
+prompt  sign       2  100 %     0       0       n/a    1.0    0.0      2.2
+prompt  lamp       1    0 %     1       0       n/a      1      2     12.4
+prompt  undamaged    1  100 %     0       0       n/a      1      0      1.9
+prompt  blurred    1  100 %     0       0       n/a      0      0      0.0
+prompt  broken-part    1  100 %     0       0       n/a      1      0      1.5
+prompt  which-part    1  100 %     1       0       n/a      1      1      5.7
+loop    sign       2  100 %     0       0       n/a    1.0    0.0      2.1
+loop    lamp       1    0 %     1       0       n/a      2      2      6.4
+loop    undamaged    1  100 %     0       0       n/a      1      0      1.4
+loop    blurred    1  100 %     0       0       n/a      0      0      0.0
+loop    broken-part    1  100 %     0       0       n/a      1      0      1.5
+loop    which-part    1  100 %     1       0       n/a      2      1      5.1
+hosted  sign       2  100 %     0       0       n/a    1.0    0.0      6.1
+hosted  lamp       1    0 %     1       0       n/a      3      3     13.9
+hosted  undamaged    1  100 %     0       0       n/a      1      0      6.1
+hosted  blurred    1  100 %     0       0       n/a      0      0      0.0
+hosted  broken-part    1  100 %     0       0       n/a      1      0      6.0
+
+Article numbers in the answers
+
+prompt  1 of 1 found, 1 of 1 answers complete, 0 invented
+loop    1 of 1 found, 1 of 1 answers complete, 0 invented
+hosted  1 of 1 found, 1 of 1 answers complete, 0 invented
+
+Photo turns per backend (turns that were retried after a failure are left out of the medians)
+
+backend  turns  right  verdicts  upload s  first text s  seconds  over 10 s   tokens in/out  notes
+prompt       7   85 %    2 of 2         0.1           1.7      2.2          1     4412/92      0 waited, 0 re-uploaded, 0 errors
+loop         7   85 %    2 of 2         0.1           1.4      2.1          0     2944/89      0 waited, 0 re-uploaded, 0 errors
+hosted       6   83 %    2 of 2         0.1           5.6      6.1          1     2941/77      0 waited, 0 re-uploaded, 0 errors
+
+Tokens and estimated cost
+
+prompt  6 turns, 63629 in (20460 cached), 900 out tokens, about USD 0.0487 (USD 8.12 per 1,000 turns)
+loop    6 turns, 37757 in (17271 cached), 623 out tokens, about USD 0.0326 (USD 5.43 per 1,000 turns)
+hosted  5 turns, 45178 in (30056 cached), 550 out tokens, about USD 0.0275 (USD 5.49 per 1,000 turns)
+Estimated at the list prices of gpt-6.1-terra read 2026-11-05 (docs/model-comparison.md and api/app/insights.py), planning and Search reasoning included, cache writes left out. An estimate, not the bill.
+
+Start, one ordinary turn before the photos (not in the medians): prompt 2.1 s, loop 1.7 s, hosted 6.0 s
+
+Parallel tool runs saved a median of 1.4925 s over 2 turns (own loop and hosted agent).
+
+Runs that were not right
+
+prompt lamp-left-site #1: used ['docs', 'parts'], expected ['parts'], together None, articles 1/1, invented [], missing words [], error none, verdict None for None, forbidden []
+loop lamp-left-site #1: used ['docs', 'parts'], expected ['parts'], together None, articles 1/1, invented [], missing words [], error none, verdict None for None, forbidden []
+hosted lamp-left-site #1: used ['docs', 'parts'], expected ['parts'], together None, articles 1/1, invented [], missing words [], error none, verdict None for None, forbidden []
+

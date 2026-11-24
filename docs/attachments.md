@@ -53,7 +53,7 @@ It is kept out of our own logs and spans, and out of the live feed. It is part o
 
 The photo goes into the model call. The two other approaches that were tried read it first and hand the model a description.
 
-Tested on 2026-11-23 against the deployed project with `gpt-6.1-terra`, on the Responses API as the own loop calls it and on the deployed prompt agent. This was a spike, run once, with made-up photos, and a set of real sign photos that are not in the repository. The repository holds only signs drawn by code, so these numbers cannot be rerun from here. The record in `docs/evidence/photo-spike.txt` covers only the paused turn spike below (one run each). The tables of approaches, the parking run and the broken part runs are from the same day, but their raw output is not kept in the repository, so treat them as reported, not verified. The plan is to run the comparison again with drawn signs (see [Still to be measured](#still-to-be-measured)).
+Tested on 2026-11-23 against the deployed project with `gpt-6.1-terra`, on the Responses API as the own loop calls it and on the deployed prompt agent. This was a spike, run once, with made-up photos, and a set of real sign photos that are not in the repository. The repository holds only signs drawn by code, so these numbers cannot be rerun from here. The record in `docs/evidence/photo-spike.txt` covers only the paused turn spike below (one run each). The tables of approaches, the parking run and the broken part runs are from the same day, but their raw output is not kept in the repository, so treat them as reported, not verified. The comparison was run again with drawn signs (see [Measured](#measured)).
 
 | Approach | Trade-off | Measured |
 | --- | --- | --- |
@@ -201,14 +201,40 @@ Checked on 2026-11-24 after 20 photo turns on the deployed base (`docs/evidence/
 
 That last row breaks a rule of this project, and it is older than the photos: `genAIContent` has rows since 2026-11-03. What to do about it is [an open decision of the product owner](decisions.md#open-the-product-owner-decides-what-foundrys-tracing-may-record).
 
-## Still to be measured
+## Measured
 
-The numbers above come from a spike, except the privacy check. These come from the evidence runs that follow, with drawn signs and repository pictures only. Not measured yet:
+The numbers under "Why the photo goes straight to the model" come from the spike. These come from the runs on 2026-11-24, with drawn signs and repository pictures only.
 
-- <!-- MEASURE: the three approaches and the four places for the rules, run again with drawn signs (tests/photos/compare.py): right, median, tokens --> The three approaches and the four places for the rules, run again with drawn signs (tests/photos/compare.py): right, median, tokens.
-- <!-- MEASURE: photo questions on the three backends, three times each: right, median time to first token, share over 10 s, cost of the first 20 turns --> Photo questions on the three backends, three times each: right, median time to first token, share over 10 s, cost of the first 20 turns.
-- <!-- MEASURE: the broken lamp on the left and right, the undamaged car, a drawn sign asked about as a broken part, a blurred photo, "which part is this?" --> The broken lamp on the left and right, the undamaged car, a drawn sign asked about as a broken part, a blurred photo, "which part is this?".
-- <!-- MEASURE: the routing suite before and after, for turns without attachments --> The routing suite before and after, for turns without attachments.
-- <!-- MEASURE: the car's tools on three backends, "honk" after a sign question stored as usual --> The car's tools on three backends, "honk" after a sign question stored as usual.
+**The three approaches and the four places for the rules**, run again with `tests/photos/compare.py`: 16 cases, three times each, 336 runs, about 0.49 USD ([`photos-comparison.txt`](https://github.com/mklab-se/voltrieve/blob/main/docs/evidence/photos-comparison.txt)).
+
+| Approach | Right | Median | Tokens per run |
+| --- | --- | --- | --- |
+| **Photo straight into the model call (picked)** | 48 of 48 | 1.6 s | 1,202 |
+| The model asks a photo reading tool | 48 of 48 | 5.2 s | 1,851 |
+| A fixed reading form, then an answer | 45 of 48 | 3.5 s | 1,438 |
+
+| Where the parking rules live | Right | Median | Tokens per run |
+| --- | --- | --- | --- |
+| Nowhere, the model's own knowledge (picked) | 48 of 48 | 1.8 s | 1,094 |
+| Always in the prompt | 48 of 48 | 1.5 s | 1,366 |
+| A tool that returns the rules | 48 of 48 | 3.0 s | 2,615 |
+| A specialist tool that gets the photo | 48 of 48 | 4.8 s | 2,078 |
+
+**Photo questions on the deployed API**, 40 questions on three backends, three times each ([`photos-routing.txt`](https://github.com/mklab-se/voltrieve/blob/main/docs/evidence/photos-routing.txt)):
+
+| Backend | Parking verdicts right | Part numbers right | First text, median | Turns over 10 s | USD per 1,000 turns |
+| --- | --- | --- | --- | --- | --- |
+| Own loop | 84 of 84 | 12 of 12 | 1.8 s | 4 of 120 | 3.05 |
+| Prompt agent | 84 of 84 | 12 of 12 | 1.9 s | 7 of 120 | 3.94 |
+| Hosted agent | 84 of 84 | 12 of 12 | 6.2 s | 10 of 120 | 2.45 |
+
+- Three of the 252 verdicts (two on the prompt agent, one on the own loop) were marked unclear by the judge, because the answer added "provided no other restrictions apply". They were read by hand and are right. No verdict was wrong, no part number was invented.
+- 19 of the 21 turns over 10 s are lamp and "which part" questions, which search the catalog. The other two are one drawn sign asked about as a broken part on the hosted agent, and one fee question on the own loop. Half of the lamp turns also searched the documents, which the suite counts as not right. The part number is right in all of them.
+- The undamaged car, a drawn sign asked about as a broken part, "which part is this?" and a car photo asked about parking: right in every run. The blurred photo was refused at upload in 9 of 9.
+- The first 20 photo turns cost about 0.11 USD, the whole run of 351 turns about 1.10 USD. The API used at most 310 MB of its 1 GiB in the first 20 ([`photos-first-20.txt`](https://github.com/mklab-se/voltrieve/blob/main/docs/evidence/photos-first-20.txt)).
+
+**Turns without attachments**, the routing suite before and after, 45 questions per backend: first text 4.7 s before and 4.5 s after on the own loop, 4.2 s and 3.9 s on the prompt agent, 9.1 s and 8.7 s on the hosted agent. Right sources: 134 of 135 before and 132 of 135 after. All three misses after are parts questions that also searched the documents. Part numbers: 43 of 43 on every backend, before and after ([`search-versions.txt`](https://github.com/mklab-se/voltrieve/blob/main/docs/evidence/search-versions.txt)).
+
+**The car's five tools** on three backends: 18 of 18, including a sign photo through the tool, and "honk" after a sign question as an ordinary turn in the same conversation ([`car-tools.txt`](https://github.com/mklab-se/voltrieve/blob/main/docs/evidence/car-tools.txt)). That "honk" turn is stored as usual by design. Its stored items were not listed.
 
 Not verified, and not planned: real sign photos in the repository, an attachment larger than the API's memory allows, and whether Foundry keeps a photo that was sent unstored.
