@@ -11,7 +11,7 @@ clients/dashboard/.env.production
 clients/car/.env.production
 
 # Documentation site
-site/
+/site/
 docs/index.md
 
 # JPEG copies of the car images, made by the PDF step
