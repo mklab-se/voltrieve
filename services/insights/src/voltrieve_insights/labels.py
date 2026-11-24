@@ -165,6 +165,26 @@ def _count(usage: object, *path: str) -> int:
     return usage if isinstance(usage, int) and not isinstance(usage, bool) else 0
 
 
+async def send(
+    http: httpx.AsyncClient, url: str, body: dict, headers: dict, timeout: float
+) -> httpx.Response | None:
+    """POST with retries of 429, 5xx, timeouts and transport errors. The last response, or None when the
+    last try never got one. Nothing is raised, so the caller raises its own fixed error outside an except."""
+    response = None
+    for attempt in range(RETRIES + 1):
+        response = None
+        try:
+            response = await http.post(url, json=body, headers=headers, timeout=timeout)
+        except httpx.HTTPError:
+            pass
+        retry = response is None or response.status_code == 429 or response.status_code >= 500
+        if retry and attempt < RETRIES:
+            await asyncio.sleep(_wait(response, attempt))
+            continue
+        break
+    return response
+
+
 class Model:
     """Chat completions with a strict schema. The caller owns the HTTP client."""
 
@@ -216,24 +236,11 @@ class Model:
             headers = await self._headers()
             if headers is None:
                 raise ModelError("no token for the model")
-            status = None
-            for attempt in range(RETRIES + 1):
-                response = None
-                try:
-                    response = await self._http.post(self._url, json=body, headers=headers, timeout=TIMEOUT)
-                except httpx.HTTPError:
-                    status = None
-                else:
-                    status = response.status_code
-                if status is None or status == 429 or status >= 500:
-                    if attempt < RETRIES:
-                        await asyncio.sleep(_wait(response, attempt))
-                        continue
-                break
-            if status is None:
+            response = await send(self._http, self._url, body, headers, TIMEOUT)
+            if response is None:
                 raise ModelError("the model request failed before an answer")
-            if status != 200:
-                raise ModelError(f"the model request failed with status {status}")
+            if response.status_code != 200:
+                raise ModelError(f"the model request failed with status {response.status_code}")
             try:
                 return response.json()
             except (ValueError, RecursionError):
