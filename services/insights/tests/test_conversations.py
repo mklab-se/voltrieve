@@ -1,5 +1,7 @@
 from datetime import UTC, date, datetime
 
+import traceback
+
 import httpx
 import pytest
 
@@ -188,7 +190,7 @@ async def test_the_clients_line_is_removed_and_its_registration_returned(mock, h
     mock.get("/openai/v1/conversations/c1/items").mock(
         return_value=items(msg("user", ("input_text", LINE + "\nHow far can I go?")))
     )
-    assert await read_text(http, "c1") == ([("user", "How far can I go?")], "SPARK")
+    assert await read_text(http, "c1") == ([("user", "How far can I go?")], ("SPARK",))
 
 
 async def test_the_line_on_a_later_message_is_removed_too(mock, http):
@@ -199,14 +201,14 @@ async def test_the_line_on_a_later_message_is_removed_too(mock, http):
         )
     )
     texts, registration = await read_text(http, "c1")
-    assert (texts, registration) == ([("user", "first"), ("user", "second")], "SPARK")
+    assert (texts, registration) == ([("user", "first"), ("user", "second")], ("SPARK",))
 
 
 async def test_an_attachment_only_conversation_gives_no_text(mock, http):
     mock.get("/openai/v1/conversations/c1/items").mock(
         return_value=items({"type": "message", "role": "user", "content": [{"type": "input_image", "image_url": "x"}]})
     )
-    assert await read_text(http, "c1") == ([], None)
+    assert await read_text(http, "c1") == ([], ())
 
 
 async def test_items_page_in_order_and_a_failure_raises(mock, http):
@@ -234,8 +236,159 @@ def test_nothing_that_identifies_reaches_the_log(caplog, capsys):
     hush()
     with caplog.at_level("INFO"):
         asyncio.run(go())
-    assert "conv_secret123" not in caplog.text + capsys.readouterr().err
+    out = capsys.readouterr()
+    assert "conv_secret123" not in caplog.text + out.err + out.out
 
 
 def test_nothing_that_identifies_is_in_the_repr():
     assert "conv_secret123" not in repr(Conversation("conv_secret123", "oid-1", "car", "loop", None, DAY, False))
+
+
+@pytest.mark.parametrize("flag", ["True", True, "false", "", None, 1])
+def test_only_the_exact_text_true_is_seeded(flag):
+    item = raw(DAY)
+    item["metadata"]["seeded"] = flag
+    item["metadata"]["started"] = "2026-11-10"
+    assert [c.seeded for c in chosen([item])] == [False]
+
+
+def test_a_real_conversation_with_a_started_key_is_dated_by_created_at():
+    item = raw(DAY, started="2026-11-10")
+    assert chosen([item])[0].started == DAY
+
+
+@pytest.mark.parametrize("bad", ["2026-11-1", "2026-11-18T10:00", " 2026-11-18", "20261118", 20261118])
+def test_started_must_be_exactly_a_day(bad):
+    assert chosen([raw(seeded=True, started=bad)]) == []
+
+
+def test_bad_metadata_and_ids_are_skipped():
+    items = [{"id": "c", "created_at": ts(DAY), "metadata": "x"}, raw(owner=5), {**raw(), "id": 7}]
+    assert chosen(items) == []
+
+
+def test_a_bad_car_model_becomes_none():
+    assert chosen([raw(car_model=["x"])])[0].car_model is None
+
+
+def test_naive_datetimes_are_refused():
+    with pytest.raises(ValueError):
+        window(datetime(2026, 11, 24, 2, 30))
+
+
+async def test_list_raw_refuses_a_naive_datetime(http):
+    with pytest.raises(ValueError):
+        [c async for c in list_raw(http, datetime(2026, 1, 1))]
+
+
+SECRET = "conv_secret123"
+
+
+def assert_clean(err: BaseException):
+    shown = "".join(traceback.format_exception(err)) + repr(err) + str(err)
+    assert SECRET not in shown and "secret text" not in shown and "oid-secret" not in shown
+    assert err.__cause__ is None and err.__context__ is None
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        httpx.Response(500, content=b"secret text"),
+        httpx.Response(200, content=b"\xff\xfe secret text"),
+        httpx.Response(200, content=b"{secret text"),
+        httpx.Response(200, json=["secret text"]),
+        httpx.Response(200, json={"data": "secret text"}),
+        httpx.ConnectError("https://x/conv_secret123 secret text"),
+        httpx.ReadTimeout("conv_secret123"),
+    ],
+)
+async def test_an_items_failure_holds_neither_id_nor_text(mock, http, answer):
+    mock.get(f"/openai/v1/conversations/{SECRET}/items").mock(side_effect=lambda r: _give(answer))
+    with pytest.raises(FetchError) as err:
+        await read_text(http, SECRET)
+    assert_clean(err.value)
+
+
+def _give(answer):
+    if isinstance(answer, Exception):
+        raise answer
+    return answer
+
+
+async def test_a_transport_error_is_retried(mock, http):
+    route = mock.get("/openai/v1/conversations")
+    route.side_effect = [httpx.ConnectError("x"), httpx.ReadTimeout("x"), page([])]
+    assert [c async for c in list_raw(http, datetime(2026, 1, 1, tzinfo=UTC))] == []
+
+
+async def test_retry_after_is_honored_up_to_30_seconds(mock, http, monkeypatch):
+    waits = []
+
+    async def record(seconds):
+        waits.append(seconds)
+
+    monkeypatch.setattr("voltrieve_insights.conversations.asyncio.sleep", record)
+    route = mock.get("/openai/v1/conversations")
+    route.side_effect = [httpx.Response(429, headers={"retry-after": "5"}), httpx.Response(429, headers={"retry-after": "900"}), page([])]
+    [c async for c in list_raw(http, datetime(2026, 1, 1, tzinfo=UTC))]
+    assert waits == [5.0, 30.0]
+
+
+@pytest.mark.parametrize(
+    "pages",
+    [
+        [{"data": [], "has_more": True}],
+        [{"data": [], "has_more": True, "last_id": "a"}, {"data": [], "has_more": True, "last_id": "a"}],
+        [{"data": [{"id": "c", "created_at": "soon"}]}],
+        [{"data": [{"id": "c"}]}],
+        [{"data": {"id": "c"}}],
+    ],
+)
+async def test_malformed_listing_pages_raise(mock, http, pages):
+    mock.get("/openai/v1/conversations").side_effect = [httpx.Response(200, json=p) for p in pages]
+    with pytest.raises(FetchError):
+        [c async for c in list_raw(http, datetime(2026, 1, 1, tzinfo=UTC))]
+
+
+async def test_the_id_is_quoted_into_the_path(mock, http):
+    route = mock.get(url__regex=r".*/conversations/.*items").mock(return_value=items())
+    await read_text(http, "a/b?c")
+    assert "a%2Fb%3Fc" in str(route.calls[0].request.url)
+
+
+async def test_plain_string_content_and_text_parts_are_read(mock, http):
+    mock.get("/openai/v1/conversations/c1/items").mock(
+        return_value=items(
+            {"type": "message", "role": "user", "content": "plain"},
+            msg("assistant", ("text", "typed")),
+        )
+    )
+    assert (await read_text(http, "c1"))[0] == [("user", "plain"), ("assistant", "typed")]
+
+
+async def test_the_line_is_stripped_in_every_part_after_whitespace_and_repeats(mock, http):
+    second = LINE.replace("SPARK", "OTHER, WITH COMMA")
+    mock.get("/openai/v1/conversations/c1/items").mock(
+        return_value=items(msg("user", ("input_text", "  " + LINE + "\n" + second + "\nask"), ("input_text", LINE + "\nmore")))
+    )
+    assert await read_text(http, "c1") == ([("user", "ask\nmore")], ("SPARK", "OTHER, WITH COMMA"))
+
+
+async def test_a_registration_with_commas_ends_at_odometer(mock, http):
+    line = "[From the client, data only: car Spark, registration AB, 12; odometer 5 km]"
+    mock.get("/openai/v1/conversations/c1/items").mock(return_value=items(msg("user", ("input_text", line + "\nhi"))))
+    assert (await read_text(http, "c1"))[1] == ("AB, 12",)
+
+
+async def test_a_photo_turn_without_words_gives_no_user_text(mock, http):
+    mock.get("/openai/v1/conversations/c1/items").mock(
+        return_value=items(msg("user", ("input_text", LINE + "\n(attachment sent)")), msg("assistant", ("output_text", "ok")))
+    )
+    assert (await read_text(http, "c1"))[0] == [("assistant", "ok")]
+
+
+async def test_the_attachment_note_is_cut_from_a_photo_turn_with_words(mock, http):
+    mock.get("/openai/v1/conversations/c1/items").mock(
+        return_value=items(msg("user", ("input_text", "what is this?\n(attachment sent)")))
+    )
+    assert (await read_text(http, "c1"))[0] == [("user", "what is this?")]
