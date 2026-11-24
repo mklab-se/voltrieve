@@ -257,32 +257,44 @@ def test_conversations_without_a_model_are_the_rest_of_the_models():
     assert len(cuts(people(9, car_model="lumen") + people(5, start=9), "topic_model")) == 1
 
 
-def test_conversations_in_no_group_are_the_rest_of_the_groups():
-    assert cuts(people(9, "Charge at home") + people(4, start=9), "group") == []
-    assert len(cuts(people(9, "Charge at home") + people(5, start=9), "group")) == 1
+def test_a_small_rest_takes_no_topic_and_no_group_with_it():
+    items = people(9) + people(1, start=9, topic="fault")
+    assert [r["Topic"] for r in cuts(items, "topic")] == ["charging"]
+    items = people(9, "Charge at home") + people(1, "Find a plug", start=9) + people(1, start=10)
+    assert [r["GroupName"] for r in cuts(items, "group")] == ["Charge at home"]
 
 
-def test_other_is_taken_out_like_any_other_row():
-    items = people(9, "Charge at home") + people(4, "Find a plug", start=9) + people(1, "Rain", start=13)
-    assert [r["GroupName"] for r in cuts(items, "group")] == ["Charge at home", "other"]
-    assert [r["GroupName"] for r in cuts(items + people(1, start=14), "group")] == ["Charge at home"]
+def test_a_group_result_is_held_back_when_the_rest_of_its_topic_and_result_is_small():
+    items = people(9, "Charge at home") + people(6, "Find a plug", start=9) + people(4, start=20)
+    assert [r["GroupName"] for r in cuts(items, "group")] == ["Charge at home", "Find a plug"]
+    assert [r["GroupName"] for r in cuts(items, "group_result")] == ["Charge at home"]
+    assert len(cuts(items + people(1, start=24), "group_result")) == 2
 
 
-def test_a_row_that_was_taken_out_has_no_children():
-    fault = people(6, "Warning light", start=9, topic="fault", car_model="lumen")
-    items = people(9, "Charge at home") + fault + people(1, start=20, topic="app_account")
-    assert {r["Topic"] for r in totals(items)[1:]} == {"", "charging"}
-    items = people(9, "Charge at home") + people(6, "Find a plug", start=9) + people(1, start=20)
-    assert {r["GroupName"] for r in totals(items) if r["Cut"] == "group_result"} == {"Charge at home"}
+def test_of_two_group_results_of_the_same_size_the_first_by_its_name_is_held_back():
+    items = people(6, "Find a plug") + people(6, "Charge at home", start=6) + people(1, start=20)
+    assert [r["GroupName"] for r in cuts(items, "group_result")] == ["Find a plug"]
+
+
+def test_the_rest_of_one_result_holds_back_no_other_result():
+    items = people(9, "Charge at home") + people(9, "Charge at home", start=9, result="partly")
+    items += people(1, start=20)
+    assert [r["Result"] for r in cuts(items, "group_result")] == ["partly"]
+
+
+def test_a_result_held_back_in_its_topic_is_not_saved_in_a_group_either():
+    # 6 answered is held back for the one refused. The row of the group would give the 6 back.
+    items = people(6, "Charge at home") + people(7, "Charge at home", start=6, result="partly")
+    items += people(7, "Find a plug", start=20, result="partly") + people(1, "Find a plug", start=40, result="refused")
+    assert [r["Result"] for r in cuts(items, "topic_result")] == ["partly"]
+    assert {r["Result"] for r in cuts(items, "group_result")} == {"partly"}
 
 
 def test_a_rest_of_many_small_parts_stays_a_known_corner():
     items = people(7, topic="fault")
     for n, result in enumerate(("partly", "not_found", "handed_off", "refused")):
         items += people(4, start=10 * (n + 1), topic="fault", result=result)
-    assert cuts(items, "topic_result") == [
-        {"Topic": "fault", "Result": "answered", "People": 5, "Conversations": 5}
-    ]
+    assert cuts(items, "topic_result") == [{"Topic": "fault", "Result": "answered", "People": 5, "Conversations": 5}]
 
 
 def test_real_and_made_up_are_never_counted_together():
@@ -323,6 +335,10 @@ PARENTS = {
 }
 
 
+OTHER_PARENT = {"group_result": "topic_result"}  # a part of both
+HELD_BACK = ("client", "topic_model", "topic_result", "topic_kind", "group_result")  # no rest of 1 to 4
+
+
 def random_items(rng):
     """Some labels are common and some are rare, and some people talk a lot."""
 
@@ -334,9 +350,7 @@ def random_items(rng):
     group, client, topic = weighted(GROUPS), weighted(CLIENTS), weighted(TOPICS)
     model, kind, result = weighted(MODELS), weighted(KINDS), weighted(RESULTS)
     return [
-        one_person(
-            owner(), group(), client=client(), topic=topic(), car_model=model(), kind=kind(), result=result()
-        )
+        one_person(owner(), group(), client=client(), topic=topic(), car_model=model(), kind=kind(), result=result())
         for _ in range(rng.randint(0, 160))
     ]
 
@@ -401,8 +415,8 @@ def labels_of(row):
 
 
 def is_part(row, parent):
-    """Whether the row is a part of the parent row."""
-    return PARENTS.get(row["Cut"]) == parent["Cut"] and all(
+    """Whether the row is a part of the parent row. One of a group and result has two parents."""
+    return parent["Cut"] in (PARENTS.get(row["Cut"]), OTHER_PARENT.get(row["Cut"])) and all(
         row[name] == value for name, value in labels_of(parent).items() if value
     )
 
@@ -417,6 +431,13 @@ def wanted_rows(items, limit):
     """The rows that should be saved, in order, worked out from the top down."""
     possible = list(possible_rows(items, limit))
     size = {tuple(row.values()): len(owners(true_items(row, items, limit))) for row in possible}
+
+    def hold_back(parent, parts):
+        parts = list(parts)
+        while parts and 0 < len(true_rest(parent, parts, items, limit)) < limit:
+            parts.remove(min(parts, key=lambda row: (size[tuple(row.values())], tuple(row.values()))))
+        return parts
+
     wanted = [row for row in possible if row["Cut"] == "all" and size[tuple(row.values())] >= limit]
     for parent in wanted:  # it grows
         for cut in (c for c, p in PARENTS.items() if p == parent["Cut"]):
@@ -425,10 +446,13 @@ def wanted_rows(items, limit):
                 for row in possible
                 if row["Cut"] == cut and is_part(row, parent) and size[tuple(row.values())] >= limit
             ]
-            while parts and 0 < len(true_rest(parent, parts, items, limit)) < limit:
-                parts.remove(min(parts, key=lambda row: (size[tuple(row.values())], tuple(row.values()))))
-            wanted.extend(parts)
-    return [row for row in possible if row in wanted]
+            wanted.extend(hold_back(parent, parts) if cut in HELD_BACK else parts)
+
+    kept = [row for row in wanted if row["Cut"] != "group_result"]
+    for parent in [row for row in wanted if row["Cut"] == "topic_result"]:
+        parts = [row for row in wanted if row["Cut"] == "group_result" and is_part(row, parent)]
+        kept.extend(hold_back(parent, parts))
+    return [row for row in possible if row in kept]
 
 
 def nearest_five(number):
@@ -460,15 +484,17 @@ def test_no_row_and_no_rest_of_200_random_inputs_stands_for_fewer_than_five_peop
             seen["saved", "other"] += row["GroupName"] == "other"
 
         for parent in rows[1:]:
-            for cut in (c for c, p in PARENTS.items() if p == parent["Cut"]):
+            for cut in (c for c in PARENTS if parent["Cut"] in (PARENTS[c], OTHER_PARENT.get(c))):
                 parts = [row for row in rows if row["Cut"] == cut and is_part(row, parent)]
                 rest = len(true_rest(parent, parts, items, limit))
-                assert rest == 0 or rest >= limit
+                assert cut not in HELD_BACK or rest == 0 or rest >= limit
                 provable = provable_rest(parent, parts, limit)
                 assert provable <= rest
-                seen["provable", cut] += bool(parts and provable)
-                seen["rest", cut] += bool(parts and rest)
-                seen["no rest", cut] += bool(parts and not rest)
+                pair = parent["Cut"], cut
+                seen["provable"] += bool(parts and provable)
+                seen["rest", *pair] += bool(parts and rest >= limit)
+                seen["small rest", *pair] += bool(parts and 0 < rest < limit)
+                seen["no rest", *pair] += bool(parts and not rest)
 
         wanted = wanted_rows(items, limit)
         assert [{"Cut": row["Cut"], **labels_of(row)} for row in rows[1:]] == wanted
@@ -477,15 +503,17 @@ def test_no_row_and_no_rest_of_200_random_inputs_stands_for_fewer_than_five_peop
             if row not in saved:
                 number = len(owners(true_items(row, items, limit)))
                 seen["under", row["Cut"]] += 0 < number < limit
-                seen["taken out", row["Cut"]] += number >= limit and any(is_part(row, parent) for parent in rows[1:])
+                for parent in rows[1:]:
+                    seen["held back", parent["Cut"], row["Cut"]] += number >= limit and is_part(row, parent)
 
         mixed = list(items)
         rng.shuffle(mixed)
         assert totals(mixed, asked) == rows
 
-    # The test met every kind of row, saved and held back, and every kind of rest.
-    assert seen["saved", "all"] and seen["saved", "other"] and seen["under", "all"]
-    for cut in PARENTS:
-        for what in ("saved", "under", "taken out", "rest", "no rest"):
-            assert seen[what, cut], (what, cut)
-    assert sum(seen["provable", cut] for cut in PARENTS)
+    # The test met every kind of row, saved and not, and every kind of rest.
+    assert seen["saved", "all"] and seen["saved", "other"] and seen["under", "all"] and seen["provable"]
+    for cut, parent in (*PARENTS.items(), *OTHER_PARENT.items()):
+        assert seen["saved", cut] and seen["under", cut]
+        assert seen["rest", parent, cut] and seen["no rest", parent, cut]
+        assert bool(seen["held back", parent, cut]) == (cut in HELD_BACK)
+        assert bool(seen["small rest", parent, cut]) == (cut not in HELD_BACK)
