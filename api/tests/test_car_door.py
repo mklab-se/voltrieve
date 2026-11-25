@@ -53,7 +53,7 @@ def harness(app, make_token):
 
     class Harness:
         def __init__(self, **token):
-            token = {"aud": "client-car", "scp": "car.remote", "roles": ["Car.Remote"], "azp": "claude-app", **token}
+            token = {"aud": "client-car", "scp": "car.use", "roles": ["Car.Remote"], "azp": "claude-app", **token}
             self.token = make_token(**token)
 
         def http(self):

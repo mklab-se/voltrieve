@@ -200,7 +200,7 @@ async def test_the_role_picks_the_tools(world, roles, tools, asks):
 
 @pytest.mark.parametrize("door", DOORS)
 async def test_a_token_for_the_api_or_another_door_is_not_let_in(world, door):
-    for changes in ({"aud": "the-api", "scp": "access_as_user"}, {"aud": "door-car", "scp": "car.remote"}):
+    for changes in ({"aud": "the-api", "scp": "access_as_user"}, {"aud": "door-car", "scp": "car.use"}):
         async with world.http(door, **changes) as http:
             assert (await http.post(url(door), json={})).status_code == 401
     for changes in ({"scp": "access_as_user"}, {"azp": "unknown"}, {"roles": []}):

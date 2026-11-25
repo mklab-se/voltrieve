@@ -10,7 +10,7 @@ flowchart LR
     Entra["Entra ID"]
     AI -. "1. signs you in,<br/>one token per door" .-> Entra
     AI -->|"operations.read<br/>Dashboard.View"| Ops["Operations door<br/>reads, no chat text"]
-    AI -->|"car.remote<br/>Car.Remote"| Car["Car door<br/>honk, lights, wipers"]
+    AI -->|"car.use<br/>Car.Remote"| Car["Car door<br/>honk, lights, wipers"]
     AI -->|"customer.tools<br/>Customer"| Cust["Customer door<br/>search, stock, prices"]
     AI -->|"runa.ask<br/>Customer"| Runa["Runa door<br/>ask Runa"]
     AI -->|"dealer.use<br/>Dealer.Staff or Dealer.Agent"| Deal["Dealer door<br/>own stock, own deliveries"]

@@ -7,7 +7,7 @@ from pydantic import Field
 from voltrieve_doors import DoorTool, Refused, caller
 
 NAME = "car"
-SCOPE = "car.remote"
+SCOPE = "car.use"
 SCOPES = (SCOPE,)
 ROLE = "Car.Remote"
 INSTRUCTIONS = (

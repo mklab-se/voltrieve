@@ -37,7 +37,7 @@ def _door(name):
 
 @pytest.mark.parametrize("name,scopes,roles", [
     ("operations", ["operations.read"], {"Dashboard.View": "User"}),
-    ("car", ["car.remote"], {"Car.Remote": "User"}),
+    ("car", ["car.use"], {"Car.Remote": "User"}),
     ("customer", ["customer.tools"], {"Customer": "User", "TestDrive.Book": "User"}),
     ("runa", ["runa.ask"], {"Customer": "User", "TestDrive.Book": "User"}),
     ("dealer", ["dealer.use"], {"Dealer.Staff": "User", "Dealer.Agent": "Application"}),
@@ -196,7 +196,7 @@ def test_the_harnesses_have_consent_for_the_doors_and_nothing_else(graph_mock, g
            for s in graph_mock.service_principals.values()}
     found = {(sps[g["clientId"]], sps[g["resourceId"]], g["consentType"], g["scope"])
              for g in graph_mock.grants if "harness" in sps[g["clientId"]]}
-    scopes = {"operations": "operations.read", "car": "car.remote", "customer": "customer.tools",
+    scopes = {"operations": "operations.read", "car": "car.use", "customer": "customer.tools",
               "runa": "runa.ask", "dealer": "dealer.use"}
     assert found == {(h, f"voltrieve-mcp-{d}", "AllPrincipals", s) for h in HARNESS_NAMES for d, s in scopes.items()}
 
@@ -294,3 +294,10 @@ def test_a_wrong_list_of_cities_stops_before_anything_is_changed(monkeypatch, ci
 def test_without_the_doors_the_list_is_not_read(monkeypatch):
     calls, saved = _run(monkeypatch, "--dealer-cities", "a=Atlantis")
     assert calls == [] and saved == {"TEST_USER_UPN": "t@x"}
+
+
+def test_a_scope_and_a_role_of_a_door_never_have_the_same_name():
+    """Entra refuses it, also when only the case differs."""
+    for door in doors.DOORS:
+        names = [x.value.lower() for x in (*door.scopes, *door.roles)]
+        assert len(set(names)) == len(names)

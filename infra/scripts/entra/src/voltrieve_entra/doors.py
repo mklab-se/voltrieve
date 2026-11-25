@@ -60,7 +60,7 @@ DOORS = (
     DoorApp(
         "car",
         "api",
-        (Scope("car.remote", "honk, flash the lights and set the wipers of your own parked car"),),
+        (Scope("car.use", "honk, flash the lights and set the wipers of your own parked car"),),
         (Role("Car.Remote", "Can reach their own car through the MCP door."),),
     ),
     DoorApp(
