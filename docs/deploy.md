@@ -269,6 +269,25 @@ The other order fails closed: a new API or agent that calls order routes the dea
 
 The dev environment was updated in this order on 2026-11-24, with the dealer deployed again at the end. The rollback has not been tried.
 
+## The MCP doors
+
+Off by default: without `MCP_DOORS` nothing of this exists. See [Bring your own AI](bring-your-own-ai.md).
+
+| Value in the azd environment | Who sets it | What |
+| --- | --- | --- |
+| `MCP_DOORS` | You, `true` | The registrations of the doors and the harnesses, and the doors |
+| `MCP_ALLOW_CLI` | You, `true` in a development environment only | Lets scripts call the doors with a token from the Azure CLI |
+| `API_HOST`, `DEALER_HOST` | You, optional | Host names of your own, such as `api.voltrieve.example`, on a domain that is verified in the tenant. A harness needs them to sign in |
+| `DEALER_DOOR_CITIES` | The hook, when empty | Which dealer city a person or an application has: `oid=City;oid=City` |
+| `MCP_..._CLIENT_ID`, `MCP_APPS`, `MCP_IDENTIFIER_IS_URL` | The hook | The registrations, and whether the address could be used as the id |
+
+Order:
+
+1. `azd env set MCP_DOORS true`, then `azd provision`, and `scripts/deploy-agents.sh` at once, as after every provision.
+2. `azd deploy dealer`, `azd deploy api`, and the car.
+3. `uv run scripts/doors_check.py` (needs `MCP_ALLOW_CLI`).
+4. For a name of your own: `scripts/check-host.sh api <host>` prints the DNS records, and the owner of the domain makes them. Nothing here changes DNS. When it says that they are there, set `API_HOST` and `DEALER_HOST`, and run step 1 again.
+
 ## Redeploying
 
 | Change | Command |
@@ -328,7 +347,9 @@ azd down --purge
 UPN="$(azd env get-value TEST_USER_UPN)"
 az ad user delete --id "$UPN"
 
-for name in voltrieve-api voltrieve-cli voltrieve-web voltrieve-car voltrieve-dashboard voltrieve-dealer; do
+for name in voltrieve-api voltrieve-cli voltrieve-web voltrieve-car voltrieve-dashboard voltrieve-dealer voltrieve-dealer-site \
+  voltrieve-mcp-operations voltrieve-mcp-car voltrieve-mcp-customer voltrieve-mcp-dealer \
+  voltrieve-harness-claude voltrieve-harness-chatgpt voltrieve-harness-vscode voltrieve-harness-copilot; do
   az ad app delete --id "$(az ad app list --display-name "$name" --query '[0].id' -o tsv)"
 done
 ```

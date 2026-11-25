@@ -19,7 +19,7 @@ Every feature serves at least one of these. If it serves none, it does not belon
 | **Multimodal** | Images, photos, voice and other media in and out of the conversation. | Car and part images in the sales folders, [a photo sent from the car or the website](attachments.md) |
 | **Monitoring and operations** | Usage, response times, cost, errors and logs, live and after the fact. | Application Insights, the operations dashboard and workbook |
 | **Evaluation and quality** | Proof that the AI does the right thing, and a gate that catches when it stops. | Routing tests, grounding check, [evidence](evidence/README.md) |
-| **Ready for AI agents** | The solution can be used by AI agents and harnesses, not only use AI itself. | `AGENTS.md`, and MCP access for outside harnesses ([#16](https://github.com/mklab-se/voltrieve/issues/16)) |
+| **Ready for AI agents** | The solution can be used by AI agents and harnesses, not only use AI itself. | `AGENTS.md`, and [four MCP doors](bring-your-own-ai.md) for outside harnesses ([#16](https://github.com/mklab-se/voltrieve/issues/16)) |
 
 ## The rules
 

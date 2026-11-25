@@ -24,6 +24,7 @@ Most agent samples stop at "it answers". This one answers the questions you meet
 | --- | --- | --- |
 | **Why host an agent in Foundry at all?** | For a managed identity, versions and a publishing path. Not for the loop, which is 348 lines of Python. | [Comparison](docs/why-foundry.md) |
 | **My client has its own tools. Now what?** | A prompt agent refuses per-request tools with a 400. An own loop or a hosted agent runs them, even one the server has never seen. | [Client tools](docs/why-foundry.md#1-what-happened-with-client-tools) |
+| **Can people use their own AI instead?** | Yes, through four MCP doors: operations, the car, dealers and customers. The same person gets different rights through each. The sign-in from each product is not tried yet. | [Bring your own AI](docs/bring-your-own-ai.md) |
 | **Can a client send a photo, and where does it go?** | Straight into the model call, as an unstored turn. The conversation keeps the text only. No chat text goes to telemetry since Foundry's tracing was [disconnected](docs/decisions.md#closed-foundrys-tracing-is-disconnected). A new kind of attachment is one handler. | [Photos and attachments](docs/attachments.md) |
 | **How does the agent decide to use RAG?** | No classifier exists. The model decides in its first call, from words you control. | [The journey of a prompt](docs/prompt-journey.md) |
 | **Can it use several knowledge bases without calling them in vain?** | Yes: all three reached the right bases in every run. Two of them run the searches at the same time. | [Two knowledge bases](docs/why-foundry.md#6-two-knowledge-bases-who-chooses-and-who-runs-them-together) |
@@ -117,6 +118,7 @@ Choose per request with `X-Agent-Backend: prompt|loop|hosted`. Clients can't oth
 - **Agentic retrieval as code** ([`search/definitions/`](search/definitions/)): knowledge bases, sources, indexes and skillsets, on the latest API version.
 - **Keyless Azure**: Entra and managed identities everywhere, deployed with one `azd up`.
 - **Routing tests** ([`tests/routing/`](tests/routing/)): prove that the model picks the right source, and catch calls in vain.
+- **MCP doors** ([`doors/`](doors/)): one endpoint per audience, Entra tokens, rules checked on every call, and nothing of what a caller sends in logs or spans.
 
 ## Quick start
 
@@ -160,6 +162,7 @@ Tear down with `azd down --purge`. App registrations and the tester are not remo
 | `clients/web/` | The website, for customers |
 | `clients/dashboard/` | The operations dashboard, for employees |
 | `clients/cli/` | The CLI, a developer tool |
+| `doors/` | The guard, token check and rules of the MCP doors, used by the API and the dealer service |
 | `services/dealer/` | The dealer web service, with its order store and the page for representatives (`site/`) |
 | `services/insights/` | The job that counts what people ask about |
 | `search/` | Definitions and tooling for the Search objects |
@@ -172,7 +175,7 @@ Tear down with `azd down --purge`. App registrations and the tester are not remo
 
 ## Costs
 
-Idle, about 80 USD a month plus a small amount for Log Analytics (the usage insights add a few MB a year, and their job costs nothing while it does not run; the dealer's table is well under 1 SEK a month, and the dealer stays awake while a dealer page is open, about 0.5 SEK an hour): Search Basic is about 75 USD and Container Registry Basic about 5 USD. Container Apps scale to zero, the three Static Web Apps (website, car and dashboard) are on the Free tier, models bill per token, and the hosted agent bills per active session. A Serverless search service can stand next to Basic. It is off by default. In the dev environment it is on, and Basic was deleted on 2026-11-24, so that environment should idle at about 5 USD a month (not seen on a bill yet). Serverless used about 0.11 USD by the diagnostic metric for a night of test runs, not by an invoice ([Deployment](docs/deploy.md#idle-cost)).
+Idle, about 80 USD a month plus a small amount for Log Analytics (the usage insights add a few MB a year, and their job costs nothing while it does not run; the dealer's table is well under 1 SEK a month, and the dealer stays awake while a dealer page is open, about 0.5 SEK an hour; a car with remote control on keeps the API awake in the same way): Search Basic is about 75 USD and Container Registry Basic about 5 USD. Container Apps scale to zero, the three Static Web Apps (website, car and dashboard) are on the Free tier, models bill per token, and the hosted agent bills per active session. A Serverless search service can stand next to Basic. It is off by default. In the dev environment it is on, and Basic was deleted on 2026-11-24, so that environment should idle at about 5 USD a month (not seen on a bill yet). Serverless used about 0.11 USD by the diagnostic metric for a night of test runs, not by an invoice ([Deployment](docs/deploy.md#idle-cost)).
 
 ## Status
 
@@ -224,11 +227,12 @@ Not verified, for the dealer system and the orders:
 - The signing in Safari or Firefox (it was looked at in Chromium only) and after a real switch of tabs, and the masking of street addresses on real ones.
 - A token of Runa's own identity on the staff routes, other than in tests.
 
-Offline tests pass: `agent_core` 314, `api` 634, `agents/hosted` 56, `search` 67, `services/dealer` 437, `services/dealer/site` 153, `services/insights` 725, `clients/cli` 62, `clients/web` 181, `clients/dashboard` 74, `clients/car` 426, `tests/photos` 229, `tests/contract` 176 and `infra/scripts/entra` 49, plus the 123 of `data/generator` in CI (they need a browser), the Bicep and script checks. Every suite runs in [CI](.github/workflows/tests.yml).
+Offline tests pass: `agent_core` 317, `api` 825, `doors` 33, `agents/hosted` 56, `search` 67, `services/dealer` 548, `services/dealer/site` 160, `services/insights` 726, `clients/cli` 62, `clients/web` 181, `clients/dashboard` 74, `clients/car` 490, `tests/photos` 229, `tests/contract` 187 and `infra/scripts/entra` 90, plus the 123 of `data/generator` in CI (they need a browser), the Bicep and script checks. Every suite runs in [CI](.github/workflows/tests.yml).
 
 Not verified:
 
 - Sign-in to the car, the website and the dashboard.
+- Sign-in to a door from Claude, ChatGPT, Microsoft 365 Copilot or VS Code, a door on an address of our own with its certificate, an unattended dealer agent, and the car's remote control by hand.
 - The car in Safari or Firefox, on a slow or Windows computer, and with a screen reader. Whether a person hears the horn and the motor.
 - A rollback of the Serverless search service or of the Search versions, and what Serverless costs on an invoice.
 - The workbook's check of Foundry's tracing rows.
