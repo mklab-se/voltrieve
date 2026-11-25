@@ -216,13 +216,13 @@ The dealer system and the orders were run on the deployed service on 2026-11-24 
 - The page in a browser, with a token in place of the sign-in page: an order through Runa was signed on the screen.
 - An open page kept the service awake for 12 minutes (`docs/evidence/dealer-awake.txt`).
 - A marker in an address was found in no table of the workspace.
+- The full routing suite on the new instructions, on 2026-11-25 (`docs/evidence/routing.txt`): right sources in 139 of 141 turns, 43 of 43 part numbers on each backend, and the order tool in 6 of 6 order questions and no other. Both misses are parts questions that also searched the documents. Median first text 3.9 s on the prompt agent, 4.7 s on the own loop and 9.1 s on the hosted agent, where 11 of 45 turns were over 10 s.
 
 Not verified, for the dealer system and the orders:
 
 - The sign-in to the dealer page, the `name` claim in a token of the website or the CLI (it is in one of the az CLI), and the demo by hand in two windows.
 - The signing in Safari or Firefox (it was looked at in Chromium only) and after a real switch of tabs, and the masking of street addresses on real ones.
 - A token of Runa's own identity on the staff routes, other than in tests.
-- The full routing suite on the new instructions, and the time to the first text. A sample of 24 turns reached the right sources.
 
 Offline tests pass: `agent_core` 314, `api` 634, `agents/hosted` 56, `search` 67, `services/dealer` 437, `services/dealer/site` 153, `services/insights` 725, `clients/cli` 62, `clients/web` 181, `clients/dashboard` 74, `clients/car` 426, `tests/photos` 229, `tests/contract` 176 and `infra/scripts/entra` 49, plus the 123 of `data/generator` in CI (they need a browser), the Bicep and script checks. Every suite runs in [CI](.github/workflows/tests.yml).
 

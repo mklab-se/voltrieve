@@ -1,24 +1,27 @@
 Routing per backend and question group
 
 backend group   runs  right  vain  missed  together  steps  calls  seconds
-prompt  curated    9  100 %     0       0       n/a      1      1      1.2
-prompt  none       8  100 %     0       0       n/a    1.0    0.0      1.2
-prompt  docs      13  100 %     0       0       n/a      1      1      6.6
-prompt  parts      9   88 %     1       0       n/a      1      1      6.0
-prompt  both       4  100 %     0       0       0 %    1.0    2.0     14.1
-prompt  stock      2  100 %     0       0       n/a    2.0    1.0      7.0
-loop    curated    9  100 %     0       0       n/a      1      1      1.1
-loop    none       8  100 %     0       0       n/a    1.0    0.0      1.1
-loop    docs      13  100 %     0       0       n/a      2      1      4.9
-loop    parts      9  100 %     0       0       n/a      2      1      5.4
-loop    both       4  100 %     0       0     100 %    2.0    2.0      8.3
-loop    stock      2  100 %     0       0       n/a    3.0    1.0      6.3
-hosted  curated    9  100 %     0       0       n/a      1      1      5.6
-hosted  none       8  100 %     0       0       n/a    1.0    0.0      5.7
-hosted  docs      13  100 %     0       0       n/a      2      1     11.4
+prompt  curated    9  100 %     0       0       n/a      1      1      2.0
+prompt  none       8  100 %     0       0       n/a    1.0    0.0      1.8
+prompt  docs      13  100 %     0       0       n/a      1      1      4.6
+prompt  parts      9   88 %     1       0       n/a      1      1      5.4
+prompt  both       4  100 %     0       0       0 %    1.0    2.0     12.2
+prompt  stock      2  100 %     0       0       n/a    2.0    1.0      6.7
+prompt  order      2  100 %     0       0       n/a    2.0    0.0      3.5
+loop    curated    9  100 %     0       0       n/a      1      1      1.9
+loop    none       8  100 %     0       0       n/a    1.0    0.0      1.9
+loop    docs      13  100 %     0       0       n/a      2      1      5.4
+loop    parts      9   88 %     1       0       n/a      2      1      5.5
+loop    both       4  100 %     0       0     100 %    2.5    2.5      9.7
+loop    stock      2  100 %     0       0       n/a    3.0    1.0      7.6
+loop    order      2  100 %     0       0       n/a    2.0    0.0      3.4
+hosted  curated    9  100 %     0       0       n/a      1      1      6.5
+hosted  none       8  100 %     0       0       n/a    1.0    0.0      6.6
+hosted  docs      13  100 %     0       0       n/a      2      1      9.9
 hosted  parts      9  100 %     0       0       n/a      2      1     10.5
-hosted  both       4  100 %     0       0     100 %    2.0    2.0     12.4
-hosted  stock      2  100 %     0       0       n/a    3.0    1.0     12.0
+hosted  both       4  100 %     0       0     100 %    2.0    2.0     11.7
+hosted  stock      2  100 %     0       0       n/a    3.0    1.0     13.2
+hosted  order      2  100 %     0       0       n/a    2.0    0.0      8.0
 
 Article numbers in the answers
 
@@ -26,11 +29,12 @@ prompt  43 of 43 found, 10 of 10 answers complete, 0 invented
 loop    43 of 43 found, 10 of 10 answers complete, 0 invented
 hosted  43 of 43 found, 10 of 10 answers complete, 0 invented
 
-Parallel tool runs saved a median of 1.886 s over 9 turns (own loop and hosted agent).
+Parallel tool runs saved a median of 1.227 s over 11 turns (own loop and hosted agent).
 
 Runs that were not right
 
 prompt wipers-fjord #1: used ['docs', 'parts'], expected ['parts'], together None, articles 1/1, invented [], missing words [], error none
+loop mirror-no-side #1: used ['docs', 'parts'], expected ['parts'], together None, articles 0/0, invented [], missing words [], error none
 prompt brakes-fjord #1: used ['docs', 'parts'], expected ['docs', 'parts'], together False, articles 9/9, invented [], missing words [], error none
 prompt brakes-spark #1: used ['docs', 'parts'], expected ['docs', 'parts'], together False, articles 8/8, invented [], missing words [], error none
 prompt brakes-atlas #1: used ['docs', 'parts'], expected ['docs', 'parts'], together False, articles 8/8, invented [], missing words [], error none

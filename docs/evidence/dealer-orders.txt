@@ -64,7 +64,11 @@ deleting left the stock alone: True  stock as before: True  orders left: 0
    order questions, article numbers 21 of 21 on each backend, 0 invented. Median seconds
    of a whole turn per group: prompt 2.9 to 9.9, loop 2.6 to 9.4, hosted 5.9 to 13.5 (docs 12.3, stock 12.2, both 13.5). The last
    full run (routing.txt) had hosted at docs 11.4 and stock 12.0. The time to the first text was not looked at. 1 or 2 turns a
-   group, so this says nothing about speed. The full suite was not run.
+   group, so this says nothing about speed. The full suite was not run
+   with this sample. It ran on 2026-11-25, 04:12 UTC, once per question, 141 turns (routing.txt): right sources 139 of 141,
+   prepare_car_order in 6 of 6 order questions and no other, 0 invented. Median time to the first text for the 45 older
+   questions, with the run of 2026-11-24 on Serverless before this work (search-versions.txt) in brackets: prompt 3.9 s (4.1),
+   loop 4.7 s (4.5), hosted 9.1 s (9.0). Turns over 10 s: prompt 1 (0), loop 0 (2), hosted 11 of 45 (17).
 
 6. Telemetry
    A marker was in the address of the three orders of part 2, 23:16. scripts/tracing_check.py --search at 23:36 (19 minutes later):

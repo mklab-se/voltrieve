@@ -466,4 +466,4 @@ up in the indexes, so an invented title gets no link. Other choices:
 - Whether Foundry keeps a photo that was sent in an unstored turn, for abuse monitoring or anything else.
 - A browser sign-in to the car and the new website, and an unstored turn inside the hosted agent, until the evidence runs say otherwise.
 - Indexer duration, final item counts, how long role propagation retries waited, and smoke test scores. The first deployment did not keep these.
-- The dealer system and the orders: the sign-in to the page, other browsers than Chromium, a token of Runa on the staff routes (tests only), the `name` claim in a token of the website or the CLI, and the full routing suite after the new instructions (a sample of 24 turns was right).
+- The dealer system and the orders: the sign-in to the page, other browsers than Chromium, a token of Runa on the staff routes (tests only), the `name` claim in a token of the website or the CLI. The full routing suite after the new instructions reached the right sources in 139 of 141 turns (`docs/evidence/routing.txt`).
