@@ -229,7 +229,7 @@ Not verified, for the dealer system and the orders:
 - The signing in Safari or Firefox (it was looked at in Chromium only) and after a real switch of tabs, and the masking of street addresses on real ones.
 - A token of Runa's own identity on the staff routes, other than in tests.
 
-Offline tests pass: `agent_core` 317, `api` 839, `doors` 42, `agents/hosted` 56, `search` 67, `services/dealer` 552, `services/dealer/site` 160, `services/insights` 726, `clients/cli` 62, `clients/web` 181, `clients/dashboard` 74, `clients/car` 505, `tests/photos` 229, `tests/contract` 187 and `infra/scripts/entra` 103, plus the 123 of `data/generator` in CI (they need a browser), the Bicep and script checks. Every suite runs in [CI](.github/workflows/tests.yml).
+Offline tests pass: `agent_core` 317, `api` 839, `doors` 42, `agents/hosted` 56, `search` 67, `services/dealer` 552, `services/dealer/site` 160, `services/insights` 726, `clients/cli` 62, `clients/web` 181, `clients/dashboard` 74, `clients/car` 505, `tests/photos` 229, `tests/contract` 187 and `infra/scripts/entra` 104, plus the 123 of `data/generator` in CI (they need a browser), the Bicep and script checks. Every suite runs in [CI](.github/workflows/tests.yml).
 
 Not verified:
 
