@@ -50,7 +50,7 @@ open-dealer:
 # Print the addresses of the MCP doors, and the client id of each AI that may call them
 mcp:
     @api="$(azd env get-value MCP_API_URL)" && dealer="$(azd env get-value MCP_DEALER_URL)" && [ -n "$api" ] || { echo "No MCP doors here: set MCP_DOORS to true and provision" >&2; exit 1; }; \
-    for door in operations car customer; do echo "$api/mcp/$door"; done; echo "$dealer/mcp/dealer"; \
+    for door in operations car customer runa; do echo "$api/mcp/$door"; done; echo "$dealer/mcp/dealer"; \
     azd env get-value MCP_APPS | tr ';' '\n'
 
 # Wake every service before a demo. They sleep again after 5 idle minutes

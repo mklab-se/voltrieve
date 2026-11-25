@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { SignInNeeded } from "./auth/types";
 import type { Code, CarState } from "./remote";
-import { backoffMs, LOOK_MS, RemoteLink, SILENCE_MS, type LinkStatus } from "./remoteLink";
+import { backoffMs, LOOK_MS, RemoteLink, SILENCE_MS, TAKE_MS, type LinkStatus } from "./remoteLink";
 
 beforeEach(() => void vi.useFakeTimers());
 afterEach(() => void vi.useRealTimers());
@@ -8,7 +9,10 @@ afterEach(() => void vi.useRealTimers());
 const settle = () => vi.advanceTimersByTimeAsync(0);
 
 /** An API that lets the test hold each stream. */
-function setup(answer: (n: number) => number | "stream" | "refuse" = () => "stream") {
+type Answer = (n: number) => number | "stream" | "refuse";
+type Said = (path: string) => number | Promise<number>;
+
+function setup(answer: Answer = () => "stream", said: Said = () => 204) {
   const streams: { say: (event: string, data: unknown) => void; raw: (text: string) => void; end: () => void; token: string; aborted: () => boolean }[] = [];
   const posts: { path: string; body: any; token: string }[] = [];
   let opened = 0;
@@ -17,7 +21,8 @@ function setup(answer: (n: number) => number | "stream" | "refuse" = () => "stre
     const token = (init.headers as Record<string, string>).Authorization!;
     if (path !== "/car/link") {
       posts.push({ path, body: JSON.parse(init.body as string), token });
-      return new Response(null, { status: 204 });
+      const status = await Promise.race([said(path), new Promise<never>((_, no) => init.signal!.addEventListener("abort", no))]);
+      return new Response(null, { status });
     }
     opened += 1;
     const how = answer(opened);
@@ -84,7 +89,10 @@ describe("the link", () => {
     stream.say("command", command());
     await settle();
     expect(onCommand).toHaveBeenCalledWith(command());
-    expect(posts.at(-1)).toMatchObject({ path: "/car/link/L1/results", body: { id: "c1", ok: true } });
+    expect(posts.slice(1)).toMatchObject([
+      { path: "/car/link/L1/take", body: { id: "c1" } },
+      { path: "/car/link/L1/results", body: { id: "c1", ok: true } },
+    ]);
     onCommand.mockResolvedValueOnce("moving");
     stream.say("command", command("c2"));
     await settle();
@@ -102,6 +110,27 @@ describe("the link", () => {
     stream.say("command", command());
     await settle();
     expect(onCommand).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([404, 409, 500])("does nothing when nobody waits for the command any more (%i)", async (code) => {
+    const { stream, onCommand, posts } = await linked(setup(undefined, (path) => (path.endsWith("/take") ? code : 204)));
+    stream.say("command", command());
+    await settle();
+    expect(posts.at(-1)!.path).toBe("/car/link/L1/take");
+    expect(onCommand).not.toHaveBeenCalled();
+  });
+
+  it("does nothing when the yes comes late", async () => {
+    let yes = (_status: number) => {};
+    const slow = new Promise<number>((resolve) => (yes = resolve));
+    const { stream, onCommand, posts } = await linked(setup(undefined, (path) => (path.endsWith("/take") ? slow : 204)));
+    stream.say("command", command());
+    await settle();
+    vi.setSystemTime(Date.now() + TAKE_MS); // the computer slept, and no timer ran
+    yes(204);
+    await vi.advanceTimersByTimeAsync(10);
+    expect(onCommand).not.toHaveBeenCalled();
+    expect(posts.map((p) => p.path)).not.toContain("/car/link/L1/results");
   });
 
   it("tells when the car drives or the wipers change, and not for every look or kilometer", async () => {
@@ -122,6 +151,32 @@ describe("the link", () => {
       { parked: false, odometer_km: 8215, wipers: "fast" },
       { parked: true, odometer_km: 8215, wipers: "fast" },
     ]);
+  });
+});
+
+describe("a state that the API did not get", () => {
+  it.each([500, 404, 429])("is sent again, less and less often (%i)", async (code) => {
+    const world = setup(undefined, () => code);
+    await linked(world);
+    const times: number[] = [];
+    const start = Date.now();
+    for (let seen = 0; Date.now() - start < 32_000; await vi.advanceTimersByTimeAsync(LOOK_MS)) {
+      if (world.states().length > seen) times.push(Date.now() - start);
+      seen = world.states().length;
+      world.streams[0]!.raw(": keep-alive\n\n");
+    }
+    expect(times.length).toBe(6); // 0, 1, 3, 7, 15 and 31 s, each at the next look
+    expect(times.every((t, n) => t >= (2 ** n - 1) * 1000 && t < (2 ** n - 1) * 1000 + n * 2 * LOOK_MS + 1)).toBe(true);
+  });
+
+  it("is sent as soon as there is a new link", async () => {
+    const { streams, posts } = await linked(setup(undefined, (path) => (path.includes("L1") ? 500 : 204)));
+    await vi.advanceTimersByTimeAsync(20_000);
+    streams[0]!.end();
+    await vi.advanceTimersByTimeAsync(backoffMs(0));
+    streams[1]!.say("link", { id: "L2" });
+    await settle();
+    expect(posts.at(-1)!.path).toBe("/car/link/L2/state");
   });
 });
 
@@ -185,6 +240,17 @@ describe("a link that is lost", () => {
     await vi.advanceTimersByTimeAsync(backoffMs(0));
     expect(world.streams).toHaveLength(1);
     world.link.close();
+  });
+
+  it("is given up when the driver has to sign in again, and the page stays", async () => {
+    const { stream, streams, running, status, getToken } = await linked();
+    getToken.mockRejectedValueOnce(new SignInNeeded());
+    stream.end();
+    await vi.advanceTimersByTimeAsync(backoffMs(0));
+    await running;
+    expect(status.at(-1)).toBe("sign_in");
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(streams).toHaveLength(1);
   });
 
   it.each([403, 404])("is given up when the API says %i", async (code) => {

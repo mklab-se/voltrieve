@@ -165,7 +165,7 @@ export function Workspace({ config, auth, session }: Props) {
           rememberUnderTheHood(on);
         }}
         remote={remote.on}
-        onRemote={remote.setOn}
+        onRemote={config.remoteControl ? remote.setOn : undefined}
       />
     </div>
   );

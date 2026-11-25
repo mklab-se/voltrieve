@@ -29,6 +29,23 @@ describe("the lights", () => {
     expect(on).toHaveBeenLastCalledWith(false);
   });
 
+  it("flash five times at most, whatever is asked for meanwhile", () => {
+    const on = vi.fn();
+    const lights = createLights(on);
+    for (let n = 0; n < 6; n += 1) lights.flash(5);
+    vi.advanceTimersByTime(5 * FLASH_MS - 1);
+    expect(on).not.toHaveBeenCalledWith(false);
+    vi.advanceTimersByTime(1);
+    expect(on).toHaveBeenLastCalledWith(false);
+    lights.flash(5);
+    vi.advanceTimersByTime(FLASH_MS + 1); // one is over, so there is room for one more
+    lights.flash(5);
+    vi.advanceTimersByTime(5 * FLASH_MS - 2);
+    expect(on).toHaveBeenLastCalledWith(true);
+    vi.advanceTimersByTime(1);
+    expect(on).toHaveBeenLastCalledWith(false);
+  });
+
   it("stop at once", () => {
     const on = vi.fn();
     const lights = createLights(on);

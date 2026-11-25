@@ -18,8 +18,9 @@ const auth: Auth = {
   signIn: async () => {},
   signOut: async () => {},
   getToken: async () => "token",
+  getTokenSilently: async () => "token",
 };
-const config = { apiUrl: "http://api", tenantId: "", clientId: "", scope: "", fakeAuth: true };
+const config = { apiUrl: "http://api", tenantId: "", clientId: "", scope: "", fakeAuth: true, remoteControl: true };
 const nothing = () => {};
 
 function memory(): Pick<Storage, "getItem" | "setItem"> {

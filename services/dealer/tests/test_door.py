@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import unicodedata
 from contextlib import asynccontextmanager
 
 import httpx2
@@ -535,7 +536,9 @@ async def test_an_error_that_nobody_expected_says_nothing(parts, caplog):
 
     caplog.set_level(logging.DEBUG)
     async with open_world(*parts, store=Odd()) as world:
+        logging.getLogger().addHandler(caplog.handler)  # the service just replaced the handlers
         answers = [await world.call(world.person(), *call, elicit=Person()) for call in EVERY_CALL[2:]]
+    assert caplog.records
     assert all(answer.refused and "Mark" not in answer.text for answer in answers)
     assert "Mark" not in everything(caplog)
 
@@ -605,11 +608,23 @@ async def test_without_the_settings_there_is_no_door(parts, missing):
         assert (await c.post(PATH, json=rpc("my_stock", {}))).status_code == 404
 
 
-@pytest.mark.parametrize("cities", ["oid=Atlantis", "oid", "oid=", "=Malmö", "oid=Malmö;oid=Uppsala", "oid=malmö"])
-async def test_a_list_of_cities_with_a_mistake_stops_the_start(cities):
-    with pytest.raises(ValueError, match="DEALER_DOOR_CITIES") as caught:
-        create_app(door_settings(dealer_door_cities=cities))
-    assert "oid=" not in str(caught.value)
+@pytest.mark.parametrize(
+    "wrong, left_out",
+    [("oid=Atlantis", 1), ("oid", 1), ("oid=", 1), ("=Malmö", 1), ("oid=Malmö;oid=Uppsala", 1), ("oid=malmö", 1),
+     ("oid=Malmö;oid=Uppsala;oid=Malmö", 2), ("oid=Atlantis;oid=Malmö", 2)],
+)  # fmt: skip
+async def test_a_wrong_entry_is_left_out_and_the_service_starts(capsys, wrong, left_out):
+    app = create_app(door_settings(dealer_door_cities=f"{wrong};other=Uppsala"))
+    lines = [line for line in capsys.readouterr().out.splitlines() if "DEALER_DOOR_CITIES" in line]
+    assert len(lines) == left_out
+    assert door.door_cities(f"{wrong};other=Uppsala", app.state.data) == {"other": "Uppsala"}
+    assert "oid=" not in "".join(lines) and "Atlantis" not in "".join(lines)
+
+
+@pytest.mark.parametrize("form", ["NFC", "NFD"])
+async def test_a_city_is_known_however_its_letters_are_written(parts, form):
+    written = unicodedata.normalize(form, "oid=Göteborg")
+    assert door.door_cities(written, create_app(Settings()).state.data) == {"oid": "Göteborg"}
 
 
 async def test_an_empty_list_of_cities_is_a_door_for_nobody(parts):

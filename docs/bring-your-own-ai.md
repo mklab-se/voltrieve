@@ -1,6 +1,6 @@
 # Bring your own AI
 
-Runa is Voltrieve's own assistant. Many people already have another one: Claude, ChatGPT, Microsoft 365 Copilot or GitHub Copilot. Voltrieve opens four doors to them, through [MCP](https://modelcontextprotocol.io/) (version 2026-07-28, and older clients work too).
+Runa is Voltrieve's own assistant. Many people already have another one: Claude, ChatGPT, Microsoft 365 Copilot or GitHub Copilot. Voltrieve opens doors to them: for operations, the car, dealers and customers, through [MCP](https://modelcontextprotocol.io/) (version 2026-07-28, and older clients work too).
 
 **The same person gets different rights through different doors, whichever AI they bring.**
 
@@ -11,12 +11,14 @@ flowchart LR
     AI -. "1. signs you in,<br/>one token per door" .-> Entra
     AI -->|"operations.read<br/>Dashboard.View"| Ops["Operations door<br/>reads, no chat text"]
     AI -->|"car.remote<br/>Car.Remote"| Car["Car door<br/>honk, lights, wipers"]
-    AI -->|"customer.tools or runa.ask<br/>Customer"| Cust["Customer door<br/>search, stock, or ask Runa"]
+    AI -->|"customer.tools<br/>Customer"| Cust["Customer door<br/>search, stock, prices"]
+    AI -->|"runa.ask<br/>Customer"| Runa["Runa door<br/>ask Runa"]
     AI -->|"dealer.use<br/>Dealer.Staff or Dealer.Agent"| Deal["Dealer door<br/>own stock, own deliveries"]
     subgraph API["Web API"]
       Ops
       Car
       Cust
+      Runa
     end
     subgraph Dealer["Dealer service"]
       Deal
@@ -31,7 +33,7 @@ A token for one door opens nothing else, not even the API it stands in. The desi
 | | Build it in (Runa) | Open up (a door) |
 | --- | --- | --- |
 | Who pays for the model | Voltrieve | The one who brings the AI, except `ask_runa` |
-| Who owns the conversation | Voltrieve | The other AI's company. Voltrieve sees calls, never the chat |
+| Who owns the conversation | Voltrieve | The other AI's company. Voltrieve sees the calls. A question to `ask_runa` is stored like every chat with Runa |
 | What the answer looks like | Decided here: instructions, sources, approved texts | Decided there. An approved text may be reworded |
 | What can be measured | Whole turns | Calls per door, tool and app |
 | Where the user is | On the website, in the car | Where they already work |
@@ -67,7 +69,7 @@ For a dealer's staff (`Dealer.Staff`), or a dealer's own agent that runs without
 
 ### The customer
 
-For a customer (`Customer`), in two ways that can be compared. With the scope `customer.tools` the AI gets search, stock, prices, test drives and the approved answers, and thinks by itself. With `runa.ask` it gets one tool, `ask_runa`, and Runa answers. A car cannot be ordered through a door.
+For a customer (`Customer`), in two ways that can be compared, each a door of its own. `/mcp/customer` gives search, stock, prices, test drives and the approved answers, and the AI thinks by itself. `/mcp/runa` gives one tool, `ask_runa`, and Runa answers. A car cannot be ordered through a door.
 
 ## Connect from your AI
 

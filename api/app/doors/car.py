@@ -23,6 +23,7 @@ REFUSALS = {
     "not_linked": NOT_LINKED,
     "gone": NO_ANSWER,
     "no_answer": NO_ANSWER,
+    "unsure": "The car took the command, and did not say whether it did it.",
     "too_many": "That is more than the car does in a minute. Wait a little.",
     "moving": NOT_PARKED,
     "off": "The driver has switched Remote control off.",

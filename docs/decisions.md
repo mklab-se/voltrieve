@@ -397,9 +397,9 @@ The car page opens a stream to the API when the driver switches remote control o
 
 The city never comes from an argument. An unattended agent can change stock and read orders, and cannot deliver, since there is nobody to ask. Names and addresses are not given: an order belongs to whoever delivers it, and the address is on the staff page.
 
-### Two ways for a customer, in one door
+### Two ways for a customer, in two doors
 
-`customer.tools` and `runa.ask` are two scopes, so that a harness gets one or the other, and they can be compared. No signed links are given, because they would live on in someone else's chat. Ordering a car is left out, since nothing in an outside harness is a later message in our sense.
+The tools and `ask_runa` first shared a door, with a scope each. Entra ID puts every scope that was consented to in the token, so a harness would have had both, and nothing could be compared. So `ask_runa` has a door of its own, with its own places, since a turn may take long. The nightly job does not read such questions: whoever asks has not seen the notice. No signed links are given, because they would live on in someone else's chat. Ordering a car is left out, since nothing in an outside harness is a later message in our sense.
 
 ### Remote control is off by default, and a door is awake only when used
 

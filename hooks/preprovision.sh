@@ -37,6 +37,8 @@ if [ "${MCP_DOORS:-false}" = true ]; then
   [ "${MCP_ALLOW_CLI:-false}" = false ] || set -- "$@" --allow-cli
   [ -z "${API_HOST:-}" ] || set -- "$@" --api-host "$API_HOST"
   [ -z "${DEALER_HOST:-}" ] || set -- "$@" --dealer-host "$DEALER_HOST"
+  # Setup checks the list, and begins one with the deployer when there is none.
+  [ -z "${DEALER_DOOR_CITIES:-}" ] || set -- "$@" --dealer-cities "$DEALER_DOOR_CITIES"
 fi
 # The URLs of the four browser apps exist from the second provision on; the first one is covered by set-spa-redirect.
 # Setup replaces each registration's redirect URIs, so a known URL is passed again here.
@@ -46,11 +48,3 @@ uv run --project infra/scripts/entra voltrieve-entra setup --verified-domain "$D
   ${DASHBOARD_URL:+--dashboard-redirect-uri "$DASHBOARD_URL"} \
   ${DEALER_URL:+--dealer-redirect-uri "$DEALER_URL"} \
   "$@"
-# The dealer door refuses everyone who is not on this list. To begin with it has the deployer.
-if [ "${MCP_DOORS:-false}" = true ] && [ -z "${DEALER_DOOR_CITIES:-}" ]; then
-  city="Göteborg"
-  grep -q "^ *\"$city\",*$" services/dealer/app/data.json || { echo "preprovision: there is no dealer in $city" >&2; exit 1; }
-  deployer="$(az ad signed-in-user show --query id -o tsv)"
-  [ -n "$deployer" ] || { echo "preprovision: az is not signed in as a user" >&2; exit 1; }
-  azd env set DEALER_DOOR_CITIES "$deployer=$city"
-fi

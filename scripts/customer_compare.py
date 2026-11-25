@@ -2,7 +2,7 @@
 # requires-python = ">=3.12,<3.13"
 # dependencies = ["httpx", "httpx2", "mcp==2.3.0", "pyyaml", "pillow"]
 # ///
-"""A plain model with the tools of the customer's door, against Runa through the same door.
+"""A plain model with the tools of the customer's door, against Runa through Runa's door.
 
     uv run scripts/customer_compare.py [--count 8] [--only a,b] [--model gpt-6.1-terra] [--backend loop] [--dry-run]
                                        [--out docs/evidence/customer-door.txt]
@@ -16,7 +16,8 @@ about 0.1 to 0.3 SEK, so a full run is approved first. --dry-run shows the quest
   word for word   the approved text is in the answer unchanged (curated questions)
   tokens     of the plain model. Those of Runa are in the chat.turn span, by the correlation id
 
-Needs MCP_ALLOW_CLI, `az login` with the role Customer on the door, and rights to the model in Foundry.
+Needs MCP_ALLOW_CLI, MCP_CUSTOMER_CLIENT_ID and MCP_RUNA_CLIENT_ID in the azd environment, `az login` with the
+role Customer on both doors, and rights to the model in Foundry.
 Our turns are marked as tests, so they are not counted as use.
 """
 
@@ -43,7 +44,7 @@ from voltrieve_client import TEST_HEADER, _az_token, azd_value, write_evidence  
 
 GROUPS = ("docs", "parts", "curated", "none")
 MAX_STEPS = 8
-PACE_SECONDS = 20.0  # ask_runa takes 5 a minute, and the door 30 calls
+PACE_SECONDS = 20.0  # ask_runa takes 5 a minute, and a door 30 calls
 FOUNDRY_SCOPE = "https://ai.azure.com/.default"
 
 
@@ -131,21 +132,22 @@ async def compare(questions: list[dict], index: dict, model: str, backend: str) 
     from doors_check import Door, token
 
     known = {p["article"] for p in index["parts"]}
-    bearer = token("customer")
     foundry_headers = {"Authorization": f"Bearer {_az_token(FOUNDRY_SCOPE, 'rights in Foundry')}"}
     results = []
-    session = Door("customer", bearer)
-    session.http.headers.update({**TEST_HEADER, "X-Agent-Backend": backend})
+    sessions = [Door(name, token(name)) for name in ("customer", "runa")]
+    for session in sessions:
+        session.http.headers.update({**TEST_HEADER, "X-Agent-Backend": backend})
     async with (httpx.AsyncClient(base_url=azd_value("FOUNDRY_PROJECT_ENDPOINT").rstrip("/"), headers=foundry_headers,
-                                  timeout=120) as foundry, session as door):
-        # Only what reads: the plain model must never book, and Runa is the one it is compared with.
+                                  timeout=120) as foundry, sessions[0] as door, sessions[1] as runas):
+        # Only what reads: the plain model must never book.
         tools = [{"type": "function", "name": t.name, "description": t.description or "", "parameters": t.input_schema,
                   "strict": False} for t in (await door.list_tools()).tools if t.annotations.read_only_hint]
         for question in questions:
             began, ask = time.perf_counter(), message(question, index)
-            session.http.headers["X-Correlation-Id"] = f"customer-compare-{question['id']}"
+            for session in sessions:
+                session.http.headers["X-Correlation-Id"] = f"customer-compare-{question['id']}"
             for who, work in (("plain", lambda r: plain(r, ask, door, tools, model, foundry)),
-                              ("Runa", lambda r: runa(r, ask, door))):
+                              ("Runa", lambda r: runa(r, ask, runas))):
                 result = Result(who, question, expected_articles(question, index), known)
                 results.append(await timed(result, work(result)))
             await asyncio.sleep(max(0.0, PACE_SECONDS - (time.perf_counter() - began)))

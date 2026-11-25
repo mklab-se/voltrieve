@@ -1,7 +1,13 @@
-// Copied from clients/web; keep the two alike.
+// Copied from clients/web; keep the two alike. Only the car has getTokenSilently.
 import type { Auth, AuthSession } from "./types";
 
 /** Dev-only stand-in so the UI can run against the mock SSE server. Never imported in production. */
+async function getToken(): Promise<string> {
+  // Unsigned and dev only: shaped like a JWT, with the chat role.
+  const payload = btoa(JSON.stringify({ roles: ["Chat.User"] })).replace(/=+$/, "");
+  return `dev.${payload}.fake`;
+}
+
 export function createFakeAuth(): Auth {
   const KEY = "fake-auth";
   const session: AuthSession = { name: "Dev Tester", username: "dev@voltrieve.example" };
@@ -22,10 +28,7 @@ export function createFakeAuth(): Auth {
       try { sessionStorage.removeItem(KEY); } catch { /* ignore */ }
       location.reload();
     },
-    async getToken() {
-      // Unsigned and dev only: shaped like a JWT, with the chat role.
-      const payload = btoa(JSON.stringify({ roles: ["Chat.User"] })).replace(/=+$/, "");
-      return `dev.${payload}.fake`;
-    },
+    getToken,
+    getTokenSilently: getToken,
   };
 }

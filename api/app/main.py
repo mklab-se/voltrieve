@@ -156,6 +156,7 @@ def create_app(
                 yield
         finally:
             evictor.cancel()
+            app.state.car_links.close_all()
             await app.state.turns.drain()
             await app.state.registry.close()
 

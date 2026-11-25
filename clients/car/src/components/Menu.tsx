@@ -9,7 +9,8 @@ interface Props {
   underTheHood: boolean;
   onUnderTheHood: (on: boolean) => void;
   remote: boolean;
-  onRemote: (on: boolean) => void;
+  /** Without it there is no remote control. */
+  onRemote?: (on: boolean) => void;
   /** For the tests, which cannot click. */
   openAtFirst?: boolean;
 }
@@ -53,10 +54,12 @@ export function Menu(props: Props) {
             Under the hood
             <span className="switch-track" aria-hidden="true" />
           </button>
-          <button type="button" className="switch" role="switch" aria-checked={remote} onClick={choose(() => onRemote(!remote))}>
-            Remote control
-            <span className="switch-track" aria-hidden="true" />
-          </button>
+          {onRemote && (
+            <button type="button" className="switch" role="switch" aria-checked={remote} onClick={choose(() => onRemote(!remote))}>
+              Remote control
+              <span className="switch-track" aria-hidden="true" />
+            </button>
+          )}
           <button type="button" onClick={choose(onSignOut)} title={`Signed in as ${username}`}>
             Sign out
           </button>

@@ -2,10 +2,17 @@ import { useEffect, useState } from "react";
 import type { Auth } from "./auth";
 import type { Drive } from "./drive";
 import { createLights } from "./lights";
-import { carState, commandText, handleCommand, type RemoteControls } from "./remote";
+import { carState, commandText, handleCommand, standsStill, type RemoteControls } from "./remote";
 import { RemoteLink, type LinkStatus } from "./remoteLink";
 
 const NOTE_MS = 8000;
+const LOOK_MS = 100;
+
+const ENDED: Partial<Record<LinkStatus, string>> = {
+  unavailable: "Remote control is not available here.",
+  replaced: "Remote control is off: it is on in too many windows.",
+  sign_in: "Remote control is off: sign in again to use it.",
+};
 const MAX_NOTES = 2;
 
 export interface RemoteNote {
@@ -47,7 +54,7 @@ export function useRemote(apiUrl: string, auth: Auth, drive: Drive): Remote {
     };
     const link: RemoteLink = new RemoteLink({
       apiUrl,
-      getToken: () => auth.getToken(),
+      getToken: () => auth.getTokenSilently(),
       state: () => carState(drive.car, drive.wipers),
       onCommand: async (command) => {
         const code = await handleCommand(command, { on: !link.closed, car: drive.car, controls });
@@ -56,9 +63,10 @@ export function useRemote(apiUrl: string, auth: Auth, drive: Drive): Remote {
       },
       onStatus: (next) => {
         setStatus(next);
-        if (next === "unavailable") note("Remote control is not available here.");
-        if (next === "replaced") note("Remote control is off: it is on in too many windows.");
-        if (next === "unavailable" || next === "replaced") setOn(false);
+        const why = ENDED[next];
+        if (!why) return;
+        note(why);
+        setOn(false);
       },
     });
     void link.run();
@@ -70,10 +78,18 @@ export function useRemote(apiUrl: string, auth: Auth, drive: Drive): Remote {
     return () => {
       window.removeEventListener("pagehide", off);
       link.close();
+      lights.stop();
     };
   }, [on, apiUrl, auth, drive, lights]);
 
-  useEffect(() => () => lights.stop(), [lights]);
+  // A car that drives does not flash.
+  useEffect(() => {
+    if (!flashing) return;
+    const timer = setInterval(() => {
+      if (!standsStill(drive.car)) lights.stop();
+    }, LOOK_MS);
+    return () => clearInterval(timer);
+  }, [flashing, drive, lights]);
 
   return { on, setOn, status, notes, flashing };
 }

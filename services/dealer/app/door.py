@@ -3,6 +3,8 @@
 The city comes from the setting and never from the caller. No name and no address of a customer is in an answer.
 """
 
+import logging
+import unicodedata
 from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Annotated, Literal
@@ -23,6 +25,8 @@ from app.routes import CURRENCY, ready_store
 from app.settings import Settings
 from app.staff import NO_NAME, StockChange, writing
 from app.store import Stock
+
+logger = logging.getLogger(__name__)
 
 NAME = "dealer"
 SCOPE = "dealer.use"
@@ -63,13 +67,20 @@ class DealerTool(DoorTool):
 
 
 def door_cities(text: str, data: DealerData) -> dict[str, str]:
-    """ "oid=City;oid=City". The errors are for the one who starts the service."""
+    """ "oid=City;oid=City". A wrong entry is left out, so that caller has no city and the service still starts. An
+    oid that is there twice has no city either."""
+    known = {unicodedata.normalize("NFC", city): city for city in data.cities}
     cities: dict[str, str] = {}
+    seen: set[str] = set()
     for item in filter(None, (part.strip() for part in text.split(";"))):
         oid, _, city = (part.strip() for part in item.partition("="))
-        if not oid or oid in cities or city not in data.cities:
-            raise ValueError("DEALER_DOOR_CITIES: each oid once, with a city of a dealer")
-        cities[oid] = city
+        city = known.get(unicodedata.normalize("NFC", city))
+        if not oid or oid in seen or city is None:
+            cities.pop(oid, None)
+            logger.warning("An entry of DEALER_DOOR_CITIES was left out: each oid once, with a city of a dealer")
+        else:
+            cities[oid] = city
+        seen.add(oid)
     return cities
 
 

@@ -139,7 +139,7 @@ async def test_every_code_has_a_text():
 
     from app.carlink import CarCode
 
-    assert set(get_args(CarCode)) | {"not_linked", "gone", "no_answer", "too_many"} == set(car.REFUSALS)
+    assert set(get_args(CarCode)) | {"not_linked", "gone", "no_answer", "unsure", "too_many"} == set(car.REFUSALS)
 
 
 async def test_a_car_that_moves_is_not_asked(harness, page):
@@ -150,7 +150,7 @@ async def test_a_car_that_moves_is_not_asked(harness, page):
 
 
 async def test_a_car_that_does_not_answer(harness, page, links):
-    links._answer_seconds = 0.05
+    links._take_seconds = 0.05
     async with page() as car_page, harness() as ai:
         await car_page.state(parked=True)
         error, text = await ai.call("honk", times=1)

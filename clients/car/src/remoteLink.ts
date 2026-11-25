@@ -1,14 +1,19 @@
 /** The link to the API that brings commands to the car, for as long as remote control is on. */
+import { SignInNeeded } from "./auth/types";
 import type { CarState, Code, Command } from "./remote";
 import { createSseParser } from "./sse";
 
-/** "unavailable": the API does not take this car. "replaced": too many cars of the same driver are linked. */
-export type LinkStatus = "connecting" | "linked" | "unavailable" | "replaced";
+/** The last three end it. "unavailable": the API does not take this car. "replaced": too many cars of the same
+ * driver are linked. "sign_in": the driver has to sign in again. */
+export type LinkStatus = "connecting" | "linked" | End;
+type End = "unavailable" | "replaced" | "sign_in";
 
 export interface RemoteLinkOptions {
   apiUrl: string;
+  /** Without leaving the page. A SignInNeeded when that cannot be. */
   getToken: () => Promise<string>;
   state: () => CarState;
+  /** Called when the API has agreed that the command is done now. */
   onCommand: (command: Command) => Promise<Code>;
   onStatus: (status: LinkStatus) => void;
   fetchImpl?: typeof fetch;
@@ -21,6 +26,8 @@ const FIRST_WAIT_MS = 1000;
 const LONGEST_WAIT_MS = 30_000;
 /** A message to the API that takes longer than this is given up. */
 const POST_MS = 5000;
+/** A command is done within this time from asking for it, or not at all: the API waits 2 s for the result. */
+export const TAKE_MS = 1500;
 /** A link that lasted this long was a good one, and the next waiting time is a short one again. */
 const GOOD_MS = 10_000;
 
@@ -39,6 +46,9 @@ export class RemoteLink {
   /** What the API knows about the car. */
   private told?: CarState;
   private telling = false;
+  /** How often telling has failed, and when to try again. */
+  private untold = 0;
+  private tellAt = 0;
   private token = "";
 
   constructor(private readonly options: RemoteLinkOptions) {}
@@ -53,7 +63,7 @@ export class RemoteLink {
       for (let failures = 0; !this.closed; ) {
         this.status("connecting");
         const start = Date.now();
-        const end = await this.connect().catch(() => "lost" as const);
+        const end = await this.connect().catch((e: unknown) => (e instanceof SignInNeeded ? "sign_in" : "lost"));
         this.id = undefined;
         if (end !== "lost") {
           this.status(end);
@@ -98,13 +108,13 @@ export class RemoteLink {
     });
   }
 
-  private say(path: string, body: unknown): Promise<Response> {
-    const signal = AbortSignal.any([this.closing.signal, AbortSignal.timeout(POST_MS)]);
+  private say(path: string, body: unknown, ms = POST_MS): Promise<Response> {
+    const signal = AbortSignal.any([this.closing.signal, AbortSignal.timeout(ms)]);
     return this.post(path, { "Content-Type": "application/json" }, JSON.stringify(body), signal);
   }
 
   /** One link, until it ends. "lost": try again, with a fresh token. */
-  private async connect(): Promise<"lost" | "unavailable" | "replaced"> {
+  private async connect(): Promise<"lost" | End> {
     this.token = await this.options.getToken();
     if (this.closed) return "lost";
     const silent = new AbortController();
@@ -141,6 +151,7 @@ export class RemoteLink {
   private linked(id: string): void {
     this.id = id;
     this.told = undefined;
+    this.untold = this.tellAt = 0;
     this.status("linked");
     void this.tell();
   }
@@ -151,6 +162,7 @@ export class RemoteLink {
     try {
       const command = parseCommand(data);
       if (!command) return;
+      if (!(await this.take(id, command.id))) return;
       const code = await this.options.onCommand(command);
       const result = code === "done" ? { id: command.id, ok: true } : { id: command.id, ok: false, message: code };
       await this.say(`/${id}/results`, result);
@@ -159,18 +171,30 @@ export class RemoteLink {
     }
   }
 
+  /** Whether someone still waits for the command. A late network must not honk the horn. */
+  private async take(id: string, command: string): Promise<boolean> {
+    const start = Date.now();
+    const res = await this.say(`/${id}/take`, { id: command }, TAKE_MS);
+    return res.ok && !this.closed && Date.now() - start < TAKE_MS; // a computer that slept was late too
+  }
+
   /** The state, when it has changed. The kilometers go along with it, and never by themselves. */
   private async tell(): Promise<void> {
     const { id } = this;
     const state = this.options.state();
-    if (!id || this.closed || this.telling) return;
+    if (!id || this.closed || this.telling || Date.now() < this.tellAt) return;
     if (this.told && this.told.parked === state.parked && this.told.wipers === state.wipers) return;
     this.telling = true; // one at a time, so that the last one sent is the last one to arrive
     try {
       const res = await this.say(`/${id}/state`, state);
-      if (res.status < 500 && this.id === id) this.told = state;
+      if (this.id !== id) return;
+      if (!res.ok) throw new Error("not told");
+      this.told = state;
+      this.untold = 0;
     } catch {
-      /* the next look tries again */
+      if (this.id !== id) return; // the new link is told at once
+      this.tellAt = Date.now() + backoffMs(this.untold);
+      this.untold += 1;
     } finally {
       this.telling = false;
     }

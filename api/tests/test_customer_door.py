@@ -1,4 +1,4 @@
-"""The customer's door with signed tokens, both generations of clients and the real tools and turns."""
+"""The doors of the customer and of Runa with signed tokens, both generations of clients and the real tools and turns."""
 
 import asyncio
 import json
@@ -25,7 +25,7 @@ from voltrieve_doors import RateLimit, running
 from app.backends import BackendRegistry
 from app.backends.base import BackendUnavailable
 from app.backends.loop import LoopBackend
-from app.doors import customer
+from app.doors import customer, runa
 from app.garage import MY_CAR
 from app.main import create_app
 from app.settings import Settings
@@ -34,8 +34,7 @@ from app.turns import TurnStore
 from tests.conftest import FakeBackend, answer, pause
 from tests.test_loop_backend import FakeOpenAI, ScriptedModel
 
-URL = "https://api.example.test/mcp/customer"
-BOTH = "customer.tools runa.ask"
+DOORS = {"customer": "customer.tools", "runa": "runa.ask"}
 TOOLS = {"search_documents", "search_parts", "check_car_stock", "check_part_stock", "car_prices", "my_car",
          "approved_answer"}
 BOOKING = {"model": "atlas", "city": "Göteborg", "date": "2999-01-05"}
@@ -44,6 +43,10 @@ ORDER_CALL = FunctionCall("c1", "prepare_car_order", json.dumps({"model": "fjord
 PLACE_CALL = FunctionCall("c1", "place_car_order", '{"offer": "offer-1"}')
 OK = [TextDelta("ok"), Completed({"total_tokens": 1})]
 BROCHURE = "voltrieve-fjord-brochure.pdf"
+
+
+def url(door):
+    return f"https://api.example.test/mcp/{door}"
 
 
 class FakeKnowledge:
@@ -91,25 +94,29 @@ class World:
             return LoopBackend(self.model, self.openai, tools)
 
         settings = Settings(mcp_api_url="https://api.example.test", mcp_customer_client_id="door-customer",
+                            mcp_runa_client_id="door-runa",
                             mcp_apps="app-1=Claude", **options)
         factories = {"loop": loop, "prompt": lambda s: self.other}
         self.app = create_app(settings, None, BackendRegistry(settings, factories), TurnStore(),
                               SourceService(Index(), None))
-        [self.door] = self.app.state.doors
-        self.door._validator._fetcher = lambda: jwks
-        self.door._rate = RateLimit(1000)  # the limit of every door has its own tests
+        self.doors = {door.config.name: door for door in self.app.state.doors}
+        assert list(self.doors) == list(DOORS)
+        for door in self.doors.values():
+            door._validator._fetcher = lambda: jwks
+            door._rate = door._requests = RateLimit(1000)  # the limits of every door have their own tests
 
-    def token(self, **changes):
-        return self._make_token(**{"aud": "door-customer", "azp": "app-1", "scp": BOTH,
+    def token(self, door, **changes):
+        return self._make_token(**{"aud": f"door-{door}", "azp": "app-1", "scp": DOORS[door],
                                    "roles": ["Customer", "TestDrive.Book"], **changes})
 
-    def http(self, headers=(), **changes):
-        all_headers = {"authorization": f"Bearer {self.token(**changes)}", **dict(headers)}
+    def http(self, door, headers=(), **changes):
+        all_headers = {"authorization": f"Bearer {self.token(door, **changes)}", **dict(headers)}
         return httpx2.AsyncClient(transport=httpx2.ASGITransport(app=self.app), headers=all_headers)
 
     async def call(self, name, arguments=None, mode="auto", headers=(), **changes):
-        async with (self.http(headers, **changes) as http,
-                    Client(streamable_http_client(URL, http_client=http), mode=mode) as client):
+        door = changes.pop("door", "runa" if name == "ask_runa" else "customer")
+        async with (self.http(door, headers, **changes) as http,
+                    Client(streamable_http_client(url(door), http_client=http), mode=mode) as client):
             return await client.call_tool(name, arguments or {})
 
     async def data(self, name, arguments=None, **how):
@@ -122,9 +129,9 @@ class World:
         assert result.is_error
         return result.content[0].text
 
-    async def listed(self, mode="auto", **changes):
-        async with (self.http(**changes) as http,
-                    Client(streamable_http_client(URL, http_client=http), mode=mode) as client):
+    async def listed(self, door="customer", mode="auto", **changes):
+        async with (self.http(door, **changes) as http,
+                    Client(streamable_http_client(url(door), http_client=http), mode=mode) as client):
             return {t.name: t for t in (await client.list_tools()).tools}
 
     def feed(self):
@@ -154,57 +161,70 @@ async def world(jwks, make_token):
 
 @pytest.mark.parametrize("mode", ["auto", "legacy"])
 async def test_a_client_of_either_generation_lists_and_calls(world, mode):
-    assert set(await world.listed(mode)) == TOOLS | {"book_test_drive", "ask_runa"}
+    assert set(await world.listed(mode=mode)) == TOOLS | {"book_test_drive"}
+    assert set(await world.listed("runa", mode=mode)) == {"ask_runa"}
     assert (await world.data("my_car", mode=mode))["car"] == MY_CAR
 
 
-async def test_the_scope_picks_the_tools_and_the_call_checks_it(world):
-    assert set(await world.listed(scp="customer.tools")) == TOOLS | {"book_test_drive"}
-    assert set(await world.listed(scp="runa.ask")) == {"ask_runa"}
-    assert "may not" in await world.refused("ask_runa", {"question": "Hi"}, scp="customer.tools")
-    for name in TOOLS | {"book_test_drive"}:
-        assert "may not" in await world.refused(name, scp="runa.ask")
-    assert world.built == [] and world.dealer_got == [] and world.docs.queries == []
+async def test_the_tools_and_runa_are_two_doors(world):
+    for door, other in (("customer", "runa"), ("runa", "customer")):
+        for scope in (DOORS[door], " ".join(DOORS.values())):  # every scope is no way around it
+            async with world.http(other, aud=f"door-{door}", scp=scope) as http:
+                assert (await http.post(url(other), json={})).status_code == 401
+        async with world.http(door, scp=DOORS[other]) as http:
+            assert (await http.post(url(door), json={})).status_code == 403
+    assert set(await world.listed("customer", scp=" ".join(DOORS.values()))) == TOOLS | {"book_test_drive"}
+    assert (await world.call("ask_runa", {"question": "Hi"}, door="customer")).is_error
+    assert (await world.call("my_car", door="runa")).is_error
+    assert world.built == [] and world.feed() == []
 
 
-@pytest.mark.parametrize("roles, sees", [
-    (["Customer"], TOOLS | {"ask_runa"}),
-    (["Customer", "TestDrive.Book"], TOOLS | {"ask_runa", "book_test_drive"}),
-    (["TestDrive.Book"], set()),
-    (["Chat.User", "Order.Place", "Dashboard.View"], set()),
+async def test_a_question_to_runa_never_fills_the_other_doors(world):
+    gates = {name: door._gate for name, door in world.doors.items()}
+    assert gates["customer"] is not gates["runa"]
+
+
+@pytest.mark.parametrize("roles, tools, asks", [
+    (["Customer"], TOOLS, {"ask_runa"}),
+    (["Customer", "TestDrive.Book"], TOOLS | {"book_test_drive"}, {"ask_runa"}),
+    (["TestDrive.Book"], set(), set()),
+    (["Chat.User", "Order.Place", "Dashboard.View"], set(), set()),
 ])
-async def test_the_role_picks_the_tools(world, roles, sees):
-    assert set(await world.listed(roles=roles)) == sees
-    for name in (TOOLS | {"ask_runa", "book_test_drive"}) - sees:
+async def test_the_role_picks_the_tools(world, roles, tools, asks):
+    assert set(await world.listed("customer", roles=roles)) == tools
+    assert set(await world.listed("runa", roles=roles)) == asks
+    for name in (TOOLS | {"ask_runa", "book_test_drive"}) - tools - asks:
         assert "may not" in await world.refused(name, BOOKING, roles=roles)
-    assert world.dealer_got == [] and world.other.contexts == []
+    assert world.dealer_got == [] and world.other.contexts == [] and world.built == []
 
 
-async def test_a_token_for_the_api_or_another_door_is_not_let_in(world):
+@pytest.mark.parametrize("door", DOORS)
+async def test_a_token_for_the_api_or_another_door_is_not_let_in(world, door):
     for changes in ({"aud": "the-api", "scp": "access_as_user"}, {"aud": "door-car", "scp": "car.remote"}):
-        async with world.http(**changes) as http:
-            assert (await http.post(URL, json={})).status_code == 401
+        async with world.http(door, **changes) as http:
+            assert (await http.post(url(door), json={})).status_code == 401
     for changes in ({"scp": "access_as_user"}, {"azp": "unknown"}, {"roles": []}):
-        async with world.http(**changes) as http:
-            assert (await http.post(URL, json={})).status_code == 403
+        async with world.http(door, **changes) as http:
+            assert (await http.post(url(door), json={})).status_code == 403
 
 
-async def test_an_application_is_not_let_in(world, rsa_key):
+@pytest.mark.parametrize("door", DOORS)
+async def test_an_application_is_not_let_in(world, rsa_key, door):
     import time
 
     import jwt
 
     now = int(time.time())
-    payload = {"iss": world.door._validator._issuer, "aud": "door-customer", "oid": "robot", "roles": ["Customer"],
-               "azp": "app-1", "nbf": now - 10, "exp": now + 300}
+    payload = {"iss": world.doors[door]._validator._issuer, "aud": f"door-{door}", "oid": "robot",
+               "roles": ["Customer"], "azp": "app-1", "nbf": now - 10, "exp": now + 300}
     token = jwt.encode(payload, rsa_key, algorithm="RS256", headers={"kid": "test"})
-    async with world.http({"authorization": f"Bearer {token}"}) as http:
-        assert (await http.post(URL, json={})).status_code == 403
-    assert all(t.people_only for t in customer.tools(world.app))
+    async with world.http(door, {"authorization": f"Bearer {token}"}) as http:
+        assert (await http.post(url(door), json={})).status_code == 403
+    assert all(t.people_only for t in (*customer.tools(world.app), *runa.tools(world.app)))
 
 
 async def test_what_changes_something_says_so(world):
-    tools = await world.listed()
+    tools = await world.listed("customer") | await world.listed("runa")
     changing = {n for n, t in tools.items() if not t.annotations.read_only_hint}
     assert changing == {"book_test_drive", "ask_runa"}
     topics = tools["approved_answer"].input_schema["properties"]["topic"]["enum"]
@@ -348,7 +368,7 @@ async def test_the_header_picks_the_backend(world):
 async def test_an_unknown_backend_is_refused(world, name, caplog):
     with caplog.at_level(logging.DEBUG):
         text = await world.refused("ask_runa", {"question": "Hi"}, headers={"X-Agent-Backend": name})
-    assert text.endswith(customer.UNKNOWN_BACKEND) and "MARKER" not in caplog.text and world.feed() == []
+    assert text.endswith(runa.UNKNOWN_BACKEND) and "MARKER" not in caplog.text and world.feed() == []
 
 
 async def test_a_backend_that_is_not_here_is_refused(world):
@@ -376,7 +396,7 @@ async def test_a_car_cannot_be_ordered(world, call, roles, header):
 @pytest.mark.parametrize("roles, books", [(["Customer", "TestDrive.Book"], True), (["Customer"], False)])
 async def test_runa_books_a_test_drive_only_with_the_role(world, roles, books):
     world.model.rounds = [[BOOK_CALL], OK]
-    await world.data("ask_runa", {"question": "Book it"}, roles=roles, scp="runa.ask", oid="oid-bob")
+    await world.data("ask_runa", {"question": "Book it"}, roles=roles, oid="oid-bob")
     assert [json.loads(r.content)["requester"] for r in world.dealer_got] == (["oid-bob"] if books else [])
     assert world.model.inputs[-1][0]["output"].startswith("Refused") is not books
 
@@ -392,7 +412,7 @@ async def test_five_questions_a_minute_for_each_person(world):
     world.model.rounds = [OK for _ in range(7)]
     for _ in range(5):
         await world.data("ask_runa", {"question": "Hi"})
-    assert (await world.refused("ask_runa", {"question": "Hi"})).endswith(customer.TOO_MANY)
+    assert (await world.refused("ask_runa", {"question": "Hi"})).endswith(runa.TOO_MANY)
     await world.data("ask_runa", {"question": "Hi"}, oid="oid-bob")
     assert len(world.model.inputs) == 6
 
@@ -416,11 +436,11 @@ async def test_a_turn_without_an_answer_is_a_fixed_text(world, script, caplog):
     world.other.script = [script]
     with caplog.at_level(logging.DEBUG):
         text = await world.refused("ask_runa", {"question": "Hi"}, headers={"X-Agent-Backend": "prompt"})
-    assert text.endswith(customer.FAILED) and "MARKER" not in caplog.text
+    assert text.endswith(runa.FAILED) and "MARKER" not in caplog.text
 
 
 async def test_a_turn_that_is_too_slow_is_refused_and_runs_to_its_end(world, monkeypatch):
-    monkeypatch.setattr(customer, "ASK_SECONDS", 0.05)
+    monkeypatch.setattr(runa, "ASK_SECONDS", 0.05)
     go_on = asyncio.Event()
 
     async def slow(ctx, emit):
@@ -431,10 +451,45 @@ async def test_a_turn_that_is_too_slow_is_refused_and_runs_to_its_end(world, mon
 
     world.other.script = [slow]
     text = await world.refused("ask_runa", {"question": "Hi"}, headers={"X-Agent-Backend": "prompt"})
-    assert text.endswith(customer.SLOW) and world.feed()[0]["outcome"] == "running"
+    assert text.endswith(runa.SLOW) and world.feed()[0]["outcome"] == "running"
     go_on.set()
     await world.app.state.turns.drain()
     assert world.feed()[0]["outcome"] == "answered" and not world.app.state.turns._running
+
+
+async def test_a_turn_counts_until_it_ends_also_when_nobody_waits_for_it(world, monkeypatch):
+    monkeypatch.setattr(runa, "ASK_SECONDS", 0.05)
+    go_on = asyncio.Event()
+
+    async def slow(ctx, emit):
+        await go_on.wait()
+        await emit(AgentEvent("delta", {"text": "late"}))
+        return TurnOutcome("done", [], {})
+
+    async def ask(oid):
+        return await world.refused("ask_runa", {"question": "Hi"}, oid=oid, headers={"X-Agent-Backend": "prompt"})
+
+    world.other.script = [slow] * 4
+    for oid in ("anna", "anna"):
+        assert (await ask(oid)).endswith(runa.SLOW)
+    assert (await ask("anna")).endswith(runa.BUSY)  # two each
+    for oid in ("bob", "carl"):
+        assert (await ask(oid)).endswith(runa.SLOW)
+    assert (await ask("dora")).endswith(runa.BUSY)  # four in all
+    assert len(world.other.contexts) == 4
+    go_on.set()
+    await world.app.state.turns.drain()
+    world.other.script = [failed(), answer("now")]
+    assert (await ask("dora")).endswith(runa.FAILED)  # a failed turn gives its place back too
+    await world.app.state.turns.drain()
+    answered = await world.data("ask_runa", {"question": "Hi"}, oid="dora", headers={"X-Agent-Backend": "prompt"})
+    assert answered["answer"] == "now"
+
+
+async def test_the_ai_is_told_that_the_question_is_stored(world):
+    tool = (await world.listed("runa"))["ask_runa"]
+    assert runa.STORED in tool.description and runa.STORED in runa.INSTRUCTIONS
+    assert "stored" not in customer.INSTRUCTIONS and "nightly" not in customer.INSTRUCTIONS + runa.INSTRUCTIONS
 
 
 async def test_nobody_gets_the_answer_of_someone_else(world):

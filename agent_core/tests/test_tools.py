@@ -111,7 +111,7 @@ async def test_role_denied_is_logged_as_warning(user, events, caplog):
         await toolset.execute("lookup", '{"city": "x"}', user, events)
     record = next(r for r in caplog.records if "authorization denied" in r.getMessage())
     assert record.levelname == "WARNING"
-    assert "lookup" in record.getMessage() and "Admin" in record.getMessage() and user.oid in record.getMessage()
+    assert "lookup" in record.getMessage() and "Admin" in record.getMessage() and user.oid not in record.getMessage()
 
 
 REFUSAL = "Not from here."

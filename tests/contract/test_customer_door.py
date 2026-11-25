@@ -1,4 +1,4 @@
-"""The customer's door: its car is the website's, and a turn of ask_runa cannot order on any backend."""
+"""The doors of the customer and of Runa: their car is the website's, and a turn of ask_runa cannot order on any backend."""
 
 import json
 import re
@@ -36,7 +36,7 @@ async def test_a_turn_of_the_door_cannot_order_whatever_the_role(name, call):
     app = api_for(name, model, (), dealer=dealer)
     claims = Claims("oid-contract", "", ["TestDrive.Book", "Order.Place"])
     answer = await app.state.turns.answer(
-        Job(claims, name, None, new_turn_id(), "Order a Fjord", client=MCP, ordering_client=MCP), 10
+        Job(claims, name, None, new_turn_id(), "Order a Fjord", client=MCP, ordering_client=MCP), 10, lambda: None
     )
     assert answer.text == "ok" and dealer.offers == []
     [result] = model.calls[1]["input"]
@@ -48,7 +48,7 @@ async def test_an_approved_answer_is_marked_on_every_backend(name):
     call = FunctionCall("call_1", "get_curated_answer", '{"topic": "contact"}')
     app = api_for(name, ScriptedModel([call, Completed({})]), ())
     claims = Claims("oid-contract", "", [])
-    answer = await app.state.turns.answer(Job(claims, name, None, new_turn_id(), "Phone?", client=MCP), 10)
+    answer = await app.state.turns.answer(Job(claims, name, None, new_turn_id(), "Phone?", client=MCP), 10, lambda: None)
     assert answer.approved and "020-000 000" in answer.text
 
 

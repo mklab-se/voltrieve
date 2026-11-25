@@ -11,7 +11,7 @@ from app.settings import Settings
 
 AZURE_CLI_CLIENT_ID = "04b07795-8ddb-461a-bbee-02f9e1bf7b46"
 CAR = "car"
-MCP = "mcp"  # ask_runa of the customer's door (app/doors/customer.py), which no token of the API can be
+MCP = "mcp"  # ask_runa of Runa's door (app/doors/runa.py), which no token of the API can be
 
 
 def is_test(header: str | None) -> bool:

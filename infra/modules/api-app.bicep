@@ -36,6 +36,7 @@ param mcpUrl string = ''
 param mcpOperationsClientId string = ''
 param mcpCarClientId string = ''
 param mcpCustomerClientId string = ''
+param mcpRunaClientId string = ''
 @description('The harnesses that may call: "client id=Name;client id=Name".')
 param mcpApps string = ''
 param mcpAllowCli bool = false
@@ -120,6 +121,7 @@ resource api 'Microsoft.App/containerApps@2026-07-01' = {
             { name: 'MCP_OPERATIONS_CLIENT_ID', value: mcpOperationsClientId }
             { name: 'MCP_CAR_CLIENT_ID', value: mcpCarClientId }
             { name: 'MCP_CUSTOMER_CLIENT_ID', value: mcpCustomerClientId }
+            { name: 'MCP_RUNA_CLIENT_ID', value: mcpRunaClientId }
             { name: 'MCP_APPS', value: mcpApps }
             // Never empty: the service does not start with an empty one.
             { name: 'MCP_ALLOW_CLI', value: mcpAllowCli ? 'true' : 'false' }

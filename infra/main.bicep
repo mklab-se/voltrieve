@@ -58,13 +58,15 @@ param mcpDoors bool = false
 param mcpOperationsClientId string = ''
 param mcpCarClientId string = ''
 param mcpCustomerClientId string = ''
+param mcpRunaClientId string = ''
 param mcpDealerClientId string = ''
 @description('The harnesses that may call the doors (MCP_APPS, set by the preprovision hook): "client id=Name;client id=Name".')
 param mcpApps string = ''
 @description('The Azure CLI may call the doors too (MCP_ALLOW_CLI). For dev only.')
 param mcpAllowCli bool = false
-@description('The Application ID URI of every door is its address (MCP_IDENTIFIER_IS_URL, set by the preprovision hook).')
-param mcpIdentifierIsUrl bool = false
+@description('The Application ID URI of the doors of a service is their address (MCP_API_IDENTIFIER_IS_URL and MCP_DEALER_IDENTIFIER_IS_URL, set by the preprovision hook).')
+param mcpApiIdentifierIsUrl bool = false
+param mcpDealerIdentifierIsUrl bool = false
 @description('Another authorization server for the doors to point to (MCP_ISSUER). Empty: Entra ID.')
 param mcpIssuer string = ''
 @description('Whose dealer is whose at the dealer door (DEALER_DOOR_CITIES): "object id=City;object id=City".')
@@ -265,7 +267,7 @@ module dealerApp 'modules/dealer-app.bicep' = {
     mcpClientId: mcpDoors ? mcpDealerClientId : ''
     mcpApps: mcpDoors ? mcpApps : ''
     mcpAllowCli: mcpDoors && mcpAllowCli
-    mcpIdentifierIsUrl: mcpDoors && mcpIdentifierIsUrl
+    mcpIdentifierIsUrl: mcpDoors && mcpDealerIdentifierIsUrl
     mcpIssuer: mcpDoors ? mcpIssuer : ''
     doorCities: mcpDoors ? dealerDoorCities : ''
   }
@@ -423,9 +425,10 @@ module apiApp 'modules/api-app.bicep' = {
     mcpOperationsClientId: mcpDoors ? mcpOperationsClientId : ''
     mcpCarClientId: mcpDoors ? mcpCarClientId : ''
     mcpCustomerClientId: mcpDoors ? mcpCustomerClientId : ''
+    mcpRunaClientId: mcpDoors ? mcpRunaClientId : ''
     mcpApps: mcpDoors ? mcpApps : ''
     mcpAllowCli: mcpDoors && mcpAllowCli
-    mcpIdentifierIsUrl: mcpDoors && mcpIdentifierIsUrl
+    mcpIdentifierIsUrl: mcpDoors && mcpApiIdentifierIsUrl
     mcpIssuer: mcpDoors ? mcpIssuer : ''
   }
 }

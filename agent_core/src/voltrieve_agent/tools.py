@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from jsonschema import Draft202012Validator, FormatChecker
 
 from voltrieve_agent.events import WORKING, Emit, trace
-from voltrieve_agent.private import current_private, log_exception
+from voltrieve_agent.private import current_private, log_exception, pseudonym
 
 logger = logging.getLogger(__name__)
 
@@ -151,7 +151,7 @@ class ToolSet:
                 "authorization denied: tool %s requires role %s (user %s)",
                 tool.name,
                 tool.required_role,
-                user.oid,
+                pseudonym(user.oid),
             )
             await emit(
                 trace(

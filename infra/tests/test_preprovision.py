@@ -12,7 +12,7 @@ SERVERLESS = "https://sl.search.windows.net"
 
 
 def run_hook(tmp_path, **env):
-    for name in ("az", "uv", "azd"):
+    for name in ("az", "uv"):
         tool = tmp_path / name
         tool.write_text(f'#!/bin/sh\necho {name} "$@" >> "{tmp_path}/calls"\necho example.test\n')
         tool.chmod(0o755)
@@ -73,12 +73,12 @@ def test_a_known_dealer_url_is_passed_to_setup_and_otherwise_left_out(tmp_path):
     assert "--dealer-redirect-uri" not in calls
 
 
-@pytest.mark.parametrize("env", [{}, {"MCP_DOORS": "false", "API_HOST": "api.example.com", "MCP_ALLOW_CLI": "true"}])
+@pytest.mark.parametrize("env", [{}, {"MCP_DOORS": "false", "API_HOST": "api.example.com", "MCP_ALLOW_CLI": "true",
+                                      "DEALER_DOOR_CITIES": "someone=Malmö"}])
 def test_without_mcp_doors_nothing_about_them_runs(tmp_path, env):
     done, calls = run_hook(tmp_path, **env)
     assert done.returncode == 0, done.stderr
-    assert "--mcp" not in calls and "--allow-cli" not in calls and "-host" not in calls
-    assert "azd" not in calls
+    assert "--mcp" not in calls and "--dealer-cities" not in calls and "--allow-cli" not in calls and "-host" not in calls
 
 
 def test_mcp_doors_pass_their_flags(tmp_path):
@@ -101,13 +101,7 @@ def test_another_value_for_the_doors_is_refused_before_anything_runs(tmp_path, e
     assert done.returncode != 0 and calls == "" and "MCP_DOORS" in done.stderr
 
 
-def test_the_deployer_gets_a_city_at_the_dealer_door(tmp_path):
-    done, calls = run_hook(tmp_path, MCP_DOORS="true")
+def test_a_list_of_cities_is_passed_on_to_be_checked(tmp_path):
+    done, calls = run_hook(tmp_path, MCP_DOORS="true", DEALER_DOOR_CITIES="someone=Malmö;other=Uppsala")
     assert done.returncode == 0, done.stderr
-    assert "azd env set DEALER_DOOR_CITIES example.test=Göteborg" in calls  # example.test: what az answers here
-
-
-def test_a_list_of_cities_is_not_replaced(tmp_path):
-    done, calls = run_hook(tmp_path, MCP_DOORS="true", DEALER_DOOR_CITIES="someone=Malmö")
-    assert done.returncode == 0, done.stderr
-    assert "azd" not in calls
+    assert "--mcp --dealer-cities someone=Malmö;other=Uppsala" in calls

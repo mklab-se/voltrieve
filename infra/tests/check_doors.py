@@ -27,11 +27,13 @@ def environment(module):
 # off by default, and then every service gets nothing, whatever is left in the azd environment
 assert parameters["mcpDoors"]["defaultValue"] is False
 assert parameters["mcpAllowCli"]["defaultValue"] is False
-assert parameters["mcpIdentifierIsUrl"]["defaultValue"] is False
+assert parameters["mcpApiIdentifierIsUrl"]["defaultValue"] is False
+assert parameters["mcpDealerIdentifierIsUrl"]["defaultValue"] is False
 for name in ("apiHost", "dealerHost", "dealerDoorCities", "mcpApps", "mcpIssuer"):
     assert parameters[name]["defaultValue"] == "", name
 DOORS = {
-    "apiApp": ["mcpUrl", "mcpOperationsClientId", "mcpCarClientId", "mcpCustomerClientId", "mcpApps", "mcpIssuer"],
+    "apiApp": ["mcpUrl", "mcpOperationsClientId", "mcpCarClientId", "mcpCustomerClientId", "mcpRunaClientId",
+               "mcpApps", "mcpIssuer"],
     "dealerApp": ["mcpUrl", "mcpClientId", "mcpApps", "mcpIssuer", "doorCities"],
 }
 
@@ -47,12 +49,14 @@ for module, names in DOORS.items():
         value = raw[name] if isinstance(raw[name], str) else raw[name]["value"]
         assert any(value.startswith(a) and value.endswith(b) for a, b in ONLY), (module, name, value)
     assert raw["mcpAllowCli"]["value"] == "[and(parameters('mcpDoors'), parameters('mcpAllowCli'))]"
-    assert raw["mcpIdentifierIsUrl"]["value"] == "[and(parameters('mcpDoors'), parameters('mcpIdentifierIsUrl'))]"
+    flag = {"apiApp": "mcpApiIdentifierIsUrl", "dealerApp": "mcpDealerIdentifierIsUrl"}[module]
+    assert raw["mcpIdentifierIsUrl"]["value"] == f"[and(parameters('mcpDoors'), parameters('{flag}'))]"
 
 # the settings of the services, and the two that must be true or false
 SHARED = {"MCP_APPS", "MCP_ALLOW_CLI", "MCP_IDENTIFIER_IS_URL", "MCP_ISSUER"}
 OWN = {
-    "apiApp": {"MCP_API_URL", "MCP_OPERATIONS_CLIENT_ID", "MCP_CAR_CLIENT_ID", "MCP_CUSTOMER_CLIENT_ID"},
+    "apiApp": {"MCP_API_URL", "MCP_OPERATIONS_CLIENT_ID", "MCP_CAR_CLIENT_ID", "MCP_CUSTOMER_CLIENT_ID",
+               "MCP_RUNA_CLIENT_ID"},
     "dealerApp": {"MCP_DEALER_URL", "MCP_DEALER_CLIENT_ID", "DEALER_DOOR_CITIES"},
 }
 for module, host in (("apiApp", "apiHost"), ("dealerApp", "dealerHost")):

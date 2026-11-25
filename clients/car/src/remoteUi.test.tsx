@@ -43,9 +43,15 @@ describe("remote control in the menu", () => {
     expect(html).toMatch(new RegExp(`role="switch" aria-checked="${on}">Remote control`));
   });
 
+  it("is not there in a build without it", () => {
+    const html = renderToStaticMarkup(<Menu openAtFirst onNewChat={nothing} onSignOut={nothing} username="dev@x" underTheHood={false} onUnderTheHood={nothing} remote={false} />);
+    expect(html).toContain("Under the hood");
+    expect(html).not.toContain("Remote control");
+  });
+
   it("is off when the page loads", () => {
-    const auth = { kind: "fake" as const, init: async () => null, signIn: async () => {}, signOut: async () => {}, getToken: async () => "token" };
-    const config = { apiUrl: "http://api", tenantId: "", clientId: "", scope: "", fakeAuth: true };
+    const auth = { kind: "fake" as const, init: async () => null, signIn: async () => {}, signOut: async () => {}, getToken: async () => "token", getTokenSilently: async () => "token" };
+    const config = { apiUrl: "http://api", tenantId: "", clientId: "", scope: "", fakeAuth: true, remoteControl: true };
     const html = renderToStaticMarkup(<Workspace config={config} auth={auth} session={{ name: "Dev", username: "dev@x" }} />);
     expect(html).not.toContain("Remote control");
     expect(html).not.toContain("flashing");

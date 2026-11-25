@@ -5,6 +5,7 @@ caller sends out of logs and spans. The SDK's own tracing and logging are off: t
 request ids and error texts (docs/superpowers/specs/2026-11-25-mcp-doors-design.md, section 4).
 """
 
+import asyncio
 import json
 import logging
 import time
@@ -12,6 +13,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Sequen
 from contextlib import AsyncExitStack, asynccontextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
+from functools import wraps
 from urllib.parse import urlparse
 
 from mcp.server import MCPServer
@@ -30,9 +32,13 @@ logger = logging.getLogger(__name__)
 tracer = trace.get_tracer("voltrieve.doors")
 
 MAX_BODY_BYTES = 64 * 1024
+BODY_SECONDS = 10.0
 MAX_DEPTH = 32
 CALLS_PER_MINUTE = 30
 REQUESTS_PER_CALL = 5  # what an older client sends to connect, beside the call itself
+# Anything else has no use here, and a subscription would be a stream without an end.
+METHODS = frozenset({"initialize", "notifications/initialized", "notifications/cancelled", "ping", "server/discover",
+                     "tools/list", "tools/call"})
 WELL_KNOWN = "/.well-known/oauth-protected-resource"
 NO_STORE = (b"cache-control", b"no-store")
 FAILED = "That did not work. Try again later."
@@ -162,7 +168,8 @@ class Door:
     # ---- the MCP server
 
     def _server(self, instructions: str) -> MCPServer:
-        server = MCPServer(f"voltrieve-{self.config.name}", instructions=instructions, version="1.0.0")
+        server = MCPServer(f"voltrieve-{self.config.name}", instructions=instructions, version="1.0.0",
+                           subscriptions=False)
         server.middleware[:] = [m for m in server.middleware if not isinstance(m, OpenTelemetryMiddleware)]
         server.middleware.append(self._rules)
         for tool in self._tools.values():
@@ -251,26 +258,34 @@ class Door:
                 _denied(self.config.name, exc.detail.lower().replace(" ", "_"))
             return await _reply(send, exc.status, {"error": exc.error, "error_description": exc.detail},
                                 self._challenge(exc))
-        body = await _read(receive, headers.get("content-length", ""))
+        who_and_app = (who.oid, who.app)
+        if not self._requests.allow(who_and_app):  # before the body, so that a broken one counts too
+            return await _reply(send, 429, {"error": "too_many_requests"}, [(b"retry-after", b"60")])
+        try:
+            async with asyncio.timeout(BODY_SECONDS):
+                body = await _read(receive, headers.get("content-length", ""))
+        except TimeoutError:
+            return await _reply(send, 408, {"error": "too_slow"})
         if body is None:
             return await _reply(send, 413, {"error": "too_large"})
         message = _message(body)
         if message is None:
             return await _reply(send, 400, _rpc_error(-32600, "Send one JSON-RPC message."))
-        calls = message.get("method") == "tools/call"
-        who_and_app = (who.oid, who.app)
-        if not self._requests.allow(who_and_app) or (calls and not self._rate.allow(who_and_app)):
+        if message.get("method") not in METHODS:
+            return await _reply(send, 404, _rpc_error(-32601, "There is no such method here.", message.get("id")))
+        calls = message["method"] == "tools/call"
+        if calls and not self._rate.allow(who_and_app):
             return await _reply(send, 429, {"error": "too_many_requests"}, [(b"retry-after", b"60")])
-        if calls and not self._gate.enter():
+        if calls and not self._gate.enter(who_and_app):
             return await _reply(send, 429, {"error": "busy"}, [(b"retry-after", b"2")])
         tokens = _caller.set(who), _headers.set(headers)
         try:
-            await self._app(scope, _replay(body), _silent(send))
+            await self._app(scope, _replay(body, receive), _no_store(send))
         finally:
             _caller.reset(tokens[0])
             _headers.reset(tokens[1])
             if calls:
-                self._gate.leave()
+                self._gate.leave(who_and_app)
 
     def _metadata(self) -> dict:
         return {
@@ -320,9 +335,8 @@ async def running(doors: Iterable[Door]) -> AsyncIterator[None]:
 
 def _quiet(fn: Callable[..., Awaitable[object]]):
     """The same function to the SDK, whose errors say only what we chose."""
-    import functools
 
-    @functools.wraps(fn)
+    @wraps(fn)
     async def run(*args, **kwargs):
         try:
             return await fn(*args, **kwargs)
@@ -370,8 +384,8 @@ def _tool_name(tool) -> str:
     return tool["name"] if isinstance(tool, dict) else tool.name
 
 
-def _rpc_error(code: int, message: str) -> dict:
-    return {"jsonrpc": "2.0", "id": None, "error": {"code": code, "message": message}}
+def _rpc_error(code: int, message: str, id: object = None) -> dict:
+    return {"jsonrpc": "2.0", "id": id if isinstance(id, int | str) and not isinstance(id, bool) else None, "error": {"code": code, "message": message}}
 
 
 def _message(body: bytes) -> dict | None:
@@ -407,23 +421,21 @@ async def _read(receive: Receive, length: str) -> bytes | None:
             return body
 
 
-def _replay(body: bytes) -> Receive:
+def _replay(body: bytes, rest: Receive) -> Receive:
+    """The body that was read, and then what really comes: a client that goes away is noticed."""
     sent = False
 
     async def receive() -> Message:
         nonlocal sent
         if sent:
-            # The SDK waits for a disconnect only while it answers; the answer is one piece.
-            import asyncio
-
-            await asyncio.Event().wait()
+            return await rest()
         sent = True
         return {"type": "http.request", "body": body, "more_body": False}
 
     return receive
 
 
-def _silent(send: Send) -> Send:
+def _no_store(send: Send) -> Send:
     async def wrapped(message: Message) -> None:
         if message["type"] == "http.response.start":
             kept = [h for h in message["headers"] if h[0].lower() != b"cache-control"]

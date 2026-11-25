@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     mcp_operations_client_id: str = ""
     mcp_car_client_id: str = ""
     mcp_customer_client_id: str = ""
+    mcp_runa_client_id: str = ""
     mcp_apps: str = ""  # the harnesses that may call: "client id=Name;client id=Name"
     mcp_allow_cli: bool = False  # the Azure CLI too, for scripts
     mcp_identifier_is_url: bool = False  # the address is the Application ID URI, else api://<client id>

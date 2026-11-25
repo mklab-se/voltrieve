@@ -24,7 +24,7 @@ Most agent samples stop at "it answers". This one answers the questions you meet
 | --- | --- | --- |
 | **Why host an agent in Foundry at all?** | For a managed identity, versions and a publishing path. Not for the loop, which is 348 lines of Python. | [Comparison](docs/why-foundry.md) |
 | **My client has its own tools. Now what?** | A prompt agent refuses per-request tools with a 400. An own loop or a hosted agent runs them, even one the server has never seen. | [Client tools](docs/why-foundry.md#1-what-happened-with-client-tools) |
-| **Can people use their own AI instead?** | Yes, through four MCP doors: operations, the car, dealers and customers. The same person gets different rights through each. The sign-in from each product is not tried yet. | [Bring your own AI](docs/bring-your-own-ai.md) |
+| **Can people use their own AI instead?** | Yes, through MCP doors: operations, the car, dealers and customers. The same person gets different rights through each. The sign-in from each product is not tried yet. | [Bring your own AI](docs/bring-your-own-ai.md) |
 | **Can a client send a photo, and where does it go?** | Straight into the model call, as an unstored turn. The conversation keeps the text only. No chat text goes to telemetry since Foundry's tracing was [disconnected](docs/decisions.md#closed-foundrys-tracing-is-disconnected). A new kind of attachment is one handler. | [Photos and attachments](docs/attachments.md) |
 | **How does the agent decide to use RAG?** | No classifier exists. The model decides in its first call, from words you control. | [The journey of a prompt](docs/prompt-journey.md) |
 | **Can it use several knowledge bases without calling them in vain?** | Yes: all three reached the right bases in every run. Two of them run the searches at the same time. | [Two knowledge bases](docs/why-foundry.md#6-two-knowledge-bases-who-chooses-and-who-runs-them-together) |
@@ -227,7 +227,7 @@ Not verified, for the dealer system and the orders:
 - The signing in Safari or Firefox (it was looked at in Chromium only) and after a real switch of tabs, and the masking of street addresses on real ones.
 - A token of Runa's own identity on the staff routes, other than in tests.
 
-Offline tests pass: `agent_core` 317, `api` 825, `doors` 33, `agents/hosted` 56, `search` 67, `services/dealer` 548, `services/dealer/site` 160, `services/insights` 726, `clients/cli` 62, `clients/web` 181, `clients/dashboard` 74, `clients/car` 490, `tests/photos` 229, `tests/contract` 187 and `infra/scripts/entra` 90, plus the 123 of `data/generator` in CI (they need a browser), the Bicep and script checks. Every suite runs in [CI](.github/workflows/tests.yml).
+Offline tests pass: `agent_core` 317, `api` 839, `doors` 42, `agents/hosted` 56, `search` 67, `services/dealer` 552, `services/dealer/site` 160, `services/insights` 726, `clients/cli` 62, `clients/web` 181, `clients/dashboard` 74, `clients/car` 505, `tests/photos` 229, `tests/contract` 187 and `infra/scripts/entra` 103, plus the 123 of `data/generator` in CI (they need a browser), the Bicep and script checks. Every suite runs in [CI](.github/workflows/tests.yml).
 
 Not verified:
 

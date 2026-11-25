@@ -1,7 +1,7 @@
 """Limits in memory. They start again with the process, and belong to one replica."""
 
 import time
-from collections import OrderedDict, deque
+from collections import Counter, OrderedDict, deque
 from collections.abc import Callable
 
 MAX_KEYS = 10_000
@@ -29,16 +29,19 @@ class RateLimit:
 
 
 class Gate:
-    """At most `size` calls at the same time, in all doors that share it. No queue."""
+    """At most `size` calls at the same time, in all doors that share it, and `each` of one caller. No queue."""
 
-    def __init__(self, size: int = 4):
-        self._free = size
+    def __init__(self, size: int = 4, each: int = 2):
+        self._size, self._each = size, each
+        self._inside: Counter[object] = Counter()
 
-    def enter(self) -> bool:
-        if self._free <= 0:
+    def enter(self, key: object) -> bool:
+        if self._inside.total() >= self._size or self._inside[key] >= self._each:
             return False
-        self._free -= 1
+        self._inside[key] += 1
         return True
 
-    def leave(self) -> None:
-        self._free += 1
+    def leave(self, key: object) -> None:
+        self._inside[key] -= 1
+        if self._inside[key] <= 0:
+            del self._inside[key]

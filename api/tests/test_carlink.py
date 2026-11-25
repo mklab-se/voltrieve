@@ -85,10 +85,14 @@ class Page:
     async def result(self, command, ok=True, **more):
         return await self.http.post(f"/car/link/{self.id}/results", json={"id": command["id"], "ok": ok, **more})
 
+    async def take(self, command):
+        return await self.http.post(f"/car/link/{self.id}/take", json={"id": command["id"]})
+
     async def answer(self, ok=True, **more) -> dict:
         """Take the next command and answer it."""
         name, command = await self.next()
         assert name == "command"
+        assert (await self.take(command)).status_code == 204
         assert (await self.result(command, ok, **more)).status_code == 204
         return command
 
@@ -136,7 +140,8 @@ async def test_the_link_is_a_private_stream_whose_first_event_is_its_id(page):
 @pytest.mark.parametrize("azp", ["web-app", "cli", "", AZURE_CLI_CLIENT_ID])
 async def test_only_the_car_may(client, make_token, azp):
     auth = {"Authorization": f"Bearer {make_token(azp=azp)}"}
-    for path, body in (("/car/link", None), ("/car/link/x/state", {"parked": True}), ("/car/link/x/results", {"id": "1", "ok": True})):
+    for path, body in (("/car/link", None), ("/car/link/x/state", {"parked": True}), ("/car/link/x/take", {"id": "1"}),
+                       ("/car/link/x/results", {"id": "1", "ok": True})):
         assert (await client.post(path, json=body, headers=auth)).status_code == 403
 
 
@@ -178,13 +183,16 @@ async def test_someone_elses_link_is_as_unknown_as_one_that_never_was(page, link
         await anna.state(parked=True)
         waiting = asyncio.create_task(honk(links))
         _, command = await anna.next()
-        for path, body in (("state", {"parked": False}), ("results", {"id": command["id"], "ok": True})):
+        for path, body in (("state", {"parked": False}), ("take", {"id": command["id"]}),
+                           ("results", {"id": command["id"], "ok": True})):
             theirs = await ben.http.post(f"/car/link/{anna.id}/{path}", json=body)
             unknown = await ben.http.post(f"/car/link/nothing/{path}", json=body)
             assert theirs.status_code == unknown.status_code == 404 and theirs.json() == unknown.json()
-        # An answer on their own link to a command of the other's is ignored.
+        # On their own link, a command of the other's cannot be taken, and an answer to it is ignored.
+        assert (await ben.take(command)).status_code == 409
         assert (await ben.result(command)).status_code == 204
         assert not waiting.done() and links.get("oid-anna", anna.id).parked
+        assert (await anna.take(command)).status_code == 204
         await anna.result(command)
         assert await waiting == "done"
 
@@ -271,26 +279,68 @@ async def test_a_refusal_before_the_car_is_asked_does_not_count(page, links):
         assert await waiting == "done"
 
 
-async def test_no_answer_in_time_and_a_late_one_is_ignored(page, links):
-    links._answer_seconds = 0.05
+async def test_a_command_that_is_not_taken_in_time_cannot_be_taken_any_more(page, links):
+    links._take_seconds = 0.05
     async with page() as car:
         await car.state(parked=True)
         assert await honk(links) == "no_answer"
         _, command = await car.next()
-        assert (await car.result(command)).status_code == 204
-        links._answer_seconds = 2
-        waiting = asyncio.create_task(honk(links))
-        _, second = await car.next()
-        await car.result(command)  # the old one once more
-        assert not waiting.done()
-        await car.result(second, ok=False, message="moving")
-        await car.result(second)  # a second answer changes nothing
-        assert await waiting == "moving"
+        assert (await car.take(command)).status_code == 409  # so the car does not do it
+        assert (await car.result(command)).status_code == 204  # and what it says is ignored
         assert links.get("oid-anna", car.id).waiting == {}
 
 
+async def test_a_command_is_taken_once_and_answered_once(page, links):
+    async with page() as car:
+        await car.state(parked=True)
+        waiting = asyncio.create_task(honk(links))
+        _, command = await car.next()
+        await car.result(command)  # before it is taken: ignored
+        await asyncio.sleep(0)
+        assert not waiting.done()
+        assert [(await car.take(command)).status_code for _ in range(2)] == [204, 409]
+        await car.result(command, ok=False, message="moving")
+        await car.result(command)
+        assert await waiting == "moving"
+        assert (await car.take(command)).status_code == 409
+
+
+async def test_the_answer_to_an_old_command_does_not_count_for_a_new_one(page, links):
+    links._result_seconds = 0.05
+    async with page() as car:
+        await car.state(parked=True)
+        waiting = asyncio.create_task(honk(links))
+        _, old = await car.next()
+        await car.take(old)
+        assert await waiting == "unsure"
+        links._result_seconds = 2
+        waiting = asyncio.create_task(honk(links))
+        _, new = await car.next()
+        await car.take(new)
+        await car.result(old)
+        assert not waiting.done()
+        await car.result(new)
+        assert await waiting == "done"
+
+
+async def test_the_time_to_answer_starts_when_the_command_is_taken(page, links):
+    links._take_seconds, links._result_seconds = 0.1, 2
+    async with page() as car:
+        await car.state(parked=True)
+        waiting = asyncio.create_task(honk(links))
+        _, command = await car.next()
+        await car.take(command)
+        await asyncio.sleep(0.2)
+        await car.result(command)
+        assert await waiting == "done"
+
+
+def test_the_times():
+    assert (carlink.TAKE_SECONDS, carlink.RESULT_SECONDS) == (5, 2)
+
+
 async def test_a_command_that_nobody_waits_for_is_not_sent(links):
-    links._answer_seconds = 0.01
+    links._take_seconds = 0.01
     link = links.open("oid-anna", 60)
     link.parked = True
     stream = links.events(link)
@@ -309,7 +359,7 @@ async def test_a_cancelled_call_leaves_nothing(page, links):
         with pytest.raises(asyncio.CancelledError):
             await waiting
         assert links.get("oid-anna", car.id).waiting == {}
-        assert (await car.result(command)).status_code == 204
+        assert (await car.take(command)).status_code == 409
 
 
 # ---- the end of a link
@@ -325,6 +375,16 @@ async def test_a_car_that_leaves_takes_its_link_and_its_waiting_calls_along(page
         assert await honk(links) == "not_linked"
         assert (await car.state(parked=True)).status_code == 404
         assert links._links == {}
+
+
+async def test_a_car_that_leaves_after_it_took_a_command_may_have_done_it(page, links):
+    async with page() as car:
+        await car.state(parked=True)
+        waiting = asyncio.create_task(honk(links))
+        _, command = await car.next()
+        await car.take(command)
+        await car.leave()
+        assert await waiting == "unsure"
 
 
 async def test_nothing_is_kept_for_a_car_that_comes_later(page, links):
@@ -381,11 +441,12 @@ def test_fifty_links_in_all_and_the_oldest_goes(links):
 BAD_STATES = [{}, {"parked": 1}, {"parked": "true"}, {"parked": True, "speed_kmh": 3}, {"parked": True, "odometer_km": -1},
               {"parked": True, "odometer_km": 1.5}, {"parked": True, "odometer_km": True}, {"parked": True, "wipers": "MARKER"},
               {"parked": True, "registration": "MARKER"}, ["MARKER"]]
+BAD_TAKES = [{}, {"id": 1}, {"id": "MARKER MARKER"}, {"id": "1", "now": "MARKER"}]
 BAD_RESULTS = [{}, {"id": "1"}, {"id": "1", "ok": "yes"}, {"id": "1", "ok": False, "message": "MARKER do this"},
                {"id": "MARKER MARKER", "ok": True}, {"id": "1", "ok": True, "app": "MARKER"}, {"id": 1, "ok": True}]
 
 
-@pytest.mark.parametrize("path,body", [("state", b) for b in BAD_STATES] + [("results", b) for b in BAD_RESULTS])
+@pytest.mark.parametrize("path,body", [("state", b) for b in BAD_STATES] + [("take", b) for b in BAD_TAKES] + [("results", b) for b in BAD_RESULTS])
 async def test_a_body_that_is_not_as_agreed_is_422_and_is_not_repeated(page, path, body):
     async with page() as car:
         r = await car.http.post(f"/car/link/{car.id}/{path}", json=body)

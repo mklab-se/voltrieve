@@ -1,4 +1,4 @@
-"""The MCP doors of the API: operations, the car and the customer. Each has its own tokens, tools and rules.
+"""The MCP doors of the API: operations, the car, the customer and Runa. Each has its own tokens, tools and rules.
 
 A door exists only when its client id is in the settings. The dealer's door is in the dealer service.
 """
@@ -8,7 +8,7 @@ from voltrieve_doors import Door, DoorConfig, Gate
 from voltrieve_doors.limits import RateLimit
 
 from app.clients import AZURE_CLI_CLIENT_ID
-from app.doors import car, customer, operations
+from app.doors import car, customer, operations, runa
 from app.logging_setup import correlation_id
 from app.settings import Settings
 
@@ -42,16 +42,18 @@ def door_config(settings: Settings, name: str, client_id: str, scopes: tuple[str
 
 
 def build_doors(app: FastAPI, settings: Settings) -> list[Door]:
-    gate = Gate(CALLS_AT_ONCE)
+    gate, runas = Gate(CALLS_AT_ONCE), Gate(CALLS_AT_ONCE)  # a question takes long, and must not fill the others
     doors = []
     for module, client_id in (
         (operations, settings.mcp_operations_client_id),
         (car, settings.mcp_car_client_id),
         (customer, settings.mcp_customer_client_id),
+        (runa, settings.mcp_runa_client_id),
     ):
         if not (settings.mcp_api_url and client_id):
             continue
         config = door_config(settings, module.NAME, client_id, module.SCOPES)
-        doors.append(Door(config, module.tools(app), module.INSTRUCTIONS, gate=gate, rate=RateLimit(30),
+        doors.append(Door(config, module.tools(app), module.INSTRUCTIONS, gate=runas if module is runa else gate,
+                          rate=RateLimit(30),
                           correlation=correlation_id.get))
     return doors

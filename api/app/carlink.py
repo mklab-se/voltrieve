@@ -30,7 +30,8 @@ logger = logging.getLogger(__name__)
 
 KEEPALIVE_SECONDS = 10.0
 LINK_SECONDS = 30 * 60.0
-ANSWER_SECONDS = 5.0
+TAKE_SECONDS = 5.0  # until the car has taken a command
+RESULT_SECONDS = 2.0  # and from then on, until it says what it did
 LINKS_PER_PERSON = 3
 MAX_LINKS = 50
 COMMANDS_PER_MINUTE = 6
@@ -47,12 +48,26 @@ class CarState(BaseModel):
     wipers: Wipers | None = None
 
 
+class CarTake(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    id: str = Field(pattern=ID_PATTERN)
+
+
 class CarResult(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
     id: str = Field(pattern=ID_PATTERN)
     ok: bool
     message: CarCode | None = None
+
+
+@dataclass(eq=False)
+class Waiting:
+    """A call that waits for the car."""
+
+    taken: asyncio.Future = field(default_factory=lambda: asyncio.get_running_loop().create_future())
+    code: asyncio.Future = field(default_factory=lambda: asyncio.get_running_loop().create_future())
 
 
 @dataclass(eq=False)
@@ -65,12 +80,17 @@ class Link:
     wipers: Wipers | None = field(default=None, repr=False)
     closed: str = ""  # why
     queue: asyncio.Queue = field(default_factory=asyncio.Queue, repr=False)
-    waiting: dict[str, asyncio.Future] = field(default_factory=dict, repr=False)
+    waiting: dict[str, Waiting] = field(default_factory=dict, repr=False)
 
 
 class CarLinks:
-    def __init__(self, clock: Callable[[], float] = time.monotonic, answer_seconds: float = ANSWER_SECONDS):
-        self._clock, self._answer_seconds = clock, answer_seconds
+    def __init__(
+        self,
+        clock: Callable[[], float] = time.monotonic,
+        take_seconds: float = TAKE_SECONDS,
+        result_seconds: float = RESULT_SECONDS,
+    ):
+        self._clock, self._take_seconds, self._result_seconds = clock, take_seconds, result_seconds
         self._links: dict[str, Link] = {}  # the oldest first
         self._rate = RateLimit(COMMANDS_PER_MINUTE, clock=clock)
 
@@ -90,10 +110,15 @@ class CarLinks:
             return
         link.closed = why
         link.queue.put_nowait(None)  # the stream ends
-        for future in link.waiting.values():
-            if not future.done():
-                future.set_result("gone")
+        for waiting in link.waiting.values():
+            for future in (waiting.taken, waiting.code):
+                if not future.done():
+                    future.set_result("gone")
         logger.info("Car link closed: %d open", len(self._links))
+
+    def close_all(self) -> None:
+        for link in list(self._links.values()):
+            self.close(link)
 
     def get(self, oid: str, link_id: str) -> Link | None:
         link = self._links.get(link_id)
@@ -114,11 +139,19 @@ class CarLinks:
         if state.wipers is not None:
             link.wipers = state.wipers
 
+    def take(self, link: Link, command_id: str) -> bool:
+        """The car is about to do this. False when nobody waits for it any more, or it is taken already."""
+        waiting = link.waiting.get(command_id)
+        if waiting is None or waiting.taken.done():
+            return False
+        waiting.taken.set_result("taken")
+        return True
+
     def answer(self, link: Link, result: CarResult) -> None:
-        """What the car did. One that is late, repeated or never asked for is ignored."""
-        future = link.waiting.get(result.id)
-        if future and not future.done():
-            future.set_result("done" if result.ok else result.message or "failed")
+        """What the car did. One that is late, repeated, not taken or never asked for is ignored."""
+        waiting = link.waiting.get(result.id)
+        if waiting and waiting.taken.done() and not waiting.code.done():
+            waiting.code.set_result("done" if result.ok else result.message or "failed")
 
     async def command(self, oid: str, name: str, arguments: dict, app: str) -> str:
         """Ask the car, and return a code: "done", or why not."""
@@ -130,13 +163,14 @@ class CarLinks:
         if not self._rate.allow(oid):
             return "too_many"
         command_id = secrets.token_urlsafe(16)
-        future = asyncio.get_running_loop().create_future()
-        link.waiting[command_id] = future
+        waiting = link.waiting[command_id] = Waiting()
         link.queue.put_nowait({"id": command_id, "name": name, "arguments": arguments, "app": app})
         try:
-            return await asyncio.wait_for(future, self._answer_seconds)
-        except TimeoutError:
-            return "no_answer"
+            taken = await _in_time(waiting.taken, self._take_seconds)
+            if taken != "taken":
+                return taken or "no_answer"
+            code = await _in_time(waiting.code, self._result_seconds)
+            return "unsure" if code in (None, "gone") else code
         finally:
             link.waiting.pop(command_id, None)
 
@@ -156,6 +190,11 @@ class CarLinks:
             if command and command["id"] in link.waiting:
                 yield format_event(AgentEvent("command", command))
         yield format_event(AgentEvent("end", {"reason": link.closed}))
+
+
+async def _in_time(future: asyncio.Future, seconds: float) -> str | None:
+    await asyncio.wait([future], timeout=seconds)
+    return future.result() if future.done() else None
 
 
 class LinkResponse(StreamingResponse):
@@ -215,6 +254,13 @@ def build_car_router() -> APIRouter:
         request: Request, link: Link = Depends(_link), body: CarState = Depends(json_body(CarState))
     ) -> None:
         request.app.state.car_links.state(link, body)
+
+    @router.post("/{link}/take", status_code=204)
+    async def take(
+        request: Request, link: Link = Depends(_link), body: CarTake = Depends(json_body(CarTake))
+    ) -> None:
+        if not request.app.state.car_links.take(link, body.id):
+            raise HTTPException(409, "Nobody waits for this command")
 
     @router.post("/{link}/results", status_code=204)
     async def results(

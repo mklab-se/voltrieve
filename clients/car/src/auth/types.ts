@@ -1,4 +1,4 @@
-// Copied from clients/web; keep the two alike.
+// Copied from clients/web; keep the two alike. Only the car has getTokenSilently and SignInNeeded.
 export interface AuthSession {
   name: string;
   username: string;
@@ -13,4 +13,13 @@ export interface Auth {
   signOut(): Promise<void>;
   /** A fresh access token for the Web API. */
   getToken(): Promise<string>;
+  /** The same, and never leaves the page for it: a SignInNeeded instead. */
+  getTokenSilently(): Promise<string>;
+}
+
+/** There is no token without the user. */
+export class SignInNeeded extends Error {
+  constructor() {
+    super("Sign in again.");
+  }
 }

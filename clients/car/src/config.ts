@@ -1,4 +1,4 @@
-// Copied from clients/web; keep the two alike.
+// Copied from clients/web; keep the two alike. Only the car has remoteControl.
 export interface AppConfig {
   apiUrl: string;
   tenantId: string;
@@ -6,6 +6,8 @@ export interface AppConfig {
   scope: string;
   /** Dev-only mock sign-in; always false in production builds. */
   fakeAuth: boolean;
+  /** The menu has the switch for remote control. */
+  remoteControl: boolean;
 }
 
 export type ConfigResult = { ok: true; config: AppConfig } | { ok: false; missing: string[] };
@@ -28,6 +30,7 @@ export function readConfig(env: Env, isDev: boolean): ConfigResult {
       clientId: env.VITE_ENTRA_CLIENT_ID?.trim() ?? "",
       scope: env.VITE_API_SCOPE?.trim() ?? "",
       fakeAuth,
+      remoteControl: env.VITE_REMOTE_CONTROL === "true",
     },
   };
 }

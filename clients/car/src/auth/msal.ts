@@ -1,11 +1,11 @@
-// Copied from clients/web; keep the two alike.
+// Copied from clients/web; keep the two alike. Only the car has getTokenSilently.
 import {
   InteractionRequiredAuthError,
   PublicClientApplication,
   type AccountInfo,
 } from "@azure/msal-browser";
 import type { AppConfig } from "../config";
-import type { Auth, AuthSession } from "./types";
+import { SignInNeeded, type Auth, type AuthSession } from "./types";
 
 function toSession(a: AccountInfo): AuthSession {
   return { name: a.name ?? a.username, username: a.username };
@@ -51,6 +51,14 @@ export function createMsalAuth(config: AppConfig): Auth {
           return new Promise<string>(() => {});
         }
         throw e;
+      }
+    },
+    async getTokenSilently() {
+      if (!account) throw new SignInNeeded();
+      try {
+        return (await app.acquireTokenSilent({ ...request, account })).accessToken;
+      } catch (e) {
+        throw e instanceof InteractionRequiredAuthError ? new SignInNeeded() : e;
       }
     },
   };

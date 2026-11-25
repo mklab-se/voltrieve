@@ -6,9 +6,13 @@ eval "$(azd env get-values)"
 for v in API_URL TENANT_ID CAR_CLIENT_ID API_CLIENT_ID; do
   eval "[ -n \"\${$v:-}\" ]" || { echo "prepackage: $v is not set in the azd environment" >&2; exit 1; }
 done
+# Remote control needs the car's MCP door.
+remote=false
+[ "${MCP_DOORS:-false}" != true ] || remote=true
 cat > clients/car/.env.production <<ENV
 VITE_API_URL=$API_URL
 VITE_ENTRA_TENANT_ID=$TENANT_ID
 VITE_ENTRA_CLIENT_ID=$CAR_CLIENT_ID
 VITE_API_SCOPE=api://$API_CLIENT_ID/access_as_user
+VITE_REMOTE_CONTROL="$remote"
 ENV

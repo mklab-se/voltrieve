@@ -66,13 +66,19 @@ DOORS = (
     DoorApp(
         "customer",
         "api",
-        (
-            Scope("customer.tools", "search documents and parts, see stock and prices, and book a test drive"),
-            Scope("runa.ask", "ask Runa"),
-        ),
+        (Scope("customer.tools", "search documents and parts, see stock and prices, and book a test drive"),),
         (
             Role("Customer", "Can use the customer's tools through the MCP door."),
             Role("TestDrive.Book", "Can book test drives through the MCP door."),
+        ),
+    ),
+    DoorApp(
+        "runa",
+        "api",
+        (Scope("runa.ask", "ask Runa"),),
+        (
+            Role("Customer", "Can ask Runa through the MCP door."),
+            Role("TestDrive.Book", "Can book test drives through Runa."),
         ),
     ),
     DoorApp(
@@ -222,12 +228,13 @@ def setup_doors(
     assert tester is not None
     client_ids: dict[str, str] = {}
     sp_ids: dict[str, str] = {}
-    all_urls = True
+    without_url: set[str] = set()  # the hosts with a door that has no address as its identifier
     for door in DOORS:
         app = ensure_application(g, door.display_name, door_application_body(door), sleep)
         client_ids[door.name] = app["appId"]
         url = address(door, hosts[door.host], domains)
-        all_urls = all_urls and url is not None
+        if url is None:
+            without_url.add(door.host)
         identifiers = [f"api://{app['appId']}"] + ([url] if url else [])
         # After the first PATCH: the app takes v2 tokens by then, and its scopes exist.
         for body in ({"identifierUris": identifiers}, door_pre_authorized_body(door, allow_cli)):
@@ -255,5 +262,6 @@ def setup_doors(
 
     return {f"MCP_{name.upper()}_CLIENT_ID": client_id for name, client_id in client_ids.items()} | {
         "MCP_APPS": ";".join(apps),
-        "MCP_IDENTIFIER_IS_URL": "true" if all_urls else "false",
+        "MCP_API_IDENTIFIER_IS_URL": "false" if "api" in without_url else "true",
+        "MCP_DEALER_IDENTIFIER_IS_URL": "false" if "dealer" in without_url else "true",
     }

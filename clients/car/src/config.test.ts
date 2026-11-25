@@ -1,4 +1,4 @@
-// Copied from clients/web; keep the two alike.
+// Copied from clients/web; keep the two alike. Only the car has remote control.
 import { describe, expect, it } from "vitest";
 import { readConfig } from "./config";
 
@@ -26,6 +26,14 @@ describe("readConfig", () => {
       ok: true,
       config: { fakeAuth: true },
     });
+  });
+
+  it("has remote control only when it is set to true", () => {
+    const on = (VITE_REMOTE_CONTROL?: string) => {
+      const result = readConfig({ ...full, VITE_REMOTE_CONTROL }, false);
+      return result.ok && result.config.remoteControl;
+    };
+    expect([undefined, "", "false", "1", "TRUE", "true"].map(on)).toEqual([false, false, false, false, false, true]);
   });
 
   it("ignores fake auth in production", () => {

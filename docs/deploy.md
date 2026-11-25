@@ -79,7 +79,7 @@ What each hook does:
 | `hooks/preprovision.sh` | Before each provision | Creates or updates the app registrations (`voltrieve-api`, `voltrieve-cli`, `voltrieve-web`, `voltrieve-car`, `voltrieve-dashboard`, `voltrieve-dealer`, `voltrieve-dealer-site`), the tester, roles and consent, and stores the ids in the azd environment. Idempotent. Runs interactively so the password is visible. |
 | `hooks/postprovision.sh` | After each provision | Checks that `az` and `azd` are the same user. Uploads the documents to their two containers, applies the search objects of both knowledge bases, runs both indexers, gives the API identity `Dealer.Access`, and adds the redirect URI of each of the three sites (`set-spa-redirect --app web|car|dashboard`) and of the dealer page (`set-spa-redirect --app dealer`, with the address of the dealer service, which is the page's address). Each step retries up to 10 times, 60 seconds apart, for role propagation. |
 | `hooks/web-prepackage.sh` | Before the web package | Writes `clients/web/.env.production` with public values only. |
-| `hooks/car-prepackage.sh` | Before the car package | Writes `clients/car/.env.production` with public values only. |
+| `hooks/car-prepackage.sh` | Before the car package | Writes `clients/car/.env.production` with public values only, and whether the car has remote control (`MCP_DOORS`). |
 | `hooks/dashboard-prepackage.sh` | Before the dashboard package | Writes `clients/dashboard/.env.production` with public values only. |
 | `hooks/postup.sh` | After `azd up` | Runs the search smoke test. It runs last so that a retrieval miss cannot block a deployment. |
 
@@ -278,15 +278,16 @@ Off by default: without `MCP_DOORS` nothing of this exists. See [Bring your own 
 | `MCP_DOORS` | You, `true` | The registrations of the doors and the harnesses, and the doors |
 | `MCP_ALLOW_CLI` | You, `true` in a development environment only | Lets scripts call the doors with a token from the Azure CLI |
 | `API_HOST`, `DEALER_HOST` | You, optional | Host names of your own, such as `api.voltrieve.example`, on a domain that is verified in the tenant. A harness needs them to sign in |
-| `DEALER_DOOR_CITIES` | The hook, when empty | Which dealer city a person or an application has: `oid=City;oid=City` |
-| `MCP_..._CLIENT_ID`, `MCP_APPS`, `MCP_IDENTIFIER_IS_URL` | The hook | The registrations, and whether the address could be used as the id |
+| `DEALER_DOOR_CITIES` | The hook, when empty | Which dealer city a person or an application has: `oid=City;oid=City`. The hook stops the provision when an entry is wrong. The dealer service leaves a wrong entry out |
+| `MCP_..._CLIENT_ID`, `MCP_APPS` | The hook | The registrations of the five doors (operations, car, customer, Runa and dealer), and of the harnesses |
+| `MCP_API_IDENTIFIER_IS_URL`, `MCP_DEALER_IDENTIFIER_IS_URL` | The hook | Whether the address could be used as the id, for each of the two services. One host is enough for the doors of that service |
 
 Order:
 
 1. `azd env set MCP_DOORS true`, then `azd provision`, and `scripts/deploy-agents.sh` at once, as after every provision.
 2. `azd deploy dealer`, `azd deploy api`, and the car.
 3. `uv run scripts/doors_check.py` (needs `MCP_ALLOW_CLI`).
-4. For a name of your own: `scripts/check-host.sh api <host>` prints the DNS records, and the owner of the domain makes them. Nothing here changes DNS. When it says that they are there, set `API_HOST` and `DEALER_HOST`, and run step 1 again.
+4. For a name of your own: `scripts/check-host.sh api <host>` prints the DNS records, and the owner of the domain makes them. Nothing here changes DNS. When it says that they are there, set `API_HOST` or `DEALER_HOST`, or both, and run step 1 again.
 
 ## Redeploying
 
@@ -348,7 +349,7 @@ UPN="$(azd env get-value TEST_USER_UPN)"
 az ad user delete --id "$UPN"
 
 for name in voltrieve-api voltrieve-cli voltrieve-web voltrieve-car voltrieve-dashboard voltrieve-dealer voltrieve-dealer-site \
-  voltrieve-mcp-operations voltrieve-mcp-car voltrieve-mcp-customer voltrieve-mcp-dealer \
+  voltrieve-mcp-operations voltrieve-mcp-car voltrieve-mcp-customer voltrieve-mcp-runa voltrieve-mcp-dealer \
   voltrieve-harness-claude voltrieve-harness-chatgpt voltrieve-harness-vscode voltrieve-harness-copilot; do
   az ad app delete --id "$(az ad app list --display-name "$name" --query '[0].id' -o tsv)"
 done

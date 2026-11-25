@@ -4,7 +4,7 @@
 # ///
 """The deployed MCP doors, from a scripted MCP client: what works and what is refused.
 
-    uv run scripts/doors_check.py [--doors operations,car,dealer,customer] [--ask] [--out FILE]
+    uv run scripts/doors_check.py [--doors operations,car,dealer,customer,runa] [--ask] [--out FILE]
 
 It signs in as you, with tokens from the az CLI, so MCP_ALLOW_CLI must be true in the environment and you
 need the roles of the doors. It changes the stock of your own city by one and back. It plays a car of its
@@ -30,13 +30,13 @@ from mcp.client.streamable_http import streamable_http_client
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from voltrieve_client import _az_token, api_token, api_url, azd_value, parse_sse  # noqa: E402
+from voltrieve_client import TEST_HEADER, _az_token, api_token, api_url, azd_value, parse_sse  # noqa: E402
 
-SCOPES = {"operations": "operations.read", "car": "car.remote", "dealer": "dealer.use", "customer": "customer.tools"}
 EXPECTED = {
     "operations": {"service_health", "recent_turns", "problem_turns", "explain_turn", "what_people_ask"},
     "car": {"car_status", "honk", "flash_lights", "set_wipers"},
     "dealer": {"my_stock", "change_stock", "open_orders", "deliver_order"},
+    "runa": {"ask_runa"},
 }
 HEADERS = {"content-type": "application/json", "accept": "application/json, text/event-stream",
            "mcp-protocol-version": "2025-11-25"}
@@ -79,7 +79,7 @@ class Door:
 
     def __init__(self, door: str, bearer: str, mode: str = "auto"):
         self.url, self.mode = f"{base(door)}/mcp/{door}", mode
-        self.http = httpx2.AsyncClient(headers={"authorization": f"Bearer {bearer}"}, timeout=120)
+        self.http = httpx2.AsyncClient(headers={"authorization": f"Bearer {bearer}", **TEST_HEADER}, timeout=120)
 
     async def __aenter__(self) -> Client:
         self.client = Client(streamable_http_client(self.url, http_client=self.http), mode=self.mode)
@@ -163,6 +163,7 @@ class PlayedCar:
                         self.seen.append(data)
                         answer = await self.on_command(data)
                         if answer is not None:
+                            (await self.http.post(f"/car/link/{self.link}/take", json={"id": data["id"]})).raise_for_status()
                             await self.http.post(f"/car/link/{self.link}/results", json={"id": data["id"], **answer})
                 buffer = []
 
@@ -216,13 +217,12 @@ async def dealer(bearer: str) -> None:
     async with Door("dealer", bearer) as c:
         ok, before = await call(c, "my_stock")
         check("dealer: my stock", ok, before[:200])
-        ok, text = await call(c, "change_stock", {"model": "spark", "change": 1, "city": "Stockholm"})
-        check("dealer: one car more, and an extra argument changes nothing", ok or "city" in text, text[:120])
-        if not ok:
-            ok, text = await call(c, "change_stock", {"model": "spark", "change": 1})
-            check("dealer: one car more", ok, text[:120])
-        ok, text = await call(c, "change_stock", {"model": "spark", "change": -1})
-        check("dealer: and back", ok, text[:120])
+        city = json.loads(before)["city"] if ok else ""
+        more, text = await call(c, "change_stock", {"model": "spark", "change": 1, "city": "Nowhere"})
+        check("dealer: one car more, in the own city whatever is said", more and f'"{city}"' in text, text[:120])
+        if more:  # only then is there one to take back
+            ok, text = await call(c, "change_stock", {"model": "spark", "change": -1})
+            check("dealer: and back", ok, text[:120] if ok else f"THE STOCK OF SPARK IN {city} IS ONE TOO HIGH: {text[:80]}")
         ok, after = await call(c, "my_stock")
         check("dealer: the stock is as before", before == after)
         ok, text = await call(c, "change_stock", {"model": "spark", "change": 5})
@@ -236,7 +236,7 @@ async def dealer(bearer: str) -> None:
         check("dealer: nothing is delivered by a client that cannot ask", not ok, text[:120])
 
 
-async def customer(bearer: str, ask: bool) -> None:
+async def customer(bearer: str) -> None:
     async with Door("customer", bearer) as c:
         for name, arguments, expected in (
             ("my_car", {}, "Spark"),
@@ -248,16 +248,21 @@ async def customer(bearer: str, ask: bool) -> None:
         ):
             ok, text = await call(c, name, arguments)
             check(f"customer: {name}", ok and expected.lower() in text.lower() and "sig=" not in text, f"{len(text)} characters")
-        if ask:
-            ok, text = await call(c, "ask_runa", {"question": "Which wiper blades fit my car?"})
-            check("customer: ask_runa about my car", ok and "VP-" in text, text[:300].replace("\n", " "))
-            ok, text = await call(c, "ask_runa", {"question": "I want to order a Fjord to Storgatan 1."})
-            check("customer: ask_runa does not order", ok and "VO-" not in text, text[:300].replace("\n", " "))
+
+
+async def runa(bearer: str, ask: bool) -> None:
+    if not ask:
+        return
+    async with Door("runa", bearer) as c:
+        ok, text = await call(c, "ask_runa", {"question": "Which wiper blades fit my car?"})
+        check("runa: a question about my car", ok and "VP-" in text, text[:300].replace("\n", " "))
+        ok, text = await call(c, "ask_runa", {"question": "I want to order a Fjord to Storgatan 1."})
+        check("runa: no order is made", ok and "VO-" not in text, text[:300].replace("\n", " "))
 
 
 async def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--doors", default="operations,car,dealer,customer")
+    parser.add_argument("--doors", default="operations,car,dealer,customer,runa")
     parser.add_argument("--ask", action="store_true")
     parser.add_argument("--out", type=Path)
     args = parser.parse_args()
@@ -275,7 +280,9 @@ async def main() -> None:
             case "dealer":
                 await dealer(tokens[door])
             case "customer":
-                await customer(tokens[door], args.ask)
+                await customer(tokens[door])
+            case "runa":
+                await runa(tokens[door], args.ask)
     note(f"{sum(x.startswith(('ok', 'FAILED')) for x in lines)} checks, {failed} failed")
     if args.out:
         args.out.write_text("\n".join(lines) + "\n")

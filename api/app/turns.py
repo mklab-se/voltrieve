@@ -213,6 +213,7 @@ class _Run:
         self.recorder = recorder
         self.private = private
         self.text = ""  # the answer so far, to find the documents it cites
+        self.task: asyncio.Task  # what feeds it, set when it starts
 
     async def emit(self, event: AgentEvent) -> None:
         if event.type == "delta":
@@ -282,10 +283,12 @@ class TurnService:
         """
         return self._drain(self._begin(job))
 
-    async def answer(self, job: Job, seconds: float) -> Answer | None:
+    async def answer(self, job: Job, seconds: float, ended: Callable[[], None]) -> Answer | None:
         """One whole turn, for a caller without a stream. None when it gave no answer. After `seconds` it
-        is a TimeoutError, and the turn runs on to its end, as when a client disconnects."""
+        is a TimeoutError, and the turn runs on to its end, as when a client disconnects. Then, and not
+        before, `ended` is called."""
         run = self._begin(job)
+        run.task.add_done_callback(lambda _: ended())
         titles: list[str] = []
         done = approved = False
         async with asyncio.timeout(seconds):
@@ -323,9 +326,9 @@ class TurnService:
         # A turn_expired job runs nothing, and its conversation id is unvalidated client input.
         if job.conversation_id is not None and not job.turn_expired:
             self._running[job.conversation_id] = run
-        task = asyncio.create_task(self._execute(run, job, correlation_id.get()))
-        self._tasks.add(task)
-        task.add_done_callback(self._tasks.discard)
+        run.task = asyncio.create_task(self._execute(run, job, correlation_id.get()))
+        self._tasks.add(run.task)
+        run.task.add_done_callback(self._tasks.discard)
         return run
 
     async def drain(self, timeout: float = 20.0) -> None:

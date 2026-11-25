@@ -167,6 +167,72 @@ async def test_limits():
             assert (await c.post(OPS, json=call, headers=h)).status_code == 200  # the place is free again
 
 
+async def test_one_person_cannot_take_every_place(world):
+    call = rpc("tools/call", {"name": "slow", "arguments": {}})
+    h = {**H, "mcp-protocol-version": "2025-11-25"}
+    async with world.http(token()) as alice, world.http(token(oid="bob")) as bob:
+        several = asyncio.gather(*[alice.post(OPS, json=call, headers=h) for _ in range(4)])
+        await asyncio.sleep(0.1)
+        assert (await bob.post(OPS, json=call, headers=h)).status_code == 200
+        assert sorted(r.status_code for r in await several) == [200, 200, 429, 429]
+
+
+@pytest.mark.parametrize("method", ["subscriptions/listen", "prompts/list", "resources/list", "logging/setLevel", "completion/complete", ""])
+async def test_other_methods_are_refused(world, method):
+    for version in ("2026-07-28", "2025-11-25"):
+        async with world.http(token()) as c:
+            r = await asyncio.wait_for(c.post(OPS, json=rpc(method), headers={**H, "mcp-protocol-version": version, "mcp-method": method}), 5)
+        assert r.status_code == 404 and r.json()["error"]["message"] == "There is no such method here."
+        assert r.json()["id"] == "1"
+
+
+async def test_a_broken_body_counts_and_a_slow_one_ends(world, monkeypatch):
+    monkeypatch.setattr("voltrieve_doors.door.BODY_SECONDS", 0.05)
+
+    async def slow():
+        yield b"{"
+        await asyncio.sleep(5)
+
+    async with world.http(token()) as c:
+        codes = {(await c.post(OPS, content=b"x" * 70_000, headers=H)).status_code for _ in range(149)}
+        assert codes == {413}
+    sent = []
+
+    async def receive():
+        await asyncio.sleep(5)
+
+    async def send(message):
+        sent.append(message)
+
+    scope = {"type": "http", "method": "POST", "path": OPS, "headers": [(b"host", HOST.encode()), (b"authorization", f"Bearer {token()}".encode())]}
+    await world.doors[0](scope, receive, send)
+    assert sent[0]["status"] == 408
+    await world.doors[0](scope, receive, send)
+    assert sent[2]["status"] == 429
+
+
+async def test_a_client_that_goes_away_frees_its_place(world):
+    """With a server, since only that tells of a disconnect."""
+    gone = asyncio.Event()
+    body = json.dumps(rpc("tools/call", {"name": "slow", "arguments": {}})).encode()
+    messages = [{"type": "http.request", "body": body, "more_body": False}]
+
+    async def receive():
+        if messages:
+            return messages.pop()
+        gone.set()
+        return {"type": "http.disconnect"}
+
+    async def send(message):
+        pass
+
+    scope = {"type": "http", "method": "POST", "path": OPS, "query_string": b"", "http_version": "1.1", "scheme": "https", "server": (HOST, 443),
+             "headers": [(b"host", HOST.encode()), (b"authorization", f"Bearer {token()}".encode()), (b"mcp-protocol-version", b"2025-11-25"),
+                         *[(k.encode(), v.encode()) for k, v in H.items()]]}
+    await asyncio.wait_for(world.doors[0](scope, receive, send), 5)
+    assert world.doors[0]._gate._inside.total() == 0
+
+
 async def test_failures_say_nothing(world):
     async with Session(world, token()) as c:
         assert (await c.call_tool("breaks", {"text": "MARKERARG"})).content[0].text.endswith("That did not work. Try again later.")

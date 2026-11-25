@@ -160,13 +160,19 @@ function carLink(req, res) {
   });
 }
 
-/** The state of a car, or what it did. */
+/** The state of a car, a command that it takes, or what it did. */
 function fromCar(res, path, body) {
   const [, , , id, what] = path.split("/");
   const link = links.get(id);
   if (!link) return json(res, 404, { detail: "Unknown car link" });
+  const command = commands.get(body.id);
   if (what === "state") link.parked = body.parked;
-  else commands.get(body.id)?.(body);
+  if (what === "results" && command?.taken) command.resolve({ ok: body.ok, message: body.message });
+  if (what === "take") {
+    if (!command || command.taken) return json(res, 409, { detail: "Nobody waits for this command" });
+    command.taken = true;
+    setTimeout(command.resolve, 2000, { error: "unsure" });
+  }
   return res.writeHead(204, CORS).end();
 }
 
@@ -177,15 +183,17 @@ async function carCommand(res, { name = "honk", arguments: args = { times: 1 }, 
   if (!link.parked) return json(res, 409, { error: "moving" });
   const id = randomUUID();
   const answer = new Promise((resolve) => {
-    commands.set(id, resolve);
-    setTimeout(resolve, 5000, { error: "no_answer" });
+    const command = { resolve, taken: false };
+    commands.set(id, command);
+    setTimeout(() => command.taken || resolve({ error: "no_answer" }), 5000);
   });
   link.send("command", { id, name, arguments: args, app });
-  json(res, 200, await answer);
+  const result = await answer;
   commands.delete(id);
+  json(res, 200, result);
 }
 
-const CAR_POST = /^\/car\/link\/[^/]+\/(state|results)$/;
+const CAR_POST = /^\/car\/link\/[^/]+\/(state|take|results)$/;
 const PATHS = ["/chat", "/chat/tool-results", "/attachments", "/car/link", "/mock/car-command"];
 
 async function handle(req, res) {

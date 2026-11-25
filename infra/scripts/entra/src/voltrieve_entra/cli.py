@@ -5,15 +5,18 @@ import re
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 from azure.identity import AzureCliCredential
 
 from .apps import SPA_APPS, ensure_app_role_assignment, ensure_spa_redirect, setup
+from .cities import check_cities, dealer_cities
 from .doors import setup_doors
 from .graph import GraphClient
 
 GRAPH_SCOPE = "https://graph.microsoft.com/.default"
 TOKEN_REFRESH_MARGIN_SECONDS = 300
+FIRST_CITY = "Göteborg"  # the deployer's, when nobody has a city at the dealer door
 HOST = re.compile(r"[a-z0-9-]+(\.[a-z0-9-]+)+")
 
 
@@ -61,7 +64,17 @@ def _print_door(name: str, identifiers: list[str]) -> None:
     print(f"{name}: {', '.join(identifiers)}")
 
 
+def _check_cities(args: argparse.Namespace) -> None:
+    """Before anything is changed. A city that the dealer does not know would leave that caller out."""
+    try:
+        check_cities(args.dealer_cities or f"deployer={FIRST_CITY}", dealer_cities(Path(args.dealer_data)))
+    except (OSError, ValueError, KeyError) as exc:
+        sys.exit(f"preprovision: DEALER_DOOR_CITIES: {exc}")
+
+
 def _run_setup(args: argparse.Namespace) -> None:
+    if args.mcp:
+        _check_cities(args)
     g, token = _graph()
     me = g.get("/me?$select=id") or {}
     env = setup(
@@ -85,7 +98,10 @@ def _run_setup(args: argparse.Namespace) -> None:
             allow_cli=args.allow_cli,
             on_door=_print_door,
         )
-        print(f"The address is an identifier of every MCP door: {env['MCP_IDENTIFIER_IS_URL']}")
+        for service in ("API", "DEALER"):
+            print(f"The address is an identifier, {service}: {env[f'MCP_{service}_IDENTIFIER_IS_URL']}")
+        if not args.dealer_cities:  # the dealer door refuses everyone who is not listed
+            env["DEALER_DOOR_CITIES"] = f"{me['id']}={FIRST_CITY}"
     for key, value in env.items():
         _azd_env_set(key, value)
 
@@ -116,6 +132,8 @@ def main(argv: list[str] | None = None) -> None:
     p_setup.add_argument("--api-host", type=_host, default="", help="The host of the API's doors")
     p_setup.add_argument("--dealer-host", type=_host, default="", help="The host of the dealer's door")
     p_setup.add_argument("--allow-cli", action="store_true", help="The Azure CLI may ask for tokens for the doors")
+    p_setup.add_argument("--dealer-cities", default="", help="Who has which dealer city: 'object id=City;...'")
+    p_setup.add_argument("--dealer-data", default="services/dealer/app/data.json", help="The cities of the dealers")
     p_setup.set_defaults(func=_run_setup)
 
     p_assign = sub.add_parser("assign-app-role", help="Assign an app role to a principal")

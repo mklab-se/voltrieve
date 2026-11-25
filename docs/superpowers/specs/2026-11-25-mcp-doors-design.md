@@ -226,16 +226,17 @@ sequenceDiagram
 - **The live log** shows the calls: who, from which app, what. The dealer page gets it through the same hub as today.
 - **An application without a secret** is verified in tests. A live run needs a managed identity with the role, which is not set up here, so it is listed as not verified.
 
-## 17. The customer door (#23)
+## 17. The customer door and Runa's door (#23)
 
-- **Two ways, in one door, by scope:** `customer.tools` gives the tools, `runa.ask` gives `ask_runa`. A harness that asks for one scope sees only that one. Role `Customer`, and `TestDrive.Book` for the test drive.
+- **Two ways, two doors:** `/mcp/customer` with the scope `customer.tools` gives the tools, and `/mcp/runa` with the scope `runa.ask` gives `ask_runa`. Each has its own registration (`voltrieve-mcp-customer`, `voltrieve-mcp-runa`) with the roles `Customer` and `TestDrive.Book`, the last for the test drive. A token for one is refused at the other. The first design was one door with both scopes. The review changed it: Entra ID puts every scope that was consented to in a token, whichever one the harness asked for, so two scopes in one door do not make one or the other.
 - **Tools:** `search_documents`, `search_parts`, `check_car_stock`, `check_part_stock`, `car_prices`, `book_test_drive`, `my_car`, `approved_answer(topic)`. They call the same code as Runa's tools. Titles of the sources come with the result. A signed link is not given, since it would live on in someone else's chat: the answer gives the title, and the website opens it **(builder's choice)**.
-- **`ask_runa(question)`:** one turn, a new conversation each time, on the backend that the API uses, or the one in `X-Agent-Backend`, so that all three can be measured. The answer comes with the titles of its sources. No client tools, no photo, and no ordering: the client of such a turn is `mcp`, which the order rule does not allow, and Runa points to the website. 5 a minute per person.
+- **`ask_runa(question)`:** one turn, a new conversation each time, on the backend that the API uses, or the one in `X-Agent-Backend`, so that all three can be measured. The answer comes with the titles of its sources. No client tools, no photo, and no ordering: the client of such a turn is `mcp`, which the order rule does not allow, and Runa points to the website. 5 a minute per person. After 90 s the caller is told that Runa did not answer in time, and the turn runs on to its end, since it may be booking. At most 4 such turns run at once, 2 for each person, and a turn counts until it ends. Runa's door has a gate of its own, so long questions cannot fill the places of the other doors.
 - **My car** is the one made up car that the website and the car show, from one file in the API. Everyone has the same one, as today. A test compares it with the website's. A store of customers was considered, and one made up car per person proves nothing more here **(builder's choice)**.
 - **Approved answers:** the result says that the text must be shown as it is. Whether the caller's AI does so is measured.
 - **The comparison:** a plain model with only these tools against Runa, on a small set of routing questions. A full run is bulk and waits for the product owner's approval of the cost.
-- **Usage counts:** a turn from the door is counted as client `mcp` on the dashboard and in the insights.
+- **Stored:** the question and the answer are a conversation in Foundry, like every chat with Runa. The door's instructions and the tool's description say so to the caller's AI, and ask it to tell the person. Nothing of it is logged, not at debug level either.
+- **Usage counts:** a turn from the door is client `mcp` in the live feed and the spans. The nightly job does not read these conversations: its notice is shown in the car and on the website, and these customers see neither. The product owner decides whether that changes.
 
 ## 18. Order and account of the work
 
-The shared package first. Then the four doors, the registrations and the infrastructure beside each other. Then docs, review, deploy and the live checks in section 10, as far as they can be done without the owner's sign-in.
+The shared package first. Then the five doors, the registrations and the infrastructure beside each other. Then docs, review, deploy and the live checks in section 10, as far as they can be done without the owner's sign-in.
