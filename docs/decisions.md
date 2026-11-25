@@ -401,6 +401,10 @@ The city never comes from an argument. An unattended agent can change stock and 
 
 The tools and `ask_runa` first shared a door, with a scope each. Entra ID puts every scope that was consented to in the token, so a harness would have had both, and nothing could be compared. So `ask_runa` has a door of its own, with its own places, since a turn may take long. The nightly job does not read such questions: whoever asks has not seen the notice. No signed links are given, because they would live on in someone else's chat. Ordering a car is left out, since nothing in an outside harness is a later message in our sense.
 
+### The newer sign-in server of Entra ID
+
+Live on 2026-11-26, Entra ID's ordinary authorization server publishes no `code_challenge_methods_supported`, and a client that follows MCP must then refuse it. The versioned server `oauth21/2026-08` publishes S256, the `iss` parameter and client ID metadata documents. It is a preview without a service level, and it is what a harness needs today. ChatGPT then chose its own metadata document, which asks for `private_key_jwt`, and Entra ID refused that.
+
 ### Remote control is off by default, and a door is awake only when used
 
 A replica that always runs would avoid the half minute that a first call takes, and would be a standing cost. It was not chosen.

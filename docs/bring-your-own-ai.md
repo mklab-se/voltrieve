@@ -79,14 +79,18 @@ On eight questions the same model did as well with only these tools as Runa did:
 
 **What every guide needs:** the address of the door (`just mcp` prints them), the client id of the harness's registration (`voltrieve-harness-...`), and a role on the door, which the setup gives to the deployer. No guide uses a secret.
 
-**Tried or not.** A harness needs the door's address on a domain that is verified in the tenant, so nothing below has been tried yet. The steps are from each product's documentation, read on 2026-11-25. Products change, so follow the links.
+**The addresses.** `https://api.voltrieve.mklab.se/mcp/operations`, `/mcp/car`, `/mcp/customer` and `/mcp/runa`, and `https://dealer.voltrieve.mklab.se/mcp/dealer`. A harness needs an address on a domain that is verified in the tenant, so that the address can be the id of the door.
+
+**Which sign-in server.** Entra ID's ordinary server (`.../v2.0`) does not say that it supports PKCE, and the MCP standard tells a client to refuse such a server. The newer one, `.../oauth21/2026-08`, says so, and also accepts client ID metadata documents. It is a preview. The doors point to it with `MCP_ISSUER`.
+
+**Tried or not.** The steps are from each product's documentation, read on 2026-11-25. Products change, so follow the links.
 
 | Harness | State | What we expect |
 | --- | --- | --- |
 | A scripted MCP client | [Run live](https://github.com/mklab-se/voltrieve/blob/main/docs/evidence/doors.txt) on 2026-11-25, 98 checks | With a token from the Azure CLI, so not a sign-in |
 | Claude (web, desktop) | Not tried | Own client id, no secret: likely, the documentation does not say it for this case |
 | Claude Code | Not tried | Own client id, no secret |
-| ChatGPT | Not tried | Where to type a client id was not found |
+| ChatGPT | Tried, refused | On 2026-11-26 from the Mac app. ChatGPT identified itself with [its own metadata document](https://chatgpt.com/oauth/client.json), which asks to sign with a private key, and Entra ID refused it: `AADSTS10051012`, unsupported security-sensitive metadata `token_endpoint_auth_signing_alg`. Whether ChatGPT can use our registration instead is not known yet |
 | GitHub Copilot in VS Code | Not tried | Own client id. Redirect addresses not found on the pages read |
 | Microsoft 365 Copilot | Not tried | A public client on the SPA platform |
 | GitHub Copilot cloud agent | Cannot | Its servers cannot use OAuth ([documentation](https://docs.github.com/copilot/concepts/context/mcp)) |

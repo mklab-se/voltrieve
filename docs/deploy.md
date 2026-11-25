@@ -277,6 +277,7 @@ Off by default: without `MCP_DOORS` nothing of this exists. See [Bring your own 
 | --- | --- | --- |
 | `MCP_DOORS` | You, `true` | The registrations of the doors and the harnesses, and the doors |
 | `MCP_ALLOW_CLI` | You, `true` in a development environment only | Lets scripts call the doors with a token from the Azure CLI |
+| `MCP_ISSUER` | You, optional | The sign-in server that the doors point to. For harnesses use Entra ID's `https://login.microsoftonline.com/<tenant>/oauth21/2026-08`: the ordinary one does not say that it supports PKCE |
 | `API_HOST`, `DEALER_HOST` | You, optional | Host names of your own, such as `api.voltrieve.example`, on a domain that is verified in the tenant. A harness needs them to sign in |
 | `DEALER_DOOR_CITIES` | The hook, when empty | Which dealer city a person or an application has: `oid=City;oid=City`. The hook stops the provision when an entry is wrong. The dealer service leaves a wrong entry out |
 | `MCP_..._CLIENT_ID`, `MCP_APPS` | The hook | The registrations of the five doors (operations, car, customer, Runa and dealer), and of the harnesses |
