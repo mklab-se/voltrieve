@@ -16,3 +16,12 @@ class Settings(BaseSettings):
     table_name: str = "dealer"
     site_client_id: str = ""
     site_dir: str = "/srv/site"  # the built page
+
+    # The MCP door (app/door.py). Without an address and a client id there is none.
+    mcp_dealer_url: str = ""  # https://host, as callers see it
+    mcp_dealer_client_id: str = ""
+    mcp_apps: str = ""  # the harnesses that may call: "client id=Name;client id=Name"
+    mcp_allow_cli: bool = False  # the Azure CLI too, for scripts
+    mcp_identifier_is_url: bool = False  # the address is the Application ID URI, else api://<client id>
+    mcp_issuer: str = ""  # another authorization server to point to
+    dealer_door_cities: str = ""  # whose city: "oid=City;oid=City", of people and applications

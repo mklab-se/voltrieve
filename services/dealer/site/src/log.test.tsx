@@ -24,6 +24,12 @@ describe("each kind has a sentence", () => {
     [{ kind: "delivered", model: "fjord", number: "VO-1002", city: "Malmö" }, "Delivered VO-1002, Fjord, from Malmö."],
     [{ kind: "deleted", number: "VO-1002" }, "Deleted order VO-1002."],
     [{ kind: "stock_changed", model: "fjord", city: "Malmö" }, "Changed the stock of Fjord in Malmö."],
+    [{ kind: "open_orders", city: "Malmö", result: "2" }, "Looked up the open orders for Malmö: 2."],
+    [{ kind: "open_orders" }, "Looked up the open orders."],
+    [{ kind: "change_asked", model: "fjord", city: "Malmö", result: "There is none in stock in Malmö." }, "Asked to change the stock of Fjord in Malmö: There is none in stock in Malmö."],
+    [{ kind: "change_asked", city: "Malmö", result: "Unknown model." }, "Asked to change the stock in Malmö: Unknown model."],
+    [{ kind: "deliver_asked", model: "fjord", number: "VO-1002", city: "Malmö", result: "The app cannot ask" }, "Asked to deliver VO-1002, Fjord, from Malmö: The app cannot ask."],
+    [{ kind: "deliver_asked", city: "Malmö", result: "Unknown order." }, "Asked to deliver an order from Malmö: Unknown order."],
     [{ kind: "reset" }, "Reset the demo."],
     [{ kind: "refused" }, "Was refused: no access."],
   ])("%o", (over, text) => {
@@ -52,6 +58,22 @@ describe("the log", () => {
     expect(rows[0]).toContain("Runa, website");
     expect(rows[1]).toContain("Anna Rep");
     expect(rows[2]).toContain("Looked up the prices.");
+  });
+
+  it("says which app a person or an application came through", () => {
+    const log = [
+      entry(1, { kind: "delivered", who: "Anna Rep", client: "Claude", model: "fjord", number: "VO-1002", city: "Malmö" }),
+      entry(2, { kind: "stock_changed", who: "Dealer agent", client: "application", model: "fjord", city: "Malmö", result: "4" }),
+      entry(3, { kind: "refused", who: null, client: "Claude" }),
+    ];
+    const p = show(<Log state={dealerState({ log })} />);
+    const rows = p.all("li").map((li) => p.text(li.children));
+    expect(rows[0]).toContain("Was refused: no access.");
+    expect(rows[0]).toContain("Unknown caller, Claude");
+    expect(rows[1]).toContain("Changed the stock of Fjord in Malmö: 4.");
+    expect(rows[1]).toContain("Dealer agent, application");
+    expect(rows[2]).toContain("Delivered VO-1002, Fjord, from Malmö.");
+    expect(rows[2]).toContain("Anna Rep, Claude");
   });
 
   it("says when it is empty", () => {

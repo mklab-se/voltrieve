@@ -217,7 +217,7 @@ button:disabled { opacity: 1; }
 .log-entry:is([data-kind="offer"], [data-kind="order"], [data-kind="test_drive"]) { --k: var(--accent); }
 .log-entry[data-kind="order"] > .log-what { font-weight: 650; }
 .log-entry:is([data-kind="delivered"], [data-kind="deleted"], [data-kind="stock_changed"], [data-kind="reset"]) { --k: var(--f-tool); }
-.log-entry[data-kind="refused"] { --k: var(--f-error); }
+.log-entry:is([data-kind="refused"], [data-kind="change_asked"], [data-kind="deliver_asked"]) { --k: var(--f-error); }
 @keyframes arrive { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
 
 .desk-foot { display: flex; justify-content: flex-end; padding: 10px 24px; border-top: 1px solid var(--line); background: var(--surface); }

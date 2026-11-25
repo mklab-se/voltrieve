@@ -7,9 +7,11 @@ from datetime import datetime, timedelta
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from voltrieve_doors import Doors, DoorTokenValidator, running
 
 from app.auth import TokenValidator
 from app.data import DealerData
+from app.door import UNAVAILABLE, build_doors
 from app.guard import RequestGuard
 from app.hub import Hub, utc_now
 from app.logging_setup import configure_logging
@@ -24,7 +26,6 @@ from app.telemetry import configure_telemetry, instrument_app
 logger = logging.getLogger("app.access")
 
 PURGE_AGAIN = timedelta(minutes=5)  # after a purge that failed
-UNAVAILABLE = "The dealer system is not available right now."
 
 
 class Keeper:
@@ -74,6 +75,7 @@ def create_app(
     validator: TokenValidator | None = None,
     *,
     staff_validator: TokenValidator | None = None,
+    door_validator: DoorTokenValidator | None = None,
     store: Store | None = None,
     clock: Callable[[], datetime] = utc_now,
 ) -> FastAPI:
@@ -93,7 +95,8 @@ def create_app(
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         # In the background, so that /healthz answers while the store does not.
         preparing = asyncio.create_task(prepare())
-        yield
+        async with running(doors):
+            yield
         preparing.cancel()
         await asyncio.gather(preparing, return_exceptions=True)
         await store.close()
@@ -122,7 +125,9 @@ def create_app(
         required_scope="manage_as_user",
     )
 
-    app.add_middleware(RequestGuard)
+    doors = build_doors(app, settings, door_validator)
+    app.add_middleware(Doors, doors=doors)
+    app.add_middleware(RequestGuard)  # the outer one, so a call of the door has its correlation id and log line
     app.include_router(build_router(data))
     app.include_router(build_staff_router(data))
     app.include_router(build_site_router(settings))

@@ -18,6 +18,10 @@ export function sentence(e: LogEntry, names: Record<string, string>): string {
       case "order": return e.number ? `Placed order${number}${forModel}` : `Asked to order ${model ?? "a car"}`;
       case "test_drive": return `Asked for a test drive${of}${inCity}`;
       case "delivered": return `Delivered${number || " an order"}${model ? `, ${model},` : ""}${e.city ? ` from ${e.city}` : ""}`;
+      // Through the door of the dealers: what was asked for and not done has the reason in the result.
+      case "open_orders": return `Looked up the open orders${e.city ? ` for ${e.city}` : ""}`;
+      case "change_asked": return `Asked to change the stock${of}${inCity}`;
+      case "deliver_asked": return `Asked to deliver${number || " an order"}${model ? `, ${model},` : ""}${e.city ? ` from ${e.city}` : ""}`;
       case "deleted": return `Deleted order${number}`;
       case "stock_changed": return `Changed the stock${of}${inCity}`;
       case "reset": return "Reset the demo";
