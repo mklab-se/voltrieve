@@ -27,6 +27,10 @@ dashboard:
 car:
     cd clients/car && npm ci --silent && npm run dev -- --mode production
 
+# Run the dealer page locally against the deployed dealer service, on http://localhost:5176
+dealer:
+    cd services/dealer/site && npm ci --silent && DEALER_URL="$(azd env get-value DEALER_URL)" npm run dev
+
 # Open the deployed operations dashboard in your browser
 open-dashboard:
     open "$(azd env get-value DASHBOARD_URL)"
@@ -39,6 +43,10 @@ open:
 open-car:
     open "$(azd env get-value CAR_URL)"
 
+# Open the deployed dealer page in your browser: orders and inventory
+open-dealer:
+    open "$(azd env get-value DEALER_URL)"
+
 # Wake every service before a demo. They sleep again after 5 idle minutes
 warm-up:
     uv run scripts/warm_up.py
@@ -46,7 +54,3 @@ warm-up:
 # Wake every service and keep them awake until Ctrl-C
 keep-warm:
     uv run scripts/warm_up.py --keep-warm
-
-# Print the address of the dealer page: orders and inventory, for the representative
-dealer:
-    @azd env get-value DEALER_URL

@@ -259,7 +259,7 @@ For the dealer page use `DEALER_SP_OBJECT_ID` and `DEALER_MANAGE_ROLE_ID`. A new
 The other order fails closed: a new API or agent that calls order routes the dealer does not have yet is refused, and Runa cannot order. So the callee goes first:
 
 1. `azd provision`: the table, the dealer's role on it, the registrations, roles and the redirect. Preview it first.
-2. `azd deploy dealer`: the service, with the page. Check that `just dealer` prints an address and that the page shows its sign-in.
+2. `azd deploy dealer`: the service, with the page. Check that `just open-dealer` opens the page and that it shows its sign-in.
 3. `scripts/deploy-agents.sh`: the three prompt agents (new instructions and the two order tools) and the hosted agent. As after every provision, run it at once, and [delete the Foundry connection](decisions.md#closed-foundrys-tracing-is-disconnected) if an older provision recreated it.
 4. `azd deploy api`.
 5. The website, [with the container](#2-apple-silicon-without-rosetta-scriptsdeploy-websh) where the SWA CLI cannot run, for the sentence in the notice.

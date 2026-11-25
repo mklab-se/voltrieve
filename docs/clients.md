@@ -136,7 +136,7 @@ A command line for developers. It declares `make_noise`, `honk`, `get_local_time
 
 ## The dealer page
 
-The page of a Voltrieve representative, for users with the `Dealer.Manage` role. It is not a chat. It is served by the dealer service itself, so it has the address of the service: run `just dealer` to print it, or `azd env get-value DEALER_URL`. It has its own app registration, `voltrieve-dealer-site`, and the scope `manage_as_user` of the dealer. An account without a role cannot sign in at all.
+The page of a Voltrieve representative, for users with the `Dealer.Manage` role. It is not a chat. It is served by the dealer service itself, so it has the address of the service: `just open-dealer` opens it, and `just dealer` runs the page locally against the deployed service. It has its own app registration, `voltrieve-dealer-site`, and the scope `manage_as_user` of the dealer. An account without a role cannot sign in at all.
 
 ![The dealer page: purchase orders with a Deliver button for each, the stock of each model in four cities with a plus and a minus, and the live log of calls on the right](images/dealer.webp)
 
