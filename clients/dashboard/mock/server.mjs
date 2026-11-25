@@ -40,6 +40,8 @@ function liveFeed(req, res, prompts) {
         duration_ms: Math.round(first + 1500), tools, knowledge_bases: kbs, cost_sek: 0.02 + Math.random() * 0.08,
       });
       send("summary", { active_users: 2 + (n % 3), turns: 41 + n });
+      const [door, tool] = [["customer", "search_parts"], ["car", "honk"], ["operations", "service_health"], ["runa", "ask_runa"]][n % 4];
+      send("door", { id: n, at: Date.now() / 1000, door, tool, app: ["ChatGPT", "Claude", "VS Code"][n % 3], result: n % 5 ? "done" : "refused", elapsed_ms: 300 + n * 37 });
     }, 1800);
   }, 2500);
   req.on("close", () => clearInterval(timer));

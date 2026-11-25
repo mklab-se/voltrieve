@@ -19,6 +19,17 @@ export interface FeedTurn {
   model_calls?: number;
 }
 
+/** A call through an MCP door. Every value is a name from the API's own lists, or a number. */
+export interface DoorCall {
+  id: number;
+  at: number;
+  door: string;
+  tool: string;
+  app: string;
+  result: "done" | "refused" | "failed" | "denied" | "asked";
+  elapsed_ms: number;
+}
+
 export interface FeedSummary {
   active_users: number;
   turns: number;
@@ -27,16 +38,19 @@ export interface FeedSummary {
 export interface FeedState {
   summary: FeedSummary;
   turns: FeedTurn[];
+  doors: DoorCall[];
 }
 
 export type FeedMessage =
   | { event: "summary"; data: FeedSummary }
   | { event: "turn"; data: FeedTurn }
+  | { event: "door"; data: DoorCall }
   | { event: "reset" }; // a new connection: the API sends the recent turns again
 
 export const FEED_SIZE = 50;
+export const DOOR_CALLS = 30;
 export const DASHBOARD_ROLE = "Dashboard.View";
-export const initialFeed: FeedState = { summary: { active_users: 0, turns: 0 }, turns: [] };
+export const initialFeed: FeedState = { summary: { active_users: 0, turns: 0 }, turns: [], doors: [] };
 
 /** Whether the access token carries the dashboard role. The API checks it again. */
 export function canViewDashboard(accessToken: string): boolean {
@@ -61,8 +75,12 @@ export async function checkAccess(auth: { getToken(): Promise<string> }): Promis
 
 /** A turn is published when it starts and again when it ends: merge by id, newest first. */
 export function feedReducer(state: FeedState, msg: FeedMessage): FeedState {
-  if (msg.event === "reset") return { ...state, turns: [] };
+  if (msg.event === "reset") return { ...state, turns: [], doors: [] };
   if (msg.event === "summary") return { ...state, summary: msg.data };
+  if (msg.event === "door") {
+    if (state.doors.some((d) => d.id === msg.data.id)) return state;
+    return { ...state, doors: [msg.data, ...state.doors].sort((a, b) => b.at - a.at).slice(0, DOOR_CALLS) };
+  }
   const existing = state.turns.find((t) => t.turn_id === msg.data.turn_id);
   if (existing) {
     return { ...state, turns: state.turns.map((t) => (t === existing ? { ...t, ...msg.data } : t)) };
@@ -134,7 +152,7 @@ export async function* streamLive(apiUrl: string, token: string, prompts: boolea
     const { value, done } = await reader.read();
     const messages = done ? parser.flush() : parser.feed(value);
     for (const m of messages) {
-      if (m.event === "summary" || m.event === "turn") yield { event: m.event, data: JSON.parse(m.data) } as FeedMessage;
+      if (m.event === "summary" || m.event === "turn" || m.event === "door") yield { event: m.event, data: JSON.parse(m.data) } as FeedMessage;
     }
     if (done) return;
   }

@@ -111,7 +111,7 @@ A photo goes with one message. When the message is sent, the photo moves from th
 
 ## The operations dashboard
 
-Its own app with its own sign-in. It has two pages, **Live** and **What people ask**, for users with the `Dashboard.View` role. The first shows the live feed and links to Live Metrics and the workbook. See [the runbook](runbook.md#the-operations-dashboard).
+Its own app with its own sign-in. It has two pages, **Live** and **What people ask**, for users with the `Dashboard.View` role. The first shows the live feed and links to Live Metrics and the workbook. It also shows each call through an [MCP door](bring-your-own-ai.md) of the API as it comes: the door, the tool, the AI that called and the result, never what it asked. See [the runbook](runbook.md#the-operations-dashboard).
 
 ![The live dashboard: users, messages, cost and first text per backend, and one card for each turn](images/dashboard.webp)
 

@@ -7,9 +7,10 @@ Foundry's own tracing, which recorded the text of prompt and hosted turns, is di
 """
 
 import asyncio
+import itertools
 import datetime as dt
 import time
-from collections import OrderedDict
+from collections import OrderedDict, deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
@@ -211,6 +212,8 @@ class LiveFeed:
         self._subscribers: list[tuple[asyncio.Queue, bool]] = []
         self._day = ""
         self._turns_today = 0
+        self._doors: deque[dict] = deque(maxlen=size)
+        self._door_ids = itertools.count(1)
 
     def publish(self, entry: dict) -> dict:
         turn_id = entry["turn_id"]
@@ -228,8 +231,21 @@ class LiveFeed:
             self._seen[entry["user"]] = self._clock()
         for queue, show in list(self._subscribers):
             if queue.qsize() < 200:  # a stalled dashboard never grows memory without bound
-                queue.put_nowait(_view(merged, show))
+                queue.put_nowait(("turn", _view(merged, show)))
         return merged
+
+    def publish_door(self, door: str, tool: str, app: str, result: str, elapsed_ms: int) -> dict:
+        """A call through an MCP door. Every value is a name from our own lists, or a number."""
+        entry = {"id": next(self._door_ids), "at": self._clock(), "door": door, "tool": tool, "app": app,
+                 "result": result, "elapsed_ms": elapsed_ms}
+        self._doors.append(entry)
+        for queue, _ in list(self._subscribers):
+            if queue.qsize() < 200:
+                queue.put_nowait(("door", entry))
+        return entry
+
+    def recent_doors(self) -> list[dict]:
+        return list(self._doors)
 
     def has(self, turn_id: str) -> bool:
         return turn_id in self._entries

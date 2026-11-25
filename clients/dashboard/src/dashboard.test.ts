@@ -21,6 +21,19 @@ describe("canViewDashboard", () => {
   });
 });
 
+describe("door calls", () => {
+  const call = (id: number, at: number) => ({ id, at, door: "customer", tool: "search_parts", app: "ChatGPT", result: "done" as const, elapsed_ms: 40 });
+  it("are kept newest first, once each, and capped", () => {
+    let s = feedReducer(initialFeed, { event: "door", data: call(1, 1) });
+    s = feedReducer(s, { event: "door", data: call(2, 2) });
+    s = feedReducer(s, { event: "door", data: call(2, 2) });
+    expect(s.doors.map((d) => d.id)).toEqual([2, 1]);
+    for (let i = 3; i < 40; i++) s = feedReducer(s, { event: "door", data: call(i, i) });
+    expect(s.doors).toHaveLength(30);
+    expect(feedReducer(s, { event: "reset" }).doors).toEqual([]);
+  });
+});
+
 describe("feedReducer", () => {
   it("merges updates of a turn and keeps the newest first", () => {
     let s = feedReducer(initialFeed, { event: "turn", data: turn({ turn_id: "a", outcome: "running", duration_ms: undefined }) });

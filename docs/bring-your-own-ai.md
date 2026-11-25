@@ -90,7 +90,7 @@ On eight questions the same model did as well with only these tools as Runa did:
 | A scripted MCP client | [Run live](https://github.com/mklab-se/voltrieve/blob/main/docs/evidence/doors.txt) on 2026-11-25, 98 checks | With a token from the Azure CLI, so not a sign-in |
 | Claude (web, desktop) | Not tried | Own client id, no secret: likely, the documentation does not say it for this case |
 | Claude Code | Not tried | Own client id, no secret |
-| ChatGPT | Tried, refused | On 2026-11-26 from the Mac app. ChatGPT identified itself with [its own metadata document](https://chatgpt.com/oauth/client.json), which asks to sign with a private key, and Entra ID refused it: `AADSTS10051012`, unsupported security-sensitive metadata `token_endpoint_auth_signing_alg`. Whether ChatGPT can use our registration instead is not known yet |
+| ChatGPT | Works | On 2026-11-26 from the Mac app, the customer door, with our own registration and no secret: search, parts and prices answered. Its own metadata document, which ChatGPT picks by itself, is refused by Entra ID (`AADSTS10051012`), so choose the registration as below |
 | GitHub Copilot in VS Code | Not tried | Own client id. Redirect addresses not found on the pages read |
 | Microsoft 365 Copilot | Not tried | A public client on the SPA platform |
 | GitHub Copilot cloud agent | Cannot | Its servers cannot use OAuth ([documentation](https://docs.github.com/copilot/concepts/context/mcp)) |
@@ -111,7 +111,18 @@ Then `/mcp`, choose the server and sign in. ([Documentation](https://code.claude
 
 ### ChatGPT
 
-**Plugins**, **Add custom MCP server**: the address with its path, then the sign-in. The documentation says that custom servers need Business, Enterprise or Edu, and that Pro may read only. ChatGPT shows its own redirect address for the connection. Add that to `voltrieve-harness-chatgpt` in Entra ID, under mobile and desktop applications: the setup script keeps what you add. ([Documentation](https://developers.openai.com/apps-sdk/deploy/connect-chatgpt), [sign-in](https://developers.openai.com/apps-sdk/build/auth))
+**Plugins**, **Add custom MCP server**, with the address and its path, and **OAuth**. Then open **Advanced OAuth settings**:
+
+| Field | Value |
+| --- | --- |
+| Registration method | **User-Defined OAuth Client**. Not the metadata document that ChatGPT chooses by itself, which Entra ID refuses |
+| OAuth client ID | The client id of `voltrieve-harness-chatgpt` |
+| OAuth client secret | Empty |
+| Token endpoint auth method | `none` |
+| Default scopes | The door's scope, which ChatGPT finds by itself |
+| Base scopes | `offline_access` |
+
+**Create as a plugin**, then **Connect**, and sign in. The callback address, `https://chatgpt.com/connector_platform_oauth_redirect`, is already on the registration. The documentation says that custom servers need Business, Enterprise or Edu, and that Pro may read only. ([Documentation](https://developers.openai.com/apps-sdk/deploy/connect-chatgpt), [sign-in](https://developers.openai.com/apps-sdk/build/auth))
 
 ### GitHub Copilot in VS Code
 

@@ -106,8 +106,8 @@ async def test_live_feed_streams_new_entries_and_hides_prompts_unless_asked():
     feed = LiveFeed(size=3)
     hidden, shown = feed.subscribe(show_prompts=False), feed.subscribe(show_prompts=True)
     feed.publish({"turn_id": "t1", "user": "u1", "prompt": "hello"})
-    assert (await asyncio.wait_for(hidden.get(), 1))["prompt"] is None
-    assert (await asyncio.wait_for(shown.get(), 1))["prompt"] == "hello"
+    assert (await asyncio.wait_for(hidden.get(), 1)) == ("turn", feed.recent(False)[0])
+    assert (await asyncio.wait_for(shown.get(), 1))[1]["prompt"] == "hello"
     for n in range(5):
         feed.publish({"turn_id": f"t{n + 2}", "user": f"u{n}", "prompt": "p"})
     assert [e["turn_id"] for e in feed.recent(show_prompts=False)] == ["t4", "t5", "t6"]

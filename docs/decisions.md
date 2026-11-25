@@ -403,7 +403,7 @@ The tools and `ask_runa` first shared a door, with a scope each. Entra ID puts e
 
 ### The newer sign-in server of Entra ID
 
-Live on 2026-11-26, Entra ID's ordinary authorization server publishes no `code_challenge_methods_supported`, and a client that follows MCP must then refuse it. The versioned server `oauth21/2026-08` publishes S256, the `iss` parameter and client ID metadata documents. It is a preview without a service level, and it is what a harness needs today. ChatGPT then chose its own metadata document, which asks for `private_key_jwt`, and Entra ID refused that.
+Live on 2026-11-26, Entra ID's ordinary authorization server publishes no `code_challenge_methods_supported`, and a client that follows MCP must then refuse it. The versioned server `oauth21/2026-08` publishes S256, the `iss` parameter and client ID metadata documents. It is a preview without a service level, and it is what a harness needs today. ChatGPT then chose its own metadata document, which asks for `private_key_jwt`, and Entra ID refused that. With our own registration and no secret, ChatGPT signed in.
 
 ### Remote control is off by default, and a door is awake only when used
 

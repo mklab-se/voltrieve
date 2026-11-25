@@ -166,3 +166,42 @@ async def test_what_people_ask():
     app2 = make()
     app2.state.usage.insights = broken
     assert "not available" in text((await call(app2, "what_people_ask"))[1])
+
+
+async def calls(app, wanted):
+    async with running(app.state.doors):
+        async with httpx2.AsyncClient(transport=httpx2.ASGITransport(app=app), base_url=f"https://{HOST}") as http:
+            async with Client(streamable_http_client(f"https://{HOST}/mcp/operations", http_client=http)) as c:
+                for name, arguments in wanted:
+                    await c.call_tool(name, arguments)
+
+
+async def test_every_call_is_on_the_live_feed_without_what_was_asked():
+    app = make()
+    queue = app.state.turns.feed.subscribe(False)
+    with respx.mock:
+        respx.post(QUERY_URL.format(id=WORKSPACE)).mock(return_value=httpx.Response(200, json=table(backend="loop")))
+        await calls(app, [("service_health", {"period": "1h"}), ("explain_turn", {"id": "MARKER-ID"})])
+    doors = app.state.turns.feed.recent_doors()
+    assert [(d["door"], d["tool"], d["app"], d["result"]) for d in doors] == [
+        ("operations", "service_health", "Claude", "done"), ("operations", "explain_turn", "Claude", "done")]
+    assert set(doors[0]) == {"id", "at", "door", "tool", "app", "result", "elapsed_ms"}
+    assert [queue.get_nowait()[0] for _ in range(2)] == ["door", "door"] and "MARKER" not in str(doors)
+
+
+async def test_the_live_stream_sends_turns_and_door_calls():
+    from fastapi.testclient import TestClient
+
+    app = make()
+    app.state.turns.feed.publish({"turn_id": "t1", "user": "u", "kind": "message"})
+    app.state.turns.feed.publish_door("car", "honk", "Claude", "done", 12)
+    app.state.validator = Anyone(Caller("a", "x", frozenset({"Dashboard.View"}), frozenset()))
+
+    class Claims:
+        roles = ["Dashboard.View"]
+
+    from app.routes import authenticate
+
+    app.dependency_overrides[authenticate] = lambda: Claims()
+    body = TestClient(app).get("/admin/live?once=true").text
+    assert "event: turn" in body and "event: door" in body and '"tool":"honk"' in body

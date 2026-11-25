@@ -4,7 +4,9 @@ A door exists only when its client id is in the settings. The dealer's door is i
 """
 
 from fastapi import FastAPI
-from voltrieve_doors import Door, DoorConfig, Gate
+from collections.abc import Callable
+
+from voltrieve_doors import Call, Door, DoorConfig, Gate
 from voltrieve_doors.limits import RateLimit
 
 from app.clients import AZURE_CLI_CLIENT_ID
@@ -41,6 +43,15 @@ def door_config(settings: Settings, name: str, client_id: str, scopes: tuple[str
     )
 
 
+def live(app: FastAPI) -> Callable[[Call], None]:
+    """Each call on the live dashboard: names from our own lists and a time, never what was asked."""
+
+    def show(call: Call) -> None:
+        app.state.turns.feed.publish_door(call.door, call.tool, call.app, call.result, call.elapsed_ms)
+
+    return show
+
+
 def build_doors(app: FastAPI, settings: Settings) -> list[Door]:
     gate, runas = Gate(CALLS_AT_ONCE), Gate(CALLS_AT_ONCE)  # a question takes long, and must not fill the others
     doors = []
@@ -55,5 +66,5 @@ def build_doors(app: FastAPI, settings: Settings) -> list[Door]:
         config = door_config(settings, module.NAME, client_id, module.SCOPES)
         doors.append(Door(config, module.tools(app), module.INSTRUCTIONS, gate=runas if module is runa else gate,
                           rate=RateLimit(30),
-                          correlation=correlation_id.get))
+                          correlation=correlation_id.get, on_call=live(app)))
     return doors

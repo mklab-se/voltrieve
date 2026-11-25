@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useReducer, useState } from "react";
 import type { Auth } from "../auth";
-import { feedReducer, initialFeed, stats, streamLive, type FeedTurn } from "../dashboard";
+import { feedReducer, initialFeed, stats, streamLive, type DoorCall, type FeedTurn } from "../dashboard";
 
 interface Props {
   apiUrl: string;
@@ -15,6 +15,14 @@ const OUTCOME: Record<FeedTurn["outcome"], string> = {
   curated: "Curated answer",
   client_tool: "Client tool",
   error: "Error",
+};
+
+const DOOR_RESULT: Record<DoorCall["result"], string> = {
+  done: "Done",
+  asked: "Asked the person",
+  refused: "Refused",
+  denied: "Not allowed",
+  failed: "Failed",
 };
 
 function seconds(ms: number | null | undefined): string {
@@ -122,6 +130,20 @@ export function Dashboard({ apiUrl, auth, liveMetricsUrl, workbookUrl }: Props) 
             ))}
             {s.tools.length === 0 && <li className="muted">No tool calls yet</li>}
           </ul>
+          <h3>Doors</h3>
+          <ol className="doors" aria-live="polite" aria-label="Calls from outside AI through the MCP doors">
+            {feed.doors.map((d) => (
+              <li key={d.id} className={`door-row ${d.result}`}>
+                <time>{clock(d.at)}</time>
+                <span className="pill">{d.door}</span>
+                <b>{d.tool}</b>
+                <span className="who-id" title="The AI that called">{d.app}</span>
+                <span className={`state ${d.result}`}>{DOOR_RESULT[d.result] ?? d.result}</span>
+                <span className="timing">{seconds(d.elapsed_ms)}</span>
+              </li>
+            ))}
+            {feed.doors.length === 0 && <li className="muted">No calls from outside AI yet</li>}
+          </ol>
           <h3>Knowledge bases</h3>
           <ul className="bars kb">
             {s.knowledgeBases.map(([name, n]) => (
@@ -131,7 +153,8 @@ export function Dashboard({ apiUrl, auth, liveMetricsUrl, workbookUrl }: Props) 
           </ul>
           <p className="dash-note">
             The feed lives in the API's memory only: prompts are masked, and gone after a restart. The live feed stores nothing.
-            Users appear as pseudonyms. Costs are estimates from token counts and list prices.
+            Users appear as pseudonyms. Costs are estimates from token counts and list prices. Doors show only the door, the tool,
+            the AI that called and the result, never what it asked. The dealer's door is on the dealer page.
           </p>
         </aside>
       </div>

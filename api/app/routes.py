@@ -200,17 +200,19 @@ def _live(feed, show_prompts: bool, once: bool):
         yield format_event(AgentEvent("summary", feed.summary()))
         for entry in feed.recent(show_prompts):
             yield format_event(AgentEvent("turn", entry))
+        for entry in feed.recent_doors():
+            yield format_event(AgentEvent("door", entry))
         if once:
             return
         queue = feed.subscribe(show_prompts)
         try:
             while True:
                 try:
-                    entry = await asyncio.wait_for(queue.get(), SUMMARY_SECONDS)
+                    kind, entry = await asyncio.wait_for(queue.get(), SUMMARY_SECONDS)
                 except TimeoutError:
                     yield format_event(AgentEvent("summary", feed.summary()))
                     continue
-                yield format_event(AgentEvent("turn", entry))
+                yield format_event(AgentEvent(kind, entry))
         finally:
             feed.unsubscribe(queue)
 
