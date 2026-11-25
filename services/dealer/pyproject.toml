@@ -15,7 +15,11 @@ dependencies = [
     "azure-data-tables==12.7.0",
     "aiohttp",
     "azure-identity",
+    "voltrieve-doors",
 ]
+
+[tool.uv.sources]
+voltrieve-doors = { path = "../../doors" }
 
 [dependency-groups]
 dev = [

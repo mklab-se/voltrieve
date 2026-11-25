@@ -140,7 +140,8 @@ async def test_the_guard_answers_before_the_sdk(world):
         assert (await c.post(OPS, content=b"x" * 70_000, headers=H)).status_code == 413
         assert (await c.post(OPS, json=[rpc(), rpc()], headers=H)).status_code == 400
         assert (await c.post(OPS, content=b"[" * 60_000, headers=H)).status_code == 400
-        assert (await c.post(OPS, content=b'{"jsonrpc":"2.0","a":' + b"[" * 40 + b"]" * 40 + b"}", headers=H)).status_code == 400
+        deep = await c.post(OPS, content=b'{"jsonrpc":"2.0","a":' + b"[" * 40 + b"]" * 40 + b"}", headers=H)
+        assert deep.status_code == 400 and "one JSON-RPC message" in deep.text
         assert (await c.post(OPS, content=b"not json", headers=H)).status_code == 400
         assert (await c.post("/mcp/unknown", json=rpc(), headers=H)).status_code == 204  # the rest of the app
         assert (await c.post(OPS + "/", json=rpc(), headers=H)).status_code == 204

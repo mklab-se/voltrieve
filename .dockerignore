@@ -1,6 +1,8 @@
 *
 !api/
 !agent_core/
+!doors/
+!services/dealer/
 !search/
 !agents/hosted/
 !services/insights/
@@ -8,3 +10,7 @@
 **/__pycache__
 **/.pytest_cache
 **/tests
+
+services/dealer/site/node_modules
+services/dealer/site/dist
+services/dealer/site/.env*

@@ -17,6 +17,7 @@ dependencies = [
     "azure-monitor-opentelemetry",
     "opentelemetry-api",
     "voltrieve-agent-core",
+    "voltrieve-doors",
     "voltrieve-search",
     "pillow>=13.0.0",
     "python-multipart>=0.0.34",
@@ -25,6 +26,7 @@ dependencies = [
 [tool.uv.sources]
 voltrieve-agent-core = { path = "../agent_core" }
 voltrieve-search = { path = "../search" }
+voltrieve-doors = { path = "../doors" }
 
 [dependency-groups]
 dev = [

@@ -11,11 +11,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from voltrieve_agent.server_tools import build_server_tools
+from voltrieve_doors import Doors, running
 
 from app.attachments.store import AttachmentStore
 from app.attachments.upload import UploadQueue
 from app.auth import TokenValidator
 from app.backends import BackendRegistry
+from app.doors import build_doors
 from app.logging_setup import configure_logging, correlation_id
 from app.routes import build_router
 from app.settings import Settings
@@ -148,7 +150,8 @@ def create_app(
 
         evictor = asyncio.create_task(evict_periodically())
         try:
-            yield
+            async with running(app.state.doors):
+                yield
         finally:
             evictor.cancel()
             await app.state.turns.drain()
@@ -180,6 +183,8 @@ def create_app(
     app.state.server_tool_names = frozenset(t.name for t in build_server_tools(None, None))
 
     app.include_router(build_router())
+    app.state.doors = build_doors(app, settings)
+    app.add_middleware(Doors, doors=app.state.doors)
     app.add_middleware(RequestGuard)
     app.add_middleware(
         CORSMiddleware,

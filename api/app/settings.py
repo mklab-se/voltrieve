@@ -36,6 +36,16 @@ class Settings(BaseSettings):
     # Backend C: the name of the Foundry hosted agent (agents/hosted/deploy.py creates it).
     hosted_agent_name: str = "voltrieve-hosted"
 
+    # The MCP doors (app/doors). A door without a client id does not exist.
+    mcp_api_url: str = ""  # https://host, as callers see it
+    mcp_operations_client_id: str = ""
+    mcp_car_client_id: str = ""
+    mcp_customer_client_id: str = ""
+    mcp_apps: str = ""  # the harnesses that may call: "client id=Name;client id=Name"
+    mcp_allow_cli: bool = False  # the Azure CLI too, for scripts
+    mcp_identifier_is_url: bool = False  # the address is the Application ID URI, else api://<client id>
+    mcp_issuer: str = ""  # another authorization server to point to
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]

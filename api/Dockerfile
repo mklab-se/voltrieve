@@ -16,6 +16,8 @@ COPY search/pyproject.toml search/uv.lock /srv/search/
 COPY search/src /srv/search/src
 COPY agent_core/pyproject.toml agent_core/uv.lock /srv/agent_core/
 COPY agent_core/src /srv/agent_core/src
+COPY doors/pyproject.toml doors/uv.lock /srv/doors/
+COPY doors/src /srv/doors/src
 
 WORKDIR /srv/api
 COPY api/pyproject.toml api/uv.lock ./
