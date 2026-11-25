@@ -75,7 +75,7 @@ class TurnSummary:
     cost_sek: float | None
     cold_start: bool = False
     kind: str = "message"  # message, or tool_results: a client tool round of an earlier message
-    client: str = ""  # car, web, cli, other or test
+    client: str = ""  # car, web, cli, mcp, other or test
 
     def span_attributes(self) -> dict:
         """OpenTelemetry GenAI names where one exists, voltrieve.* for the rest. No text."""

@@ -31,6 +31,11 @@ class LoopBackend(ConversationBackend):
         self._model = model
         self._server_tools = server_tools
 
+    @property
+    def server_tools(self) -> list[ServerTool]:
+        """For the customer's door, which runs the same tools."""
+        return self._server_tools
+
     def _model_for(self, ctx: TurnContext) -> ModelClient:
         return self._model
 

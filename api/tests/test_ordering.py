@@ -6,7 +6,7 @@ import httpx
 import pytest
 from voltrieve_agent.dealer import DealerClient
 from voltrieve_agent.model import Completed, FunctionCall, TextDelta
-from voltrieve_agent.server_tools import CAR_REFUSAL, KB_SEARCH_TOOLS, build_server_tools
+from voltrieve_agent.server_tools import CAR_REFUSAL, KB_SEARCH_TOOLS, OTHER_REFUSAL, build_server_tools
 
 from app.backends import BackendRegistry
 from app.backends.loop import LoopBackend
@@ -70,11 +70,11 @@ class Shop:
         }
         return await self.post("/chat/tool-results", azp, body, dict(headers))
 
-    def refused(self, events):
+    def refused(self, events, text=CAR_REFUSAL):
         steps = [d for k, d in events if k == "trace" and d["step"] == "client_not_allowed"]
         assert events[-1][0] == "done" and ADDRESS not in json.dumps(events)
         told = [i["output"] for i in self.model.inputs[-1] if i["call_id"] == "c1"]
-        return len(steps) == 1 and self.dealer_got == [] and told == [CAR_REFUSAL]
+        return len(steps) == 1 and self.dealer_got == [] and told == [text]
 
 
 @pytest.fixture(params=["loop", "prompt"])
@@ -108,7 +108,7 @@ async def test_the_header_makes_every_client_the_car(shop, azp):
 
 @pytest.mark.parametrize("azp", ["someone-else", ""])
 async def test_an_unknown_client_cannot_order(shop, azp):
-    assert shop.refused(await shop.say(azp, [OFFER], ANSWER, headers={"X-Voltrieve-Client": "web"}))
+    assert shop.refused(await shop.say(azp, [OFFER], ANSWER, headers={"X-Voltrieve-Client": "web"}), OTHER_REFUSAL)
 
 
 @pytest.mark.parametrize(
@@ -161,7 +161,7 @@ async def test_a_paused_turn_that_the_car_had_a_part_in_cannot_order(shop, reque
     events = await shop.say(azp, *rounds, headers=headers, client_tools=[MAKE_NOISE])
     for azp, headers in later:
         events = await shop.go_on(azp, events[-1][1], headers)
-    assert shop.refused(events)
+    assert shop.refused(events, OTHER_REFUSAL if azp == "someone-else" else CAR_REFUSAL)
 
 
 async def test_a_paused_turn_goes_on_as_the_client_that_continues_it_in_the_same_turn(shop):

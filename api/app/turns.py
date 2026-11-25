@@ -159,6 +159,15 @@ class TurnStore:
         self.mark_dirty(paused.conversation_id)
 
 
+@dataclass(frozen=True)
+class Answer:
+    """What one turn said, for a caller without a stream."""
+
+    text: str = field(repr=False)
+    titles: list[str]  # of the documents it cites
+    approved: bool  # the text is an approved answer
+
+
 @dataclass
 class Job:
     claims: Claims
@@ -179,9 +188,10 @@ class Job:
     context: dict = field(default_factory=dict, repr=False)
     context_line: str = field(default="", repr=False)  # goes before the message, to the backend only
     attachments: list[dict] = field(default_factory=list)  # kind, detail and size of each, for the trace
-    client: str = ""  # car, web, cli, other or test
-    ordering_client: str = ""  # car, web, cli or other: what the tools are told
+    client: str = ""  # car, web, cli, mcp, other or test
+    ordering_client: str = ""  # car, web, cli, mcp or other: what the tools are told
     private_tool: bool = False  # a private tool was called in this turn
+    through_a_door: bool = False  # nothing of it is logged, not even the question at debug level
 
     @property
     def unstored(self) -> bool:
@@ -190,7 +200,7 @@ class Job:
     @property
     def private(self) -> bool:
         """Whether nothing the turn says may be logged, error texts included."""
-        return bool(self.unstored or self.context or self.private_tool)
+        return bool(self.unstored or self.context or self.private_tool or self.through_a_door)
 
 
 class _Run:
@@ -270,6 +280,27 @@ class TurnService:
         The turn is not tied to the response: if the client disconnects, it still runs to
         its end, so the conversation is never left with a function call without output.
         """
+        return self._drain(self._begin(job))
+
+    async def answer(self, job: Job, seconds: float) -> Answer | None:
+        """One whole turn, for a caller without a stream. None when it gave no answer. After `seconds` it
+        is a TimeoutError, and the turn runs on to its end, as when a client disconnects."""
+        run = self._begin(job)
+        titles: list[str] = []
+        done = approved = False
+        async with asyncio.timeout(seconds):
+            while (event := await run.queue.get()) is not None:
+                if event.type == "error":
+                    return None  # the turn may have more to clean up, which nobody waits for
+                if event.type == "sources":
+                    titles = [i["id"] for i in event.data["items"] if i["kind"] == "source"]
+                elif event.type == "trace" and event.data.get("step") == "final_answer_sent":
+                    approved = True
+                elif event.type == "done":
+                    done = True
+        return Answer(run.text, titles, approved) if done and run.text else None
+
+    def _begin(self, job: Job) -> _Run:
         cold, self._cold = self._cold, False
         user = pseudonym(job.claims.oid)
         kind = "message" if isinstance(job.input, str) else "tool_results"
@@ -295,7 +326,7 @@ class TurnService:
         task = asyncio.create_task(self._execute(run, job, correlation_id.get()))
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
-        return self._drain(run)
+        return run
 
     async def drain(self, timeout: float = 20.0) -> None:
         """Wait for running turns, for shutdown."""
@@ -404,7 +435,7 @@ class TurnService:
 
             # The input of an unstored turn may be about the attachment, and the tool results of a
             # private one may say what the client told about itself.
-            if not job.unstored and not (job.private and isinstance(job.input, list)):
+            if not job.unstored and not job.through_a_door and not (job.private and isinstance(job.input, list)):
                 debug_payload(logger, "turn input", job.input)
             for used in job.attachments:
                 await run.emit(trace("attachment_used", "api", **used))

@@ -145,6 +145,12 @@ async def test_a_client_a_tool_is_not_for_is_refused_before_the_role(events, cap
     assert SECRET not in str(record.__dict__) and "Anna" not in str(record.__dict__)
 
 
+async def test_a_client_can_have_a_refusal_of_its_own(events):
+    toolset = ToolSet([replace(web_tool([]), client_refusals={"car": "Not from a car."})], [])
+    assert await toolset.execute("lookup", "{}", client_user("car", "Admin"), events) == "Not from a car."
+    assert await toolset.execute("lookup", "{}", client_user("mcp", "Admin"), events) == REFUSAL
+
+
 async def test_a_refused_client_is_refused_before_the_arguments_are_read(events):
     out = await ToolSet([web_tool([])], []).execute("lookup", "{nope", client_user("car"), events)
     assert out == REFUSAL

@@ -1,6 +1,6 @@
 import pytest
 
-from app.clients import client_name, conversation_metadata, ordering_client
+from app.clients import MCP, client_name, conversation_metadata, ordering_client
 from app.settings import Settings
 
 S = Settings(car_client_id="car-app", web_client_id="web-app", cli_client_id="cli-app")
@@ -17,6 +17,12 @@ def test_client_name(azp, test, name):
 
 def test_an_empty_setting_never_matches_an_empty_azp():
     assert client_name(Settings(car_client_id="", web_client_id="", cli_client_id=""), "", False) == "other"
+
+
+@pytest.mark.parametrize("azp", ["mcp", "car-app", "web-app", "cli-app", ""])
+def test_no_token_of_the_api_is_the_customers_door(azp):
+    for header in (None, "mcp"):
+        assert MCP not in (client_name(S, azp, False), ordering_client(S, azp, header))
 
 
 def test_metadata_has_the_model_only_when_the_catalog_has_it():

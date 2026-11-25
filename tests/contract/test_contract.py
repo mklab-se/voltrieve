@@ -26,7 +26,7 @@ from app.main import create_app  # noqa: E402
 from app.settings import Settings  # noqa: E402
 from app.turns import TurnStore  # noqa: E402
 from voltrieve_agent.model import Completed, FunctionCall, OutputItem, TextDelta  # noqa: E402
-from voltrieve_agent.server_tools import CAR_REFUSAL, KB_SEARCH_TOOLS, build_server_tools  # noqa: E402
+from voltrieve_agent.server_tools import CAR_REFUSAL, KB_SEARCH_TOOLS, OTHER_REFUSAL, build_server_tools  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -489,7 +489,7 @@ async def test_only_the_website_orders_and_the_tool_gets_the_name_and_the_client
     assert dealer.offers == ([("fjord", ADDRESS, who)] if azp == "web-app" else [])
     assert ("client_not_allowed" in steps(events)) is (azp != "web-app")
     [result] = model.calls[1]["input"]
-    assert result["output"] == (f"offer-1 to {ADDRESS}" if azp == "web-app" else CAR_REFUSAL)
+    assert result["output"] == {"web-app": f"offer-1 to {ADDRESS}", "car-app": CAR_REFUSAL, "": OTHER_REFUSAL}[azp]
     assert ADDRESS not in json.dumps(events)
 
 

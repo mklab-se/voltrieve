@@ -19,6 +19,10 @@ CAR_REFUSAL = (
     "It is not possible to order a car from within the car. "
     "You are welcome to talk with Runa about buying a car on the Voltrieve website."
 )
+OTHER_REFUSAL = (
+    "It is not possible to order a car here. "
+    "You are welcome to talk with Runa about buying a car on the Voltrieve website."
+)
 CURATED_TOOL = "get_curated_answer"
 KB_SEARCH_TOOL = "search_voltrieve_docs"
 PARTS_SEARCH_TOOL = "search_spare_parts"
@@ -110,7 +114,8 @@ def build_server_tools(
     ordering = {
         "required_role": ORDER_ROLE,
         "clients": ORDER_CLIENTS,
-        "client_refusal": CAR_REFUSAL,
+        "client_refusal": OTHER_REFUSAL,
+        "client_refusals": {"car": CAR_REFUSAL},
         "private": True,
         "concurrent": False,
     }

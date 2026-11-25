@@ -7,7 +7,7 @@ import respx
 
 from voltrieve_agent.dealer import DealerClient
 from voltrieve_agent.knowledge import KnowledgeBase
-from voltrieve_agent.server_tools import CAR_REFUSAL, ORDER_CLIENTS, ORDER_ROLE, build_server_tools
+from voltrieve_agent.server_tools import CAR_REFUSAL, ORDER_CLIENTS, ORDER_ROLE, OTHER_REFUSAL, build_server_tools
 from voltrieve_agent.tools import ToolSet, UserContext, current_correlation_id, current_turn_id
 
 BASE = "https://dealer.test"
@@ -358,11 +358,16 @@ def test_the_order_tools_are_private_run_alone_and_need_the_role_and_a_client():
         "It is not possible to order a car from within the car. "
         "You are welcome to talk with Runa about buying a car on the Voltrieve website."
     )
+    assert OTHER_REFUSAL == (
+        "It is not possible to order a car here. "
+        "You are welcome to talk with Runa about buying a car on the Voltrieve website."
+    )
     assert ORDER_CLIENTS == frozenset({"web", "cli"}) and ORDER_ROLE == "Order.Place"
     assert [t.name for t in order_tools()] == list(ORDER_TOOLS)
     for tool in order_tools():
         assert tool.private and not tool.concurrent and tool.required_role == ORDER_ROLE
-        assert tool.clients == ORDER_CLIENTS and tool.client_refusal == CAR_REFUSAL
+        assert tool.clients == ORDER_CLIENTS and tool.client_refusal == OTHER_REFUSAL
+        assert tool.client_refusals == {"car": CAR_REFUSAL}
     others = [t for t in build_server_tools(None, None) if t.name not in ORDER_TOOLS]
     assert all(t.clients is None and not t.private for t in others)
 
@@ -439,11 +444,11 @@ async def test_the_model_cannot_say_who_orders_or_when(tools, buyer, events, nam
 
 
 @respx.mock
-@pytest.mark.parametrize("client", ["car", "other", "test", ""])
+@pytest.mark.parametrize("client", ["car", "mcp", "other", "test", ""])
 @pytest.mark.parametrize("name", ORDER_TOOLS)
 async def test_the_car_and_unknown_clients_never_reach_the_dealer(tools, events, name, client):
     out = await tools[0].execute(name, ORDER_CALLS[name], order_user(client, "Chat.User"), events)
-    assert out == CAR_REFUSAL and len(respx.calls) == 0
+    assert out == (CAR_REFUSAL if client == "car" else OTHER_REFUSAL) and len(respx.calls) == 0
     assert [e.data["step"] for e in events.events] == ["client_not_allowed"]
 
 

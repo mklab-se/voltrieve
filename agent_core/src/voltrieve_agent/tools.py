@@ -2,7 +2,7 @@
 
 import json
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 
@@ -27,7 +27,7 @@ class UserContext:
     username: str
     roles: frozenset[str]
     name: str = field(default="", repr=False)  # the customer's name on an order, for no log
-    client: str = ""  # the client of the token: "car", "web", "cli" or "other", "" when not known
+    client: str = ""  # the client of the token: "car", "web", "cli", "mcp" or "other", "" when not known
 
 
 @dataclass(frozen=True)
@@ -43,6 +43,7 @@ class ServerTool:
     # The clients it may be called from, None for all, and what the model is told from another one.
     clients: frozenset[str] | None = None
     client_refusal: str = ""
+    client_refusals: Mapping[str, str] = field(default_factory=dict)  # another text, for a client by name
     # Its arguments and output are in no event and no log, whether the turn is private or not.
     private: bool = False
     # What the user is told while this runs: a stable code and a default text.
@@ -144,7 +145,7 @@ class ToolSet:
                     client=user.client,
                 )
             )
-            return tool.client_refusal
+            return tool.client_refusals.get(user.client, tool.client_refusal)
         if tool.required_role is not None and tool.required_role not in user.roles:
             logger.warning(
                 "authorization denied: tool %s requires role %s (user %s)",

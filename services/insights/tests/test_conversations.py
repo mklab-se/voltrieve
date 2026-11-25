@@ -72,6 +72,10 @@ def test_missing_owner_is_out():
     assert chosen([raw(owner=None)]) == []
 
 
+def test_a_question_through_a_door_is_out():
+    assert chosen([raw(client="mcp")]) == []  # nobody there has seen the notice
+
+
 def test_web_is_in():
     assert chosen([raw(client="web")])[0].client == "web"
 
