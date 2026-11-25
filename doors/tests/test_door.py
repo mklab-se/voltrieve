@@ -153,8 +153,12 @@ async def test_limits():
     w = World(rate=RateLimit(3), gate=Gate(1))
     async with running(w.doors):
         async with w.http(token()) as c:
-            codes = [(await c.post(OPS, json=rpc(), headers=H)).status_code for _ in range(4)]
-        assert codes[-1] == 429 and 429 not in codes[:3]
+            old = {**H, "mcp-protocol-version": "2025-11-25"}
+            codes = [(await c.post(OPS, json=rpc("tools/call", {"name": "health"}), headers=old)).status_code for _ in range(4)]
+            assert codes == [200, 200, 200, 429]
+            assert (await c.post(OPS, json=rpc(), headers=old)).status_code == 200  # connecting is not a call
+            codes = [(await c.post(OPS, json=rpc(), headers=old)).status_code for _ in range(150)]
+        assert codes[0] == 200 and codes[-1] == 429
         async with w.http(token(oid="bob")) as c:
             call = rpc("tools/call", {"name": "slow", "arguments": {}})
             h = {**H, "mcp-protocol-version": "2025-11-25"}

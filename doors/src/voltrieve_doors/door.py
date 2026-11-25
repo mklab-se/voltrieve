@@ -32,6 +32,7 @@ tracer = trace.get_tracer("voltrieve.doors")
 MAX_BODY_BYTES = 64 * 1024
 MAX_DEPTH = 32
 CALLS_PER_MINUTE = 30
+REQUESTS_PER_CALL = 5  # what an older client sends to connect, beside the call itself
 WELL_KNOWN = "/.well-known/oauth-protected-resource"
 NO_STORE = (b"cache-control", b"no-store")
 FAILED = "That did not work. Try again later."
@@ -138,6 +139,7 @@ class Door:
         self._tools = {t.name: t for t in tools}
         self._gate = gate or Gate()
         self._rate = rate or RateLimit(CALLS_PER_MINUTE)
+        self._requests = RateLimit(CALLS_PER_MINUTE * REQUESTS_PER_CALL)
         self._on_call, self._clock, self._correlation = on_call, clock, correlation
         self._validator = validator or DoorTokenValidator(
             config.tenant_id,
@@ -256,7 +258,8 @@ class Door:
         if message is None:
             return await _reply(send, 400, _rpc_error(-32600, "Send one JSON-RPC message."))
         calls = message.get("method") == "tools/call"
-        if not self._rate.allow((who.oid, who.app)):
+        who_and_app = (who.oid, who.app)
+        if not self._requests.allow(who_and_app) or (calls and not self._rate.allow(who_and_app)):
             return await _reply(send, 429, {"error": "too_many_requests"}, [(b"retry-after", b"60")])
         if calls and not self._gate.enter():
             return await _reply(send, 429, {"error": "busy"}, [(b"retry-after", b"2")])
