@@ -26,3 +26,6 @@ The usage insights, also from 2026-11-24:
 - `insights-acceptance.txt`: the runs of the job on made up conversations, the rule of five, the grouping (`scripts/insights_check.py`), the identity, the API and the cost.
 - `search-basic-removed.txt`: the checks before and after the Basic search service was deleted.
 - `tracing-disconnected.txt`: the marked turns before and after Foundry's tracing was disconnected, from `scripts/tracing_check.py`.
+- `doors.txt`: every MCP door from a scripted client, what works and what is refused, from `scripts/doors_check.py --ask --deliver`.
+- `doors-privacy.txt`: a marker through every door and where it was not found, the car's remote control in a browser, and Runa while a door is busy.
+- `customer-door.txt`: a plain model with the customer door's tools against Runa on eight questions, from `scripts/customer_compare.py`.

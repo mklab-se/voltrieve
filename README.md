@@ -221,6 +221,8 @@ The dealer system and the orders were run on the deployed service on 2026-11-24 
 - A marker in an address was found in no table of the workspace.
 - The full routing suite on the new instructions, on 2026-11-25 (`docs/evidence/routing.txt`): right sources in 139 of 141 turns, 43 of 43 part numbers on each backend, and the order tool in 6 of 6 order questions and no other. Both misses are parts questions that also searched the documents. Median first text 3.9 s on the prompt agent, 4.7 s on the own loop and 9.1 s on the hosted agent, where 11 of 45 turns were over 10 s.
 
+Run live on 2026-11-25, for [the MCP doors](docs/bring-your-own-ai.md): all five from a scripted client with a token from the az CLI, 98 checks (`docs/evidence/doors.txt`), the car's remote control in a browser and a marker that reached no telemetry (`docs/evidence/doors-privacy.txt`).
+
 Not verified, for the dealer system and the orders:
 
 - The sign-in to the dealer page, the `name` claim in a token of the website or the CLI (it is in one of the az CLI), and the demo by hand in two windows.
@@ -232,7 +234,7 @@ Offline tests pass: `agent_core` 317, `api` 839, `doors` 42, `agents/hosted` 56,
 Not verified:
 
 - Sign-in to the car, the website and the dashboard.
-- Sign-in to a door from Claude, ChatGPT, Microsoft 365 Copilot or VS Code, a door on an address of our own with its certificate, an unattended dealer agent, and the car's remote control by hand.
+- Sign-in to a door from Claude, ChatGPT, Microsoft 365 Copilot or VS Code, a door on an address of our own with its certificate, an unattended dealer agent, and the deployed car page signed in with remote control on.
 - The car in Safari or Firefox, on a slow or Windows computer, and with a screen reader. Whether a person hears the horn and the motor.
 - A rollback of the Serverless search service or of the Search versions, and what Serverless costs on an invoice.
 - The workbook's check of Foundry's tracing rows.

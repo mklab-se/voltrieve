@@ -1,0 +1,31 @@
+The MCP doors: telemetry, the car in a browser, and the speed of Runa. 2026-11-25, deployed dev project.
+
+Telemetry
+  A marker was sent through all five doors at 22:06 to 22:07 UTC with a token from the az CLI: in a search, in a question
+  to Runa ("My name is ..., repeat my name"), as a tool name, argument names and values, a method, request ids, _meta, a
+  turn id, an order number and a bearer token.
+  Rows with the marker in any table of the Log Analytics workspace, container console included: 0.
+  Control: rows of the same minutes with a name of ours (search_documents or door_call) were found.
+  AppGenAIContent has rows of the API (roles and types of messages, no text). They were there before the doors.
+  Calls are sampled: not every call is a span.
+
+The car page in a browser
+  The car built from the branch, with the dev sign-in and a local proxy to the deployed API, a window beside the script.
+  Remote control was off at the start, and the link opened when it was switched on.
+  honk, flash_lights and set_wipers through the deployed door: done, rain and wipers seen, and the notes
+  "Azure CLI flashed the lights." and "Azure CLI set the wipers to fast." on the center screen.
+  Driving at 51 km/h: honk, lights and wipers refused, "The car is not parked".
+  Switched off: "No car is linked" at once.
+  Not verified: sound by ear, the Microsoft sign-in page, the deployed car page itself signed in.
+
+ask_runa on the three backends, one question each, whole answer
+  loop 6.8 s, prompt 4.9 s, hosted 11.2 s, the right part number on all three.
+
+Runa while a door is busy (own loop, time to first text in seconds, one run, two searches through the door at a time)
+  Question                                   quiet   busy
+  Good morning!                              1.4     1.26
+  What is the towing capacity of the Fjord?  4.92    4.51
+  Good morning!                              1.41    1.05
+  What does the Winter option pack contain?  8.71    6.38
+  Four turns are too few to prove more than that nothing was clearly slower. The routing suite was not run: it is a
+  bulk run and needs an approved cost.

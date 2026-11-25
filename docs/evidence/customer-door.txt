@@ -1,0 +1,22 @@
+The customer's door: gpt-6.1-terra with the door's tools, against Runa on loop
+
+question              group    who       right  invented  word for word  seconds  tokens  tools or error
+towing                docs     plain         -         0              -      4.1    6731  search_documents
+towing                docs     Runa          -         0              -      5.1       -  
+windscreen            parts    plain    1 of 1         0              -      6.3    6863  search_parts
+windscreen            parts    Runa     1 of 1         0              -      6.8       -  
+phone                 curated  plain         -         0            yes      4.3    2001  approved_answer
+phone                 curated  Runa          -         0            yes      2.0       -  
+greeting              none     plain         -         0              -      1.4     943  
+greeting              none     Runa          -         0              -      1.8       -  
+option-pack           docs     plain         -         0              -      4.9    7035  search_documents
+option-pack           docs     Runa          -         0              -      5.7       -  
+air-spring            parts    plain    1 of 1         0              -      4.2    6791  search_parts
+air-spring            parts    Runa     1 of 1         0              -      6.0       -  
+reach                 curated  plain         -         0            yes      2.8    2008  approved_answer
+reach                 curated  Runa          -         0            yes      2.3       -  
+thanks                none     plain         -         0              -      1.4     948  
+thanks                none     Runa          -         0              -      1.8       -  
+
+plain: 2 of 2 with every article number, 0 invented, 2 of 2 approved texts word for word, 0 errors
+Runa: 2 of 2 with every article number, 0 invented, 2 of 2 approved texts word for word, 0 errors

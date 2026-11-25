@@ -4,12 +4,13 @@
 # ///
 """The deployed MCP doors, from a scripted MCP client: what works and what is refused.
 
-    uv run scripts/doors_check.py [--doors operations,car,dealer,customer,runa] [--ask] [--out FILE]
+    uv run scripts/doors_check.py [--doors operations,car,dealer,customer,runa] [--ask] [--deliver] [--out FILE]
 
 It signs in as you, with tokens from the az CLI, so MCP_ALLOW_CLI must be true in the environment and you
 need the roles of the doors. It changes the stock of your own city by one and back. It plays a car of its
-own (POST /car/link) for the car's door. It never delivers an order and never books. `--ask` also asks
-Runa one question (about 0.1 SEK).
+own (POST /car/link) for the car's door. It never books, and delivers only an order of its own. `--ask` also asks Runa
+two questions (about 0.2 SEK). `--deliver` orders a car through Runa with a made up address (three turns, about
+0.3 SEK), says no and then yes to its delivery through the door, deletes the order and puts the car back.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ import argparse
 import asyncio
 import base64
 import json
+import re
 import sys
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -30,7 +32,7 @@ from mcp.client.streamable_http import streamable_http_client
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from voltrieve_client import TEST_HEADER, _az_token, api_token, api_url, azd_value, parse_sse  # noqa: E402
+from voltrieve_client import TEST_HEADER, _az_token, api_token, api_url, azd_value, parse_sse, write_evidence  # noqa: E402
 
 EXPECTED = {
     "operations": {"service_health", "recent_turns", "problem_turns", "explain_turn", "what_people_ask"},
@@ -46,6 +48,7 @@ failed = 0
 
 
 def note(text: str) -> None:
+    text = re.sub(r"[0-9a-f]{8}-[0-9a-f-]{27}", "<id>", " ".join(text.split()) if "\n" in text else text)
     lines.append(text)
     print(text, flush=True)
 
@@ -77,12 +80,13 @@ def claims(bearer: str) -> dict:
 class Door:
     """An MCP session with one door, as a context."""
 
-    def __init__(self, door: str, bearer: str, mode: str = "auto"):
-        self.url, self.mode = f"{base(door)}/mcp/{door}", mode
+    def __init__(self, door: str, bearer: str, mode: str = "auto", elicit=None):
+        self.url, self.mode, self.elicit = f"{base(door)}/mcp/{door}", mode, elicit
         self.http = httpx2.AsyncClient(headers={"authorization": f"Bearer {bearer}", **TEST_HEADER}, timeout=120)
 
     async def __aenter__(self) -> Client:
-        self.client = Client(streamable_http_client(self.url, http_client=self.http), mode=self.mode)
+        self.client = Client(streamable_http_client(self.url, http_client=self.http), mode=self.mode,
+                             elicitation_callback=self.elicit)
         return await self.client.__aenter__()
 
     async def __aexit__(self, *exc) -> None:
@@ -229,11 +233,57 @@ async def dealer(bearer: str) -> None:
         check("dealer: five at once is refused", not ok)
         ok, text = await call(c, "open_orders")
         check("dealer: open orders without name and address", ok and not any(w in text for w in ("address", "customer", "name\":")), text[:160])
+        orders = json.loads(text)["orders"] if ok else []
+        number = next((o["number"] for o in orders if o["in_own_stock"]), "VO-999999")
         try:
-            ok, text = await call(c, "deliver_order", {"number": "VO-999999"})
+            ok, text = await call(c, "deliver_order", {"number": number})  # this client has no way to ask
         except Exception as exc:  # a client that cannot ask
             ok, text = False, type(exc).__name__
         check("dealer: nothing is delivered by a client that cannot ask", not ok, text[:120])
+
+
+async def deliver(bearer: str) -> None:
+    from orders_check import Case, claims_of, whole
+    from voltrieve_client import cached_token, dealer_staff
+
+    staff, api = dealer_staff(), cached_token(api_token)
+    case = Case("loop", api_url(), api, staff, {o["number"] for o in staff.state()["orders"]}, claims_of(api()))
+    asked: list[str] = []
+
+    def answer(action: str, yes: bool):
+        async def reply(ctx, params) -> t.ElicitResult:
+            asked.append(params.message)
+            return t.ElicitResult(action=action, content={"deliver": yes} if action == "accept" else None)
+
+        return reply
+
+    order = None
+    try:
+        await asyncio.to_thread(whole, case)
+        order = case.one()
+        number, model = order["number"], order["model"]
+        async with Door("dealer", bearer) as c:
+            city = json.loads((await call(c, "my_stock"))[1])["city"]
+            seen = number in (await call(c, "open_orders"))[1]
+        check("dealer: an order from the website is there", seen, number)
+        stock = staff.state()["stock"][model][city]
+        for name, action, yes in (("no", "decline", False), ("a yes that says no", "accept", False), ("cancel", "cancel", False)):
+            async with Door("dealer", bearer, elicit=answer(action, yes)) as c:
+                ok, text = await call(c, "deliver_order", {"number": number})
+            check(f"dealer: {name} delivers nothing", not ok and staff.state()["stock"][model][city] == stock, text)
+        async with Door("dealer", bearer, elicit=answer("accept", True)) as c:
+            ok, text = await call(c, "deliver_order", {"number": number})
+            check("dealer: yes delivers it", ok and staff.state()["stock"][model][city] == stock - 1, asked[-1] if asked else "")
+            again, _ = await call(c, "deliver_order", {"number": number})
+            check("dealer: and only once", not again and staff.state()["stock"][model][city] == stock - 1)
+            check("dealer: nobody was asked about a delivered order", len(asked) == 4, str(len(asked)))
+        if staff.state()["stock"][model][city] == stock - 1:
+            staff.send("POST", "/staff/stock", {"model": model, "city": city, "change": 1})
+        check("dealer: the car is put back", staff.state()["stock"][model][city] == stock)
+    finally:
+        for own in case.orders():
+            staff.delete(own["number"])
+    check("dealer: our order is deleted", not case.orders())
 
 
 async def customer(bearer: str) -> None:
@@ -264,6 +314,7 @@ async def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--doors", default="operations,car,dealer,customer,runa")
     parser.add_argument("--ask", action="store_true")
+    parser.add_argument("--deliver", action="store_true")
     parser.add_argument("--out", type=Path)
     args = parser.parse_args()
     doors = args.doors.split(",")
@@ -279,13 +330,15 @@ async def main() -> None:
                 await car(tokens[door])
             case "dealer":
                 await dealer(tokens[door])
+                if args.deliver:
+                    await deliver(tokens[door])
             case "customer":
                 await customer(tokens[door])
             case "runa":
                 await runa(tokens[door], args.ask)
     note(f"{sum(x.startswith(('ok', 'FAILED')) for x in lines)} checks, {failed} failed")
     if args.out:
-        args.out.write_text("\n".join(lines) + "\n")
+        write_evidence(args.out, "\n".join(lines) + "\n")
     sys.exit(1 if failed else 0)
 
 

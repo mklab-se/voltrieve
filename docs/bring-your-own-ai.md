@@ -71,6 +71,8 @@ For a dealer's staff (`Dealer.Staff`), or a dealer's own agent that runs without
 
 For a customer (`Customer`), in two ways that can be compared, each a door of its own. `/mcp/customer` gives search, stock, prices, test drives and the approved answers, and the AI thinks by itself. `/mcp/runa` gives one tool, `ask_runa`, and Runa answers. A car cannot be ordered through a door.
 
+On eight questions the same model did as well with only these tools as Runa did: the right part numbers, none invented, and both approved texts word for word ([evidence](https://github.com/mklab-se/voltrieve/blob/main/docs/evidence/customer-door.txt)). That is one run, with the model that Runa uses. It says that the tools carry what is needed, not that any AI will do as well.
+
 ## Connect from your AI
 
 **What every guide needs:** the address of the door (`just mcp` prints them), the client id of the harness's registration (`voltrieve-harness-...`), and a role on the door, which the setup gives to the deployer. No guide uses a secret.
@@ -79,7 +81,7 @@ For a customer (`Customer`), in two ways that can be compared, each a door of it
 
 | Harness | State | What we expect |
 | --- | --- | --- |
-| A scripted MCP client | [Run live](https://github.com/mklab-se/voltrieve/blob/main/docs/evidence/doors.txt) | |
+| A scripted MCP client | [Run live](https://github.com/mklab-se/voltrieve/blob/main/docs/evidence/doors.txt) on 2026-11-25, 98 checks | With a token from the Azure CLI, so not a sign-in |
 | Claude (web, desktop) | Not tried | Own client id, no secret: likely, the documentation does not say it for this case |
 | Claude Code | Not tried | Own client id, no secret |
 | ChatGPT | Not tried | Where to type a client id was not found |
@@ -147,7 +149,8 @@ The guard exists because the SDK, used as it comes, writes a caller's own words 
 
 ## Not verified
 
-- A sign-in from any harness, and whether each accepts two doors on one host.
+- A sign-in from any harness, and whether each accepts two doors on one host. It waits for the DNS records of an address of our own.
+- Azure MCP Server side by side with the operations door. Planned in the design, not done.
 - An unattended dealer agent with a real managed identity. Only in tests.
-- Asking a person in the middle of a call, from a real harness. A scripted client has done it offline.
+- Asking a person in the middle of a call, from a real harness. A scripted client has done it live, with no, cancel and yes.
 - Client ID metadata documents, a preview in Entra ID.
