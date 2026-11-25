@@ -247,6 +247,19 @@ def workbook() -> dict:
         query("Errors by code", TURNS + """| where outcome == "error"
 | summarize turns = count() by error_code, backend
 | order by turns desc""", "table", "50"),
+        text("## Doors\nCalls from outside AI through the [MCP doors](https://mklab.se/voltrieve/bring-your-own-ai/). Only names "
+             "from our own lists are stored: the door, the tool and the calling app. Never an argument, an answer or a "
+             "person."),
+        query("Calls per door, tool and app", """dependencies
+| where name == "door.call"
+| extend door = tostring(customDimensions["voltrieve.door.door"]),
+    tool = tostring(customDimensions["voltrieve.door.tool"]),
+    app = tostring(customDimensions["voltrieve.door.app"]),
+    result = tostring(customDimensions["voltrieve.door.result"]),
+    ms = toint(customDimensions["voltrieve.door.elapsed_ms"])
+| summarize calls = count(), not_done = countif(result !in ("done", "asked")), median_ms = percentile(ms, 50), worst_ms = max(ms)
+    by door, tool, app
+| order by door asc, calls desc""", "table"),
         text("## Privacy check\n**What our code writes.** Every attribute name stored on a turn, with the longest "
              "value seen. Only ids, names, counts and timings belong here: no prompt, answer or user name. A long "
              "value is worth a look."),
