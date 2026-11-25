@@ -7,6 +7,7 @@ import { spoken } from "../spoken";
 import type { ChatState } from "../turns";
 import type { SourceItem } from "../types";
 import type { Driving } from "../useDriving";
+import type { Remote } from "../useRemote";
 import { CenterScreen } from "./CenterScreen";
 import { DriverDisplay } from "./DriverDisplay";
 import { Hud } from "./Hud";
@@ -29,6 +30,7 @@ interface Props {
   onPark: () => void;
   sourceError?: string;
   onOpenSource: (source: SourceItem) => void;
+  remote: Remote;
 }
 
 const place = ({ left, top, width, height }: Box): CSSProperties => ({
@@ -103,9 +105,10 @@ export function Cockpit(props: Props) {
     <main className="cockpit" ref={frame}>
       <div className="picture" style={picture} data-street={driving.street}>
         <canvas ref={canvas} className="street" style={place(WINDSCREEN)} role="img" aria-label="The street ahead" />
+        {props.remote.flashing && <div className="headlights flashing" style={place(WINDSCREEN)} aria-hidden="true" />}
         <img className="cockpit-picture" src={`${import.meta.env.BASE_URL}cockpit.webp`} alt="" draggable={false} />
         {driving.street === "failed" && <p className="no-street">The street could not be drawn in this browser. The car drives all the same.</p>}
-        <DriverDisplay gauges={driving.gauges} style={place(DRIVER_DISPLAY)} />
+        <DriverDisplay gauges={driving.gauges} flashing={props.remote.flashing} style={place(DRIVER_DISPLAY)} />
         <CenterScreen {...props} style={place(CENTER_SCREEN)} state={chat} lifted={hud.open} gauges={driving.gauges} sign={driving.sign} field={field} />
         <Hud
           open={hud.open}

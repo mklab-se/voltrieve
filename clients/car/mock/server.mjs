@@ -1,5 +1,5 @@
 // Tiny mock of the Web API, for running and screenshotting the car without Azure.
-// It answers /chat, /chat/tool-results and /attachments.
+// It answers /chat, /chat/tool-results, /attachments and /car/link.
 //
 //   npm run mock            (listens on :8789)
 //   npm run dev:mock        (the car with fake auth pointing here)
@@ -8,6 +8,9 @@
 // and then a scripted parking answer, "park" park, "error" an error, "how far" a long answer with
 // sources. Everything else gets a scripted answer. As in the real API: a body over 64 KB is too large,
 // an id that was not given out here is an unknown attachment, and a file named blurred.jpg is rejected.
+//
+// With remote control on in the menu, this plays someone's AI:
+//   curl -X POST localhost:8789/mock/car-command -d '{"name":"flash_lights","arguments":{"times":2},"app":"Claude"}'
 import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 
@@ -28,6 +31,9 @@ const CORS = {
 
 const attachments = new Set(); // the ids given out
 const paused = new Map(); // turn id -> { tool, conversation_id, backend }
+
+const links = new Map(); // link id -> { send, parked }, the oldest first
+const commands = new Map(); // command id -> what to do with the answer of the car
 
 const PARKING =
   "Yes. You can park here for **2 hours**, and there is a fee between 9 and 18.\n\n" +
@@ -141,22 +147,67 @@ function upload(res, raw) {
   return json(res, 201, { id, kind: "photo", status: "ready", expires_at });
 }
 
+function carLink(req, res) {
+  const id = randomUUID();
+  res.writeHead(200, { ...CORS, "Content-Type": "text/event-stream", "Cache-Control": "no-store" });
+  const send = sse(res);
+  links.set(id, { send, parked: false });
+  send("link", { id });
+  const alive = setInterval(() => res.write(": keep-alive\n\n"), 10_000);
+  res.on("close", () => {
+    clearInterval(alive);
+    links.delete(id);
+  });
+}
+
+/** The state of a car, or what it did. */
+function fromCar(res, path, body) {
+  const [, , , id, what] = path.split("/");
+  const link = links.get(id);
+  if (!link) return json(res, 404, { detail: "Unknown car link" });
+  if (what === "state") link.parked = body.parked;
+  else commands.get(body.id)?.(body);
+  return res.writeHead(204, CORS).end();
+}
+
+/** Only here: a command as the API would send it, or not at all when the car is not linked or not parked. */
+async function carCommand(res, { name = "honk", arguments: args = { times: 1 }, app = "Claude" }) {
+  const link = [...links.values()].at(-1);
+  if (!link) return json(res, 409, { error: "not_linked" });
+  if (!link.parked) return json(res, 409, { error: "moving" });
+  const id = randomUUID();
+  const answer = new Promise((resolve) => {
+    commands.set(id, resolve);
+    setTimeout(resolve, 5000, { error: "no_answer" });
+  });
+  link.send("command", { id, name, arguments: args, app });
+  json(res, 200, await answer);
+  commands.delete(id);
+}
+
+const CAR_POST = /^\/car\/link\/[^/]+\/(state|results)$/;
+const PATHS = ["/chat", "/chat/tool-results", "/attachments", "/car/link", "/mock/car-command"];
+
 async function handle(req, res) {
   if (req.method === "OPTIONS") return res.writeHead(204, CORS).end();
-  if (req.method !== "POST" || !["/chat", "/chat/tool-results", "/attachments"].includes(req.url)) {
+  if (req.method !== "POST" || !(PATHS.includes(req.url) || CAR_POST.test(req.url))) {
     return res.writeHead(404, CORS).end();
   }
   const raw = await readBody(req, req.url === "/attachments" ? MAX_UPLOAD : MAX_BODY);
   if (!raw) return json(res, 413, { detail: "Request body too large" });
-  if (!req.headers.authorization?.startsWith("Bearer ")) return json(res, 401, { detail: "Missing token" });
+  const byHand = req.url === "/mock/car-command"; // from a terminal, without a token
+  if (!byHand && !req.headers.authorization?.startsWith("Bearer ")) return json(res, 401, { detail: "Missing token" });
   if (req.url === "/attachments") return upload(res, raw);
+  if (req.url === "/car/link") return carLink(req, res);
 
   let body;
   try {
-    body = JSON.parse(raw);
+    body = JSON.parse(byHand && raw.length === 0 ? "{}" : raw);
   } catch {
     return json(res, 422, { detail: "Invalid JSON" });
   }
+  if (byHand) return carCommand(res, body);
+  if (CAR_POST.test(req.url)) return fromCar(res, req.url, body);
   const isChat = req.url === "/chat";
   if (!isChat && !Array.isArray(body.results)) return json(res, 422, { detail: "results are missing" });
   const turn = isChat ? undefined : paused.get(body.turn_id);

@@ -3,6 +3,7 @@ import type { Gauges } from "../gauges";
 import type { Pedals } from "../pedals";
 import type { ChatState, Turn } from "../turns";
 import type { SourceItem } from "../types";
+import type { Remote } from "../useRemote";
 import { Answer } from "./Answer";
 import { Clock } from "./Clock";
 import { SendIcon, SpeakerIcon } from "./icons";
@@ -33,6 +34,7 @@ interface Props {
   onSend: (text: string) => void;
   onPark: () => void;
   onOpenSource: (source: SourceItem) => void;
+  remote?: Remote;
 }
 
 const Exchange = memo(function Exchange({ turn, onOpenSource }: { turn: Turn; onOpenSource: Props["onOpenSource"] }) {
@@ -110,6 +112,22 @@ function SignCard({ sign, gauges, busy, onPark }: Pick<Props, "sign" | "gauges" 
   );
 }
 
+/** Whether the driver's own AI can reach the car, and what it has just done. */
+function RemoteNotes({ on, status, notes }: Remote) {
+  return (
+    <div className="cs-remote">
+      {on && <p className="cs-remote-on">{status === "linked" ? "Remote control is on" : "Remote control is connecting"}</p>}
+      <div role="status" aria-live="polite">
+        {notes.map((note) => (
+          <p key={note.id} className="cs-remote-note">
+            {note.text}
+          </p>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function CenterScreen(props: Props) {
   const { style, state, busy, lifted, pedals, field, now, onSetClock, motorOn, onMotor, onSend, onOpenSource } = props;
   const [text, setText] = useState("");
@@ -132,6 +150,7 @@ export function CenterScreen(props: Props) {
           <SpeakerIcon on={motorOn} />
         </button>
       </header>
+      {props.remote && <RemoteNotes {...props.remote} />}
       <div className="cs-main">
         <section className="cs-chat" aria-label={`Chat with ${ASSISTANT_NAME}`}>
           <Messages state={state} lifted={lifted} busy={busy} onSend={onSend} onOpenSource={onOpenSource} />

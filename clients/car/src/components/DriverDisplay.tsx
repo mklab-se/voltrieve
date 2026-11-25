@@ -1,13 +1,19 @@
 import type { CSSProperties } from "react";
 import type { Gauges } from "../gauges";
-import { ParkingSign, WiperIcon } from "./icons";
+import { ParkingSign, TurnIcon, WiperIcon } from "./icons";
 
 const meters = (m: number) => `${m} m`;
 
-export function DriverDisplay({ gauges, style }: { gauges: Gauges; style: CSSProperties }) {
+export function DriverDisplay({ gauges, flashing = false, style }: { gauges: Gauges; flashing?: boolean; style: CSSProperties }) {
   const { speed, gear, rangeKm, batteryPercent, wipers, signInM } = gauges;
   return (
     <div className="driver-display" style={style} role="group" aria-label="Driver display">
+      {flashing && (
+        <p className="dd-turn flashing" aria-label="The lights flash">
+          <TurnIcon left />
+          <TurnIcon left={false} />
+        </p>
+      )}
       <div className="dd-left">
         <p className="dd-gear" aria-label={`Gear ${gear}`}>
           {["P", "R", "D"].map((g) => (

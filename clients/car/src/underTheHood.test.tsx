@@ -77,7 +77,7 @@ describe("the switch", () => {
   it("is in the menu", () => {
     const menu = (on: boolean) =>
       renderToStaticMarkup(
-        <Menu openAtFirst onNewChat={nothing} onSignOut={nothing} username="dev@x" underTheHood={on} onUnderTheHood={nothing} />,
+        <Menu openAtFirst onNewChat={nothing} onSignOut={nothing} username="dev@x" underTheHood={on} onUnderTheHood={nothing} remote={false} onRemote={nothing} />,
       );
     expect(menu(false)).toMatch(/role="switch"[^>]*aria-checked="false"[^>]*>Under the hood/);
     expect(menu(true)).toMatch(/role="switch"[^>]*aria-checked="true"/);

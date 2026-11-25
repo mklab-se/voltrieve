@@ -8,12 +8,15 @@ interface Props {
   username: string;
   underTheHood: boolean;
   onUnderTheHood: (on: boolean) => void;
+  remote: boolean;
+  onRemote: (on: boolean) => void;
   /** For the tests, which cannot click. */
   openAtFirst?: boolean;
 }
 
 /** The menu in the corner. */
-export function Menu({ onNewChat, onSignOut, username, underTheHood, onUnderTheHood, openAtFirst = false }: Props) {
+export function Menu(props: Props) {
+  const { onNewChat, onSignOut, username, underTheHood, onUnderTheHood, remote, onRemote, openAtFirst = false } = props;
   const [open, setOpen] = useState(openAtFirst);
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -48,6 +51,10 @@ export function Menu({ onNewChat, onSignOut, username, underTheHood, onUnderTheH
           </button>
           <button type="button" className="switch" role="switch" aria-checked={underTheHood} onClick={choose(() => onUnderTheHood(!underTheHood))}>
             Under the hood
+            <span className="switch-track" aria-hidden="true" />
+          </button>
+          <button type="button" className="switch" role="switch" aria-checked={remote} onClick={choose(() => onRemote(!remote))}>
+            Remote control
             <span className="switch-track" aria-hidden="true" />
           </button>
           <button type="button" onClick={choose(onSignOut)} title={`Signed in as ${username}`}>

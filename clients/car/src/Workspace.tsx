@@ -18,6 +18,7 @@ import type { Backend, ClientToolCall, SourceItem } from "./types";
 import { useChat } from "./useChat";
 import { useDriving } from "./useDriving";
 import { useHud } from "./useHud";
+import { useRemote } from "./useRemote";
 import { useStable } from "./useStable";
 
 interface Props {
@@ -46,6 +47,8 @@ export function Workspace({ config, auth, session }: Props) {
   const [motor] = useState(() => createMotor());
   const pedals = useMemo(() => new Pedals(drive), [drive]);
   const driving = useDriving(drive, canvas, scene, motor);
+
+  const remote = useRemote(config.apiUrl, auth, drive);
 
   // The clock of the car runs on from where it was set.
   const offset = useRef(0);
@@ -146,17 +149,23 @@ export function Workspace({ config, auth, session }: Props) {
         onPark={parkHere}
         sourceError={sourceError}
         onOpenSource={openDocument}
+        remote={remote}
       />
       {underTheHood && <UnderTheHood state={state} backend={backend} onBackend={setBackend} busy={!free} />}
       <Menu
         onNewChat={newChat}
-        onSignOut={() => void auth.signOut()}
+        onSignOut={() => {
+          remote.setOn(false);
+          void auth.signOut();
+        }}
         username={session.username}
         underTheHood={underTheHood}
         onUnderTheHood={(on) => {
           setUnderTheHood(on);
           rememberUnderTheHood(on);
         }}
+        remote={remote.on}
+        onRemote={remote.setOn}
       />
     </div>
   );

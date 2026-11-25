@@ -27,6 +27,12 @@ export const SendIcon = () => icon(<path d="M5 12h13M12.5 6.5 18 12l-5.5 5.5" />
 
 export const ArrowIcon = ({ up }: { up: boolean }) => icon(up ? <path d="m6 14.5 6-6 6 6" /> : <path d="m6 9.5 6 6 6-6" />);
 
+export const TurnIcon = ({ left }: { left: boolean }) => (
+  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <path d={left ? "M11 4 2 12l9 8v-5h11V9H11z" : "m13 4 9 8-9 8v-5H2V9h11z"} />
+  </svg>
+);
+
 export const CloseIcon = () => icon(<path d="m6 6 12 12M18 6 6 18" />);
 
 export const MenuIcon = () => (

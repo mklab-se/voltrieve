@@ -17,6 +17,7 @@ from app.attachments.store import AttachmentStore
 from app.attachments.upload import UploadQueue
 from app.auth import TokenValidator
 from app.backends import BackendRegistry
+from app.carlink import CarLinks, build_car_router
 from app.doors import build_doors
 from app.doors.telemetry import TelemetryReader
 from app.logging_setup import configure_logging, correlation_id
@@ -183,7 +184,9 @@ def create_app(
     # The handlers are closures over the clients and never called here, so None is fine.
     app.state.server_tool_names = frozenset(t.name for t in build_server_tools(None, None))
 
+    app.state.car_links = CarLinks()
     app.include_router(build_router())
+    app.include_router(build_car_router())
     app.state.telemetry = TelemetryReader(settings.log_analytics_workspace_id, workspace_token())
     app.state.doors = build_doors(app, settings)
     app.add_middleware(Doors, doors=app.state.doors)

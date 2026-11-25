@@ -8,7 +8,7 @@ import type { ClientTool, ClientToolCall, ToolOutput } from "./types";
  */
 export const CAR_TOOLS: ClientTool[] = tools;
 
-const WIPER_MODES = ["off", "slow", "fast"] as const;
+export const WIPER_MODES = ["off", "slow", "fast"] as const;
 export type WiperMode = (typeof WIPER_MODES)[number];
 
 const MAX_HONKS = 5;
@@ -39,7 +39,7 @@ function parseArguments(value: unknown): Record<string, unknown> | undefined {
   return typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : undefined;
 }
 
-function isWhole(value: unknown, min: number, max: number): value is number {
+export function isWhole(value: unknown, min: number, max: number): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= min && value <= max;
 }
 
