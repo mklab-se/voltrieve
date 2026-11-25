@@ -21,6 +21,7 @@ class GraphMock:
         self.users: dict[str, dict] = {}
         self.assignments: list[dict] = []
         self.grants: list[dict] = []
+        self.domains: list[dict] = [{"id": "contoso.onmicrosoft.com", "isVerified": True}]
         self.log: list[tuple[str, str]] = []
         self._failures: list[dict] = []
         router.route(host="graph.microsoft.com").mock(side_effect=self._handle)
@@ -71,6 +72,7 @@ class GraphMock:
             (("POST", r"/servicePrincipals/([^/]+)/appRoleAssignedTo"), self._create_assignment),
             (("GET", r"/users/([^/]+)"), self._get_user),
             (("POST", r"/users"), self._create_user),
+            (("GET", r"/domains"), self._list_domains),
             (("GET", r"/oauth2PermissionGrants"), self._list_grants),
             (("POST", r"/oauth2PermissionGrants"), self._create_grant),
             (("PATCH", r"/oauth2PermissionGrants/([^/]+)"), self._patch_grant),
@@ -211,6 +213,9 @@ class GraphMock:
         user["id"] = str(uuid.uuid4())
         self.users[body["userPrincipalName"]] = user
         return self._json(201, user)
+
+    def _list_domains(self, m, body, params):
+        return self._json(200, {"value": self.domains})
 
     def _list_grants(self, m, body, params):
         f = self._filter_values(params)

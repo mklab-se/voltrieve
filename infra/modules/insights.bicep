@@ -1,6 +1,7 @@
 // The usage insights: the table with the totals, the rule that takes them in, the nightly job and its
 // roles. The job may save to this rule and read this table, next to AcrPull (app-identity.bicep) and
-// reading conversations (insights-role.bicep), and nothing else. The API may read this table only.
+// reading conversations (insights-role.bicep), and nothing else. The API may read this table, and with the
+// operations door two tables of spans.
 param jobName string
 param ruleName string
 param location string
@@ -14,6 +15,8 @@ param identityId string
 param identityClientId string
 param identityPrincipalId string
 param apiPrincipalId string
+@description('The API has the operations door, which reads the spans of the calls (AppRequests) and of what they called (AppDependencies).')
+param apiReadsSpans bool = false
 param foundryProjectEndpoint string
 param foundryOpenAiEndpoint string
 param languageEndpoint string
@@ -116,18 +119,27 @@ resource saves 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   }
 }
 
-// The job reads its earlier group names, and the API what the dashboard shows. The condition leaves
-// them this table only: without it, the role would open every log in the workspace.
+// The job reads its earlier group names, and the API what the dashboard and the operations door show. The conditions
+// leave the job this table, and the API this one or three: without them, the role would open every log.
+// The name of an assignment does not hold its condition, which Azure updates in place.
 var onlyThisTable = '((!(ActionMatches{\'Microsoft.OperationalInsights/workspaces/tables/data/read\'})) OR (@Resource[Microsoft.OperationalInsights/workspaces/tables:name] StringEquals \'${tableName}\'))'
 
-resource reads 'Microsoft.Authorization/roleAssignments@2022-04-01' = [for reader in [identityPrincipalId, apiPrincipalId]: {
+var apiTables = apiReadsSpans ? [tableName, 'AppDependencies', 'AppRequests'] : [tableName]
+var isOneOfThem = join(map(apiTables, name => '@Resource[Microsoft.OperationalInsights/workspaces/tables:name] StringEquals \'${name}\''), ' OR ')
+var onlyApiTables = '((!(ActionMatches{\'Microsoft.OperationalInsights/workspaces/tables/data/read\'})) OR (${isOneOfThem}))'
+var readers = [
+  { principalId: identityPrincipalId, condition: onlyThisTable }
+  { principalId: apiPrincipalId, condition: onlyApiTables }
+]
+
+resource reads 'Microsoft.Authorization/roleAssignments@2022-04-01' = [for reader in readers: {
   scope: workspace
-  name: guid(workspace.id, reader, logAnalyticsDataReader)
+  name: guid(workspace.id, reader.principalId, logAnalyticsDataReader)
   properties: {
-    principalId: reader
+    principalId: reader.principalId
     principalType: 'ServicePrincipal'
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', logAnalyticsDataReader)
-    condition: onlyThisTable
+    condition: reader.condition
     conditionVersion: '2.0'
   }
 }]

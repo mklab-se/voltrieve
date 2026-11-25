@@ -53,6 +53,26 @@ param insightsSchedule string = 'off'
 param insightsNoticeDate string = ''
 @description('The deployed image of the insights job (INSIGHTS_IMAGE, set by scripts/deploy-insights.sh). Empty until it has been deployed.')
 param insightsImage string = ''
+@description('The MCP doors (MCP_DOORS). true: the API and the dealer get the registrations that the preprovision hook made. false: there are no doors, whatever is left in the azd environment.')
+param mcpDoors bool = false
+param mcpOperationsClientId string = ''
+param mcpCarClientId string = ''
+param mcpCustomerClientId string = ''
+param mcpDealerClientId string = ''
+@description('The harnesses that may call the doors (MCP_APPS, set by the preprovision hook): "client id=Name;client id=Name".')
+param mcpApps string = ''
+@description('The Azure CLI may call the doors too (MCP_ALLOW_CLI). For dev only.')
+param mcpAllowCli bool = false
+@description('The Application ID URI of every door is its address (MCP_IDENTIFIER_IS_URL, set by the preprovision hook).')
+param mcpIdentifierIsUrl bool = false
+@description('Another authorization server for the doors to point to (MCP_ISSUER). Empty: Entra ID.')
+param mcpIssuer string = ''
+@description('Whose dealer is whose at the dealer door (DEALER_DOOR_CITIES): "object id=City;object id=City".')
+param dealerDoorCities string = ''
+@description('A host name of our own for the API (API_HOST). Make its DNS records first: scripts/check-host.sh prints and checks them.')
+param apiHost string = ''
+@description('A host name of our own for the dealer service (DEALER_HOST). As apiHost.')
+param dealerHost string = ''
 param chatModelName string = 'gpt-6.1-terra'
 param chatModelVersion string = '2026-10-26'
 @description('The model Search plans queries with (PLANNING_MODEL_NAME). gpt-6-luna is opt-in: a GPT-6 model needs every caller of Search to use 2026-11-01-preview or later, so deploy the code before choosing it.')
@@ -76,6 +96,9 @@ var searchEndpoint = serverlessActive ? searchServerless!.outputs.endpoint : sea
 var placeholderImage = 'mcr.microsoft.com/dotnet/samples:aspnetapp'
 var dealerName = 'ca-dealer-${environmentName}'
 var apiName = 'ca-api-${environmentName}'
+// Where callers find the doors. Without a host name of our own: the address that the container app gets.
+var apiDoorsUrl = 'https://${empty(apiHost) ? '${apiName}.${containerAppsEnv.outputs.defaultDomain}' : apiHost}'
+var dealerDoorUrl = 'https://${empty(dealerHost) ? '${dealerName}.${containerAppsEnv.outputs.defaultDomain}' : dealerHost}'
 var docsContainer = 'voltrieve-docs'
 var partsContainer = 'voltrieve-parts'
 var token = toLower(uniqueString(subscription().id, environmentName, location))
@@ -237,7 +260,27 @@ module dealerApp 'modules/dealer-app.bicep' = {
     tableEndpoint: storage.outputs.tableEndpoint
     tableName: storage.outputs.dealerTable
     appInsightsConnectionString: monitoring.outputs.appInsightsConnectionString
+    host: dealerHost
+    mcpUrl: mcpDoors ? dealerDoorUrl : ''
+    mcpClientId: mcpDoors ? mcpDealerClientId : ''
+    mcpApps: mcpDoors ? mcpApps : ''
+    mcpAllowCli: mcpDoors && mcpAllowCli
+    mcpIdentifierIsUrl: mcpDoors && mcpIdentifierIsUrl
+    mcpIssuer: mcpDoors ? mcpIssuer : ''
+    doorCities: mcpDoors ? dealerDoorCities : ''
   }
+}
+
+module dealerCertificate 'modules/host-certificate.bicep' = if (!empty(dealerHost)) {
+  name: 'dealer-certificate'
+  scope: rg
+  params: {
+    environmentName: containerAppsEnv.outputs.name
+    location: location
+    tags: tags
+    host: dealerHost
+  }
+  dependsOn: [dealerApp]
 }
 
 // The dealer may read and write its own table and nothing else in the account.
@@ -298,6 +341,7 @@ module insights 'modules/insights.bicep' = {
     identityClientId: insightsIdentity.outputs.clientId
     identityPrincipalId: insightsIdentity.outputs.principalId
     apiPrincipalId: apiApp.outputs.principalId
+    apiReadsSpans: mcpDoors
     foundryProjectEndpoint: foundry.outputs.projectEndpoint
     foundryOpenAiEndpoint: foundry.outputs.openAiEndpoint
     languageEndpoint: 'https://${foundry.outputs.name}.cognitiveservices.azure.com'
@@ -374,7 +418,28 @@ module apiApp 'modules/api-app.bicep' = {
     storageAccountName: storage.outputs.name
     // Only the documents container: the parts catalogs are internal and never linked.
     sourceContainers: storage.outputs.docsContainer
+    host: apiHost
+    mcpUrl: mcpDoors ? apiDoorsUrl : ''
+    mcpOperationsClientId: mcpDoors ? mcpOperationsClientId : ''
+    mcpCarClientId: mcpDoors ? mcpCarClientId : ''
+    mcpCustomerClientId: mcpDoors ? mcpCustomerClientId : ''
+    mcpApps: mcpDoors ? mcpApps : ''
+    mcpAllowCli: mcpDoors && mcpAllowCli
+    mcpIdentifierIsUrl: mcpDoors && mcpIdentifierIsUrl
+    mcpIssuer: mcpDoors ? mcpIssuer : ''
   }
+}
+
+module apiCertificate 'modules/host-certificate.bicep' = if (!empty(apiHost)) {
+  name: 'api-certificate'
+  scope: rg
+  params: {
+    environmentName: containerAppsEnv.outputs.name
+    location: location
+    tags: tags
+    host: apiHost
+  }
+  dependsOn: [apiApp]
 }
 
 // Source links: the API signs user delegation SAS links to documents users may open. It needs
@@ -622,3 +687,6 @@ output INSIGHTS_IDENTITY_ID string = insightsIdentity.outputs.id
 output INSIGHTS_IDENTITY_CLIENT_ID string = insightsIdentity.outputs.clientId
 output INSIGHTS_JOB_NAME string = insights.outputs.jobName
 output LOG_ANALYTICS_WORKSPACE_ID string = monitoring.outputs.logAnalyticsCustomerId
+output MCP_API_URL string = mcpDoors ? apiDoorsUrl : ''
+output MCP_DEALER_URL string = mcpDoors ? dealerDoorUrl : ''
+output HOST_VERIFICATION_ID string = apiApp.outputs.hostVerificationId

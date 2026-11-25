@@ -99,4 +99,12 @@ grep -A8 "module dealerUsesTable" main.bicep | grep -q "roleDefinitionId: storag
 grep -A8 "module dealerUsesTable" main.bicep | grep -q "principalId: dealerApp.outputs.principalId" || { echo "the table role is not given to the dealer"; exit 1; }
 # what is compiled: exactly one role names the dealer, and its scope is the table
 az bicep build --file main.bicep --stdout 2>/dev/null | python3 tests/check_dealer.py || { echo "check_dealer.py failed"; exit 1; }
+# the MCP doors: off by default, what the services get when they are on, and the host names
+for pair in "mcpDoors MCP_DOORS=false" "mcpAllowCli MCP_ALLOW_CLI=false" "mcpIdentifierIsUrl MCP_IDENTIFIER_IS_URL=false" \
+  "mcpOperationsClientId MCP_OPERATIONS_CLIENT_ID=" "mcpCarClientId MCP_CAR_CLIENT_ID=" "mcpCustomerClientId MCP_CUSTOMER_CLIENT_ID=" \
+  "mcpDealerClientId MCP_DEALER_CLIENT_ID=" "mcpApps MCP_APPS=" "mcpIssuer MCP_ISSUER=" "dealerDoorCities DEALER_DOOR_CITIES=" \
+  "apiHost API_HOST=" "dealerHost DEALER_HOST="; do
+  grep -qF "\"${pair% *}\": { \"value\": \"\${${pair#* }}\" }" main.parameters.json || { echo "main.parameters.json lacks $pair"; exit 1; }
+done
+az bicep build --file main.bicep --stdout 2>/dev/null | python3 tests/check_doors.py || { echo "check_doors.py failed"; exit 1; }
 echo "bicep ok"

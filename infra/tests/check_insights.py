@@ -88,7 +88,7 @@ for name in modules:  # nor by the name of the identity, or by its output
         text = json.dumps(modules[name])
         assert "id-insights" not in text and "insightsIdentity" not in text, name
 
-# two roles on the job: save to this rule, read this table. The API gets the second one only.
+# two roles on the job: save to this rule, read this table. The API gets the second one only, with its own condition.
 assert variables["monitoringMetricsPublisher"] == "3913510d-42f4-4e42-8a64-420c390055eb"
 assert variables["logAnalyticsDataReader"] == "3b03c2da-16b3-4a49-8834-0f8130efdd3b"
 roles = of("Microsoft.Authorization/roleAssignments")
@@ -99,18 +99,40 @@ assert "monitoringMetricsPublisher" in saves["properties"]["roleDefinitionId"]
 assert saves["properties"]["principalId"] == "[parameters('identityPrincipalId')]"
 assert saves["scope"].startswith("[resourceId('Microsoft.Insights/dataCollectionRules'"), saves["scope"]
 assert "logAnalyticsDataReader" in reads["properties"]["roleDefinitionId"]
-assert reads["properties"]["principalId"] == (
-    "[createArray(parameters('identityPrincipalId'), parameters('apiPrincipalId'))[copyIndex()]]"
-)
+assert reads["properties"]["principalId"] == "[variables('readers')[copyIndex()].principalId]"
+# the name is made of the same three parts as before there were two conditions, so it is the same assignment
+assert reads["name"] == (
+    "[guid(resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName')), "
+    "variables('readers')[copyIndex()].principalId, variables('logAnalyticsDataReader'))]"
+), reads["name"]
 assert "'apiApp'" in given["apiPrincipalId"]["value"]
 assert reads["properties"]["conditionVersion"] == "2.0"
-assert reads["properties"]["condition"] == "[variables('onlyThisTable')]"
+assert reads["properties"]["condition"] == "[variables('readers')[copyIndex()].condition]"
+assert variables["readers"] == [
+    {"principalId": "[parameters('identityPrincipalId')]", "condition": "[variables('onlyThisTable')]"},
+    {"principalId": "[parameters('apiPrincipalId')]", "condition": "[variables('onlyApiTables')]"},
+]
 condition = variables["onlyThisTable"]
 assert condition == (  # as compiled: the table name goes in at {0}
     "[format('((!(ActionMatches{{''Microsoft.OperationalInsights/workspaces/tables/data/read''}})) OR "
     "(@Resource[Microsoft.OperationalInsights/workspaces/tables:name] StringEquals ''{0}''))', variables('tableName'))]"
 ), condition
 assert variables["tableName"] == "VoltrieveInsights_CL"
+# the API: the same table, and with the doors two more, each by its whole name
+assert variables["apiTables"] == (
+    "[if(parameters('apiReadsSpans'), createArray(variables('tableName'), 'AppDependencies', 'AppRequests'), "
+    "createArray(variables('tableName')))]"
+), variables["apiTables"]
+assert variables["isOneOfThem"] == (
+    "[join(map(variables('apiTables'), lambda('name', format("
+    "'@Resource[Microsoft.OperationalInsights/workspaces/tables:name] StringEquals ''{0}''', "
+    "lambdaVariables('name')))), ' OR ')]"
+), variables["isOneOfThem"]
+assert variables["onlyApiTables"] == (
+    "[format('((!(ActionMatches{{''Microsoft.OperationalInsights/workspaces/tables/data/read''}})) OR ({0}))', "
+    "variables('isOneOfThem'))]"
+), variables["onlyApiTables"]
+assert given["apiReadsSpans"]["value"] == "[parameters('mcpDoors')]"
 
 # twelve months for the table, and the workspace stays at 30 days
 (table,) = of("Microsoft.OperationalInsights/workspaces/tables")

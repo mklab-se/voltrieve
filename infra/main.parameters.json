@@ -21,6 +21,18 @@
     "hostedAgentPrincipalId": { "value": "${HOSTED_AGENT_PRINCIPAL_ID=}" },
     "insightsSchedule": { "value": "${INSIGHTS_SCHEDULE=off}" },
     "insightsNoticeDate": { "value": "${INSIGHTS_NOTICE_DATE=}" },
-    "insightsImage": { "value": "${INSIGHTS_IMAGE=}" }
+    "insightsImage": { "value": "${INSIGHTS_IMAGE=}" },
+    "mcpDoors": { "value": "${MCP_DOORS=false}" },
+    "mcpOperationsClientId": { "value": "${MCP_OPERATIONS_CLIENT_ID=}" },
+    "mcpCarClientId": { "value": "${MCP_CAR_CLIENT_ID=}" },
+    "mcpCustomerClientId": { "value": "${MCP_CUSTOMER_CLIENT_ID=}" },
+    "mcpDealerClientId": { "value": "${MCP_DEALER_CLIENT_ID=}" },
+    "mcpApps": { "value": "${MCP_APPS=}" },
+    "mcpAllowCli": { "value": "${MCP_ALLOW_CLI=false}" },
+    "mcpIdentifierIsUrl": { "value": "${MCP_IDENTIFIER_IS_URL=false}" },
+    "mcpIssuer": { "value": "${MCP_ISSUER=}" },
+    "dealerDoorCities": { "value": "${DEALER_DOOR_CITIES=}" },
+    "apiHost": { "value": "${API_HOST=}" },
+    "dealerHost": { "value": "${DEALER_HOST=}" }
   }
 }

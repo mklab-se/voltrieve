@@ -5,13 +5,17 @@ services:
     project: ./services/dealer
     language: python
     host: containerapp
+    # The API version of infra/modules, since the one that azd has built in does not know an Auto binding of a host.
+    apiVersion: "2026-07-01"
     docker:
-      path: ./Dockerfile
+      path: Dockerfile
+      context: ../..
       remoteBuild: true
   api:
     project: ./api
     language: python
     host: containerapp
+    apiVersion: "2026-07-01"
     docker:
       path: Dockerfile
       context: ..

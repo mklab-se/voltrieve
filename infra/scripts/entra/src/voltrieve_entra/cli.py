@@ -1,6 +1,7 @@
 import argparse
 import base64
 import json
+import re
 import subprocess
 import sys
 import time
@@ -8,10 +9,12 @@ import time
 from azure.identity import AzureCliCredential
 
 from .apps import SPA_APPS, ensure_app_role_assignment, ensure_spa_redirect, setup
+from .doors import setup_doors
 from .graph import GraphClient
 
 GRAPH_SCOPE = "https://graph.microsoft.com/.default"
 TOKEN_REFRESH_MARGIN_SECONDS = 300
+HOST = re.compile(r"[a-z0-9-]+(\.[a-z0-9-]+)+")
 
 
 def _graph() -> tuple[GraphClient, str]:
@@ -47,6 +50,17 @@ def _print_password(password: str) -> None:
     )
 
 
+def _host(text: str) -> str:
+    """A host name and nothing else, as in api.example.com. Empty is none."""
+    if text and not HOST.fullmatch(text):
+        raise argparse.ArgumentTypeError("a host name in lower case, without https:// and a path")
+    return text
+
+
+def _print_door(name: str, identifiers: list[str]) -> None:
+    print(f"{name}: {', '.join(identifiers)}")
+
+
 def _run_setup(args: argparse.Namespace) -> None:
     g, token = _graph()
     me = g.get("/me?$select=id") or {}
@@ -61,6 +75,17 @@ def _run_setup(args: argparse.Namespace) -> None:
         dashboard_redirect_uris=args.dashboard_redirect_uri,
         dealer_redirect_uris=args.dealer_redirect_uri,
     )
+    if args.mcp:
+        env |= setup_doors(
+            g,
+            me["id"],
+            env["TEST_USER_UPN"],
+            api_host=args.api_host,
+            dealer_host=args.dealer_host,
+            allow_cli=args.allow_cli,
+            on_door=_print_door,
+        )
+        print(f"The address is an identifier of every MCP door: {env['MCP_IDENTIFIER_IS_URL']}")
     for key, value in env.items():
         _azd_env_set(key, value)
 
@@ -87,6 +112,10 @@ def main(argv: list[str] | None = None) -> None:
     p_setup.add_argument("--car-redirect-uri", action="append", default=[])
     p_setup.add_argument("--dashboard-redirect-uri", action="append", default=[])
     p_setup.add_argument("--dealer-redirect-uri", action="append", default=[])
+    p_setup.add_argument("--mcp", action="store_true", help="The MCP doors and the harnesses too")
+    p_setup.add_argument("--api-host", type=_host, default="", help="The host of the API's doors")
+    p_setup.add_argument("--dealer-host", type=_host, default="", help="The host of the dealer's door")
+    p_setup.add_argument("--allow-cli", action="store_true", help="The Azure CLI may ask for tokens for the doors")
     p_setup.set_defaults(func=_run_setup)
 
     p_assign = sub.add_parser("assign-app-role", help="Assign an app role to a principal")

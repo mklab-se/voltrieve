@@ -27,6 +27,7 @@ jobs:
           - agents/hosted
           - clients/cli
           - data/generator
+          - doors
           - infra/scripts/entra
           - search
           - services/dealer
