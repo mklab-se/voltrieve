@@ -7,7 +7,7 @@ correlation_id: contextvars.ContextVar[str] = contextvars.ContextVar("correlatio
 # Per-request fields that appear in every log line once known.
 log_context: contextvars.ContextVar[dict] = contextvars.ContextVar("log_context", default={})
 
-_EXTRA = ("path", "status", "elapsed_ms", "step", "component", "detail")
+_EXTRA = ("path", "status", "elapsed_ms", "step", "component", "detail", "door", "tool", "app", "result", "reason")
 _CONTEXT_KEYS = ("conversation_id", "turn_id", "backend", "user")  # user: a pseudonym
 
 

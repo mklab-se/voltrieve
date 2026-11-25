@@ -5,7 +5,7 @@ import sys
 
 correlation_id: contextvars.ContextVar[str] = contextvars.ContextVar("correlation_id", default="-")
 
-_EXTRA = ("path", "status", "elapsed_ms")
+_EXTRA = ("path", "status", "elapsed_ms", "door", "tool", "app", "result", "reason")
 
 
 class JsonFormatter(logging.Formatter):

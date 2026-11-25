@@ -197,7 +197,8 @@ class UsageService:
             return answer
 
 
-def build_usage_service(settings) -> UsageService:
+def workspace_token() -> Callable[[], Awaitable[str]]:
+    """A token for Log Analytics, with a credential that is made at the first use."""
     credential = None
 
     async def token() -> str:
@@ -208,4 +209,8 @@ def build_usage_service(settings) -> UsageService:
             credential = DefaultAzureCredential()
         return (await asyncio.to_thread(credential.get_token, SCOPE)).token
 
-    return UsageService(settings.log_analytics_workspace_id, token)
+    return token
+
+
+def build_usage_service(settings) -> UsageService:
+    return UsageService(settings.log_analytics_workspace_id, workspace_token())

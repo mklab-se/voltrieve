@@ -18,13 +18,14 @@ from app.attachments.upload import UploadQueue
 from app.auth import TokenValidator
 from app.backends import BackendRegistry
 from app.doors import build_doors
+from app.doors.telemetry import TelemetryReader
 from app.logging_setup import configure_logging, correlation_id
 from app.routes import build_router
 from app.settings import Settings
 from app.telemetry import annotate_span, configure_telemetry
 from app.sources import SourceService, build_source_service
 from app.turns import TurnService, TurnStore
-from app.usage import UsageService, build_usage_service
+from app.usage import UsageService, build_usage_service, workspace_token
 
 logger = logging.getLogger("app.access")
 CORRELATION_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
@@ -183,6 +184,7 @@ def create_app(
     app.state.server_tool_names = frozenset(t.name for t in build_server_tools(None, None))
 
     app.include_router(build_router())
+    app.state.telemetry = TelemetryReader(settings.log_analytics_workspace_id, workspace_token())
     app.state.doors = build_doors(app, settings)
     app.add_middleware(Doors, doors=app.state.doors)
     app.add_middleware(RequestGuard)
