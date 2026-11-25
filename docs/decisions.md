@@ -369,6 +369,42 @@ For the first time Voltrieve stores a name and an address itself. The name is th
 
 A marker in an address was found in no table of the workspace ([`dealer-orders.txt`](https://github.com/mklab-se/voltrieve/blob/main/docs/evidence/dealer-orders.txt)). Not verified: the masking on real addresses.
 
+## Bring your own AI: four MCP doors
+
+Decided on 2026-11-25. The product owner ordered the build of [the design](https://github.com/mklab-se/voltrieve/blob/main/docs/superpowers/specs/2026-11-25-mcp-doors-design.md) without reading it first, and the choices below were made by the builder. How to connect is in [Bring your own AI](bring-your-own-ai.md).
+
+### One door per audience
+
+Operations, car, dealer and customer are four OAuth resources with four registrations. A token for the car is then useless at the dealer. One server that filters its tools by role would be less to run, but a mistake in the filter would open everything. Inside a door the rules are still checked on every call, since a tool that is not listed can be called all the same (tried, and it could).
+
+### A door stands in the service that owns the data
+
+The API has three and the dealer service one. A gateway would need to exchange the token, because MCP forbids passing on a token that was issued for something else, and the API would then see the gateway as the caller. Azure API Management would give limits and monitoring ready made, and a standing cost. The price is that a door shares the one replica with Runa: at most four calls at a time, short timeouts, and no model call except in `ask_runa`.
+
+### A guard in front of the SDK
+
+The official SDK does the protocol. Used as it comes, it wrote the caller's own words into span names, span attributes and logs. So its tracing middleware is taken out, its logger is silent, and what we record has only texts from our own lists.
+
+### Clients are registered by hand, without secrets
+
+Each harness has a public client with PKCE. Entra ID has no dynamic registration, and client ID metadata documents are a preview without a service level. A calling app that is not on the list is refused, so a new harness is a decision. The Azure CLI may call only where `MCP_ALLOW_CLI` is true, for scripts.
+
+### The car decides last
+
+The car page opens a stream to the API when the driver switches remote control on. Web PubSub would be right with more than one replica. The door has four functions, and driving, parking and the camera are not among them. The API checks that the car is parked, and the car checks it again.
+
+### A dealer is a list from caller to city
+
+The city never comes from an argument. An unattended agent can change stock and read orders, and cannot deliver, since there is nobody to ask. Names and addresses are not given: an order belongs to whoever delivers it, and the address is on the staff page.
+
+### Two ways for a customer, in one door
+
+`customer.tools` and `runa.ask` are two scopes, so that a harness gets one or the other, and they can be compared. No signed links are given, because they would live on in someone else's chat. Ordering a car is left out, since nothing in an outside harness is a later message in our sense.
+
+### Remote control is off by default, and a door is awake only when used
+
+A replica that always runs would avoid the half minute that a first call takes, and would be a standing cost. It was not chosen.
+
 ## Live findings
 
 - Prompt agent with `agent_reference` plus `tools`: `400 Not allowed when agent is specified.`

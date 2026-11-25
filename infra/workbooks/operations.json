@@ -340,6 +340,26 @@
   {
    "type": 1,
    "content": {
+    "json": "## Doors\nCalls from outside AI through the [MCP doors](https://mklab.se/voltrieve/bring-your-own-ai/). Only names from our own lists are stored: the door, the tool and the calling app. Never an argument, an answer or a person."
+   }
+  },
+  {
+   "type": 3,
+   "content": {
+    "version": "KqlItem/1.0",
+    "query": "dependencies\n| where name == \"door.call\"\n| extend door = tostring(customDimensions[\"voltrieve.door.door\"]),\n    tool = tostring(customDimensions[\"voltrieve.door.tool\"]),\n    app = tostring(customDimensions[\"voltrieve.door.app\"]),\n    result = tostring(customDimensions[\"voltrieve.door.result\"]),\n    ms = toint(customDimensions[\"voltrieve.door.elapsed_ms\"])\n| summarize calls = count(), not_done = countif(result !in (\"done\", \"asked\")), median_ms = percentile(ms, 50), worst_ms = max(ms)\n    by door, tool, app\n| order by door asc, calls desc",
+    "size": 0,
+    "title": "Calls per door, tool and app",
+    "timeContextFromParameter": "TimeRange",
+    "queryType": 0,
+    "resourceType": "microsoft.insights/components",
+    "visualization": "table"
+   },
+   "customWidth": "100"
+  },
+  {
+   "type": 1,
+   "content": {
     "json": "## Privacy check\n**What our code writes.** Every attribute name stored on a turn, with the longest value seen. Only ids, names, counts and timings belong here: no prompt, answer or user name. A long value is worth a look."
    }
   },
