@@ -29,3 +29,4 @@ The usage insights, also from 2026-11-24:
 - `doors.txt`: every MCP door from a scripted client, what works and what is refused, from `scripts/doors_check.py --ask --deliver`.
 - `doors-privacy.txt`: a marker through every door and where it was not found, the car's remote control in a browser, and Runa while a door is busy.
 - `customer-door.txt`: a plain model with the customer door's tools against Runa on eight questions, from `scripts/customer_compare.py`.
+- `operations-door.txt`: two questions about operations, with the door and with Azure MCP Server, from `scripts/operations_compare.py`.

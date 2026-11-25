@@ -57,6 +57,8 @@ For staff with `Dashboard.View`. "How are we doing?", "Which turns were slow tod
 
 No chat text and no user leave through it, not even a pseudonym. For raw logs, use [Azure MCP Server](https://learn.microsoft.com/azure/developer/azure-mcp-server/get-started) beside it, with your own Azure rights.
 
+The same model got two questions with each ([evidence](https://github.com/mklab-se/voltrieve/blob/main/docs/evidence/operations-door.txt)). With the door it answered both in 7 and 9 seconds, with about 5,000 and 9,000 tokens, and the numbers agree with a direct query. With Azure MCP Server it answered one, as well and with more detail, and reached the limit of 100,000 tokens on the other. So the door is for the questions that come back, and Azure MCP Server for the ones nobody thought of. It is one run, with a workspace that the model had to find its way in.
+
 ### The car
 
 For the owner of a car, with `Car.Remote`. Switch **Remote control** on in the car's menu first. Then "honk", "flash the lights" or "turn the wipers on" from your own AI.
@@ -150,7 +152,6 @@ The guard exists because the SDK, used as it comes, writes a caller's own words 
 ## Not verified
 
 - A sign-in from any harness, and whether each accepts two doors on one host. It waits for the DNS records of an address of our own.
-- Azure MCP Server side by side with the operations door. Planned in the design, not done.
 - An unattended dealer agent with a real managed identity. Only in tests.
 - Asking a person in the middle of a call, from a real harness. A scripted client has done it live, with no, cancel and yes.
 - Client ID metadata documents, a preview in Entra ID.
