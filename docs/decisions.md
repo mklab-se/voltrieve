@@ -405,6 +405,10 @@ The tools and `ask_runa` first shared a door, with a scope each. Entra ID puts e
 
 Live on 2026-11-26, Entra ID's ordinary authorization server publishes no `code_challenge_methods_supported`, and a client that follows MCP must then refuse it. The versioned server `oauth21/2026-08` publishes S256, the `iss` parameter and client ID metadata documents. It is a preview without a service level, and it is what a harness needs today. ChatGPT then chose its own metadata document, which asks for `private_key_jwt`, and Entra ID refused that. With our own registration and no secret, ChatGPT signed in.
 
+### Copilot Studio without a secret
+
+Copilot Studio only takes a confidential web client for a server protected by Entra ID, which normally means a client secret. Its connector can instead sign in with a federated credential from its own managed identity, so the registration for Copilot Studio has none. Agent Builder cannot add an MCP server with OAuth at all. Live on 2026-11-26, an agent in Copilot Studio read the stock of its dealer city this way.
+
 ### Remote control is off by default, and a door is awake only when used
 
 A replica that always runs would avoid the half minute that a first call takes, and would be a standing cost. It was not chosen.

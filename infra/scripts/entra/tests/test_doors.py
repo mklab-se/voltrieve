@@ -9,7 +9,7 @@ DOMAIN = "contoso.onmicrosoft.com"
 CLI = "04b07795-8ddb-461a-bbee-02f9e1bf7b46"
 NAMES = ["operations", "car", "customer", "runa", "dealer"]
 HARNESS_NAMES = ["voltrieve-harness-claude", "voltrieve-harness-chatgpt", "voltrieve-harness-vscode",
-                 "voltrieve-harness-copilot"]
+                 "voltrieve-harness-copilot", "voltrieve-harness-copilot-studio"]
 VERIFIED = [{"id": "contoso.com", "isVerified": True}, {"id": "fabrikam.com", "isVerified": False}]
 
 
@@ -69,7 +69,7 @@ def test_setup_twice_yields_same_ids_and_no_duplicates(graph_mock, graph):
     assert first == second
     assert count == (len(graph_mock.applications), len(graph_mock.service_principals), len(graph_mock.assignments),
                      len(graph_mock.grants))
-    assert len(graph_mock.applications) == 7 + 5 + 4
+    assert len(graph_mock.applications) == 7 + 5 + 5
 
 
 def test_outputs(graph_mock, graph):
@@ -79,7 +79,7 @@ def test_outputs(graph_mock, graph):
     for name in NAMES:
         assert env[f"MCP_{name.upper()}_CLIENT_ID"] == _app(graph_mock, f"voltrieve-mcp-{name}")["appId"]
     ids = [_app(graph_mock, n)["appId"] for n in HARNESS_NAMES]
-    names = ["Claude", "ChatGPT", "VS Code", "Microsoft 365 Copilot"]
+    names = ["Claude", "ChatGPT", "VS Code", "Microsoft 365 Copilot", "Copilot Studio"]
     assert env["MCP_APPS"] == ";".join(f"{i}={n}" for i, n in zip(ids, names, strict=True))
 
 
@@ -155,7 +155,7 @@ def test_the_deployer_gets_every_user_role_and_the_tester_only_customer(graph_mo
 def test_a_harness_is_a_public_client_without_a_secret(graph_mock, graph, name):
     _, env = _setup(graph)
     app = _app(graph_mock, name)
-    platform = "spa" if name == "voltrieve-harness-copilot" else "publicClient"
+    platform = {"voltrieve-harness-copilot": "spa", "voltrieve-harness-copilot-studio": "web"}.get(name, "publicClient")
     assert app["isFallbackPublicClient"] is (platform == "publicClient") and app["signInAudience"] == "AzureADMyOrg"
     assert {"passwordCredentials", "web", "spa", "publicClient"} & set(app) == {platform}
     asked = {r["resourceAppId"]: [a["id"] for a in r["resourceAccess"]] for r in app["requiredResourceAccess"]}
@@ -166,7 +166,8 @@ def test_a_harness_is_a_public_client_without_a_secret(graph_mock, graph, name):
 
 def test_redirect_addresses(graph_mock, graph):
     _setup(graph)
-    found = {n: (_app(graph_mock, n).get("publicClient") or _app(graph_mock, n)["spa"])["redirectUris"]
+    app = lambda n: _app(graph_mock, n)  # noqa: E731
+    found = {n: next(app(n)[p] for p in ("publicClient", "spa", "web") if p in app(n))["redirectUris"]
              for n in HARNESS_NAMES}
     assert found == {
         "voltrieve-harness-claude": [
@@ -175,19 +176,21 @@ def test_redirect_addresses(graph_mock, graph):
         "voltrieve-harness-chatgpt": ["https://chatgpt.com/connector_platform_oauth_redirect"],
         "voltrieve-harness-vscode": ["http://127.0.0.1:33418", "https://vscode.dev/redirect"],
         "voltrieve-harness-copilot": ["https://teams.microsoft.com/api/platform/v1.0/oAuthRedirect"],
+        "voltrieve-harness-copilot-studio": [],
     }
 
 
 @pytest.mark.parametrize("name,platform", [("voltrieve-harness-chatgpt", "publicClient"),
-                                           ("voltrieve-harness-copilot", "spa")])
+                                           ("voltrieve-harness-copilot", "spa"),
+                                           ("voltrieve-harness-copilot-studio", "web")])
 def test_a_redirect_address_added_by_hand_stays(graph_mock, graph, name, platform):
     _setup(graph)
-    (first,) = _app(graph_mock, name)[platform]["redirectUris"]
+    first = list(_app(graph_mock, name)[platform]["redirectUris"])
     added = "https://chatgpt.com/connector/oauth/made-up"
     _app(graph_mock, name)[platform]["redirectUris"].append(added)
     for _ in range(2):
         _setup(graph)
-        assert _app(graph_mock, name)[platform]["redirectUris"] == [first, added]
+        assert _app(graph_mock, name)[platform]["redirectUris"] == [*first, added]
 
 
 def test_the_harnesses_have_consent_for_the_doors_and_nothing_else(graph_mock, graph):

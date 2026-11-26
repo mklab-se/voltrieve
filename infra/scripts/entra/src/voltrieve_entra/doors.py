@@ -98,11 +98,13 @@ class Harness:
     name: str  # as a person knows it
     display_name: str
     redirect_uris: tuple[str, ...]
-    platform: str = "publicClient"  # or spa
+    platform: str = "publicClient"  # or spa, or web
 
 
 # All are public clients with PKCE, so none has a secret. A hosted harness is under "mobile and desktop" too, except
-# Copilot, which signs in without a secret only as a single page application. Entra ignores the port of a
+# Copilot, which signs in without a secret only as a single page application. Copilot Studio needs a confidential
+# web client: it gets no secret here, but a federated credential from its connector's managed identity, added by
+# hand with the connector's own redirect address (docs/bring-your-own-ai.md). Entra ignores the port of a
 # localhost address but not its path, and Claude Code calls back on /callback.
 HARNESSES = (
     Harness(
@@ -124,6 +126,7 @@ HARNESSES = (
         ("https://teams.microsoft.com/api/platform/v1.0/oAuthRedirect",),
         platform="spa",
     ),
+    Harness("Copilot Studio", "voltrieve-harness-copilot-studio", (), platform="web"),
 )
 
 

@@ -92,7 +92,9 @@ On eight questions the same model did as well with only these tools as Runa did:
 | Claude Code | Not tried | Own client id, no secret |
 | ChatGPT | Works | On 2026-11-26 from the Mac app, the customer door, with our own registration and no secret: search, parts and prices answered. Its own metadata document, which ChatGPT picks by itself, is refused by Entra ID (`AADSTS10051012`), so choose the registration as below |
 | GitHub Copilot in VS Code | Not tried | Own client id. Redirect addresses not found on the pages read |
-| Microsoft 365 Copilot | Not tried | A public client on the SPA platform |
+| Copilot Studio | Works | On 2026-11-26, the dealer door: an agent answered with the stock of its city, signed in as the person, with no secret: a federated credential from the connector's managed identity |
+| Agent Builder in Microsoft 365 Copilot | Cannot | It does not add an MCP server with OAuth. It says to copy the agent to Copilot Studio |
+| Microsoft 365 Copilot, declarative agent | Not tried | A public client on the SPA platform |
 | GitHub Copilot cloud agent | Cannot | Its servers cannot use OAuth ([documentation](https://docs.github.com/copilot/concepts/context/mcp)) |
 
 A door sleeps when nobody uses it. The first call takes about half a minute, and an AI may give up: run `just warm-up` first.
@@ -141,6 +143,28 @@ In `.mcp.json` at the root of the workspace:
 ```
 
 ([Documentation](https://code.visualstudio.com/docs/copilot/reference/mcp-configuration))
+
+### Copilot Studio
+
+Without a secret. Copilot Studio needs a confidential web client, and Microsoft's way to avoid its secret is a federated credential from the managed identity of the connector that Copilot Studio makes. The registration is `voltrieve-harness-copilot-studio`, without a secret. Use a Developer or Sandbox environment if the default one blocks custom connectors.
+
+1. In the agent: **Tools**, **Add tool**, **Model Context Protocol**, the door's address, **OAuth 2.0**, **Manual**:
+
+| Field | Value |
+| --- | --- |
+| Client ID | The client id of `voltrieve-harness-copilot-studio` |
+| Client secret | Any placeholder: the managed identity replaces it |
+| Authorization URL | `https://login.microsoftonline.com/<tenant>/oauth2/v2.0/authorize` |
+| Token URL and Refresh URL | `https://login.microsoftonline.com/<tenant>/oauth2/v2.0/token` |
+| Scopes | The door's scope and `offline_access`, such as `https://dealer.voltrieve.example/mcp/dealer/dealer.use offline_access` |
+
+2. **Create**, and add the **Redirect URL** that it shows to the registration as a web redirect.
+3. In Power Apps, **Custom connectors**, the new connector, **Security**: identity provider **Azure Active Directory**, **Enable Service Principal support**, **Use managed identity**, the tenant, and the door's address as **Resource URL**. **Update connector**.
+4. Add the connector's federated credential (issuer, subject, audience `api://AzureADTokenExchange`) to the registration. The values are on the connector's Security page, and in the connector's `connectionParameterSets` from the Power Apps API.
+5. Make the connection in Power Apps, on the connector's **Test** step, with your own click: a sign-in popup only opens from a person's click. In the Copilot Studio wizard it failed with `ParameterNotDefined: Parameter 'token' is not allowed`, since the wizard still held the connector as it was before step 3.
+6. In Copilot Studio, **Add tool** again, the connector, the connection that now exists, **Add**.
+
+Copilot Studio does not ask a person in the middle of a call, so `deliver_order` refuses there, and delivering is done on the dealer page.
 
 ### Microsoft 365 Copilot
 
